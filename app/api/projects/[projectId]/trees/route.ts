@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createExperimentTree } from '@/lib/database-service'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+// Create a Supabase client with service role key for server-side operations
+const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function POST(
   request: Request,
@@ -10,23 +15,23 @@ export async function POST(
   try {
     const { projectId } = await params
     
-    const cookieStore = cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-        },
-      }
-    )
-
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
       return NextResponse.json(
-        { message: 'User not authenticated' },
+        { message: 'No authorization header' },
+        { status: 401 }
+      )
+    }
+
+    // Extract the token
+    const token = authHeader.replace('Bearer ', '')
+    
+    // Verify the token and get user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json(
+        { message: 'Invalid token' },
         { status: 401 }
       )
     }
