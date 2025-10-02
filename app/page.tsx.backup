@@ -1,0 +1,944 @@
+"use client"
+
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  FolderIcon,
+  LinkIcon,
+  DocumentTextIcon,
+  TagIcon,
+  LockClosedIcon,
+  BeakerIcon,
+  UserGroupIcon,
+  MagnifyingGlassIcon,
+  ChevronDownIcon,
+} from "@heroicons/react/24/outline"
+import { useState } from "react"
+
+export default function LabsOSLanding() {
+  const [showContactForm, setShowContactForm] = useState(false)
+  const [openFAQ, setOpenFAQ] = useState<number | null>(null)
+
+  const toggleFAQ = (index: number) => {
+    setOpenFAQ(openFAQ === index ? null : index)
+  }
+
+  const handleSeeInAction = () => {
+    // Check if user is authenticated
+    const isAuthenticated = localStorage.getItem("labsos_authenticated")
+    if (isAuthenticated) {
+      window.location.href = "/dashboard"
+    } else {
+      window.location.href = "/login"
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <BeakerIcon className="h-8 w-8 text-primary" />
+            <span className="text-2xl font-bold text-foreground">LabsOS</span>
+          </div>
+          <nav className="hidden md:flex items-center space-x-6">
+            <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
+              Features
+            </a>
+            <a href="#faq" className="text-muted-foreground hover:text-foreground transition-colors">
+              FAQ
+            </a>
+            <a href="#team" className="text-muted-foreground hover:text-foreground transition-colors">
+              Team
+            </a>
+            <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">
+              Contact
+            </a>
+          </nav>
+          <Button variant="outline" onClick={() => (window.location.href = "/login")}>
+            Sign In
+          </Button>
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="py-20 px-4">
+        <div className="container mx-auto max-w-6xl">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div className="space-y-8">
+              <div className="space-y-4">
+                <h1 className="text-5xl font-bold tracking-tight text-foreground">
+                  Stop Losing Your Lab's Code & Data.
+                </h1>
+                <p className="text-xl text-muted-foreground leading-relaxed">
+                  LabsOS keeps your research organised, documented, and accessible — even after people leave.
+                </p>
+              </div>
+              <Button size="lg" className="text-lg px-8 py-6" onClick={() => setShowContactForm(true)}>
+                Book a Free Demo
+              </Button>
+            </div>
+            <div className="relative">
+              <Card className="shadow-2xl">
+                <CardContent className="p-0">
+                  <img
+                    src="/research-lab-dashboard.png"
+                    alt="LabsOS Dashboard Preview"
+                    className="w-full h-auto rounded-lg"
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Research Labs Discovery */}
+      <section className="py-16 px-4 bg-muted/10">
+        <div className="container mx-auto max-w-6xl">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Research Labs</h2>
+            <p className="text-lg text-muted-foreground">See who's already organizing their research with LabsOS</p>
+          </div>
+
+          <div className="max-w-2xl mx-auto mb-8">
+            <div className="relative">
+              <MagnifyingGlassIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+              <Input placeholder="Search labs, universities, or research areas..." className="pl-12 h-12 text-base" />
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                name: "Computational Biology Lab",
+                university: "University of Cambridge",
+                members: 12,
+                field: "Bioinformatics",
+                projects: ["RNA-seq Analysis", "Protein Structure", "GWAS Pipeline"],
+                avatar: "CB",
+              },
+              {
+                name: "Neural Networks Research Group",
+                university: "MIT",
+                members: 8,
+                field: "Machine Learning",
+                projects: ["Deep Learning Models", "Computer Vision", "NLP Research"],
+                avatar: "NN",
+              },
+              {
+                name: "Materials Science Lab",
+                university: "Stanford University",
+                members: 15,
+                field: "Materials Engineering",
+                projects: ["Nanomaterials", "Battery Research", "Solar Cells"],
+                avatar: "MS",
+              },
+              {
+                name: "Quantum Computing Lab",
+                university: "University of Oxford",
+                members: 6,
+                field: "Quantum Physics",
+                projects: ["Quantum Algorithms", "Error Correction", "Hardware Design"],
+                avatar: "QC",
+              },
+              {
+                name: "Climate Modeling Group",
+                university: "Imperial College London",
+                members: 10,
+                field: "Environmental Science",
+                projects: ["Climate Simulations", "Weather Prediction", "Ocean Models"],
+                avatar: "CM",
+              },
+              {
+                name: "Genomics Research Lab",
+                university: "Harvard University",
+                members: 18,
+                field: "Genetics",
+                projects: ["Genome Assembly", "Variant Analysis", "Population Genetics"],
+                avatar: "GR",
+              },
+            ].map((lab, index) => (
+              <Card key={index} className="p-6 hover:shadow-lg transition-all duration-200 cursor-pointer group">
+                <CardContent className="space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Avatar className="h-12 w-12">
+                        <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+                          {lab.avatar}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                          {lab.name}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">{lab.university}</p>
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="text-xs">
+                      {lab.field}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                    <div className="flex items-center space-x-1">
+                      <UserGroupIcon className="h-4 w-4" />
+                      <span>{lab.members} members</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <FolderIcon className="h-4 w-4" />
+                      <span>{lab.projects.length} projects</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">Recent Projects:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {lab.projects.slice(0, 2).map((project, projectIndex) => (
+                        <Badge key={projectIndex} variant="outline" className="text-xs">
+                          {project}
+                        </Badge>
+                      ))}
+                      {lab.projects.length > 2 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{lab.projects.length - 2} more
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="text-center mt-12">
+            <Button variant="outline" size="lg" className="px-8 bg-transparent">
+              View All Research Labs
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Problem Statement */}
+      <section className="py-16 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-4xl text-center">
+          <h2 className="text-3xl font-bold mb-12 text-foreground">The Research Crisis</h2>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              "Code scattered across laptops & Dropbox",
+              "Documentation missing or unreadable",
+              "Projects abandoned when researchers leave",
+              "Valuable data lost in the aether",
+            ].map((problem, index) => (
+              <Card key={index} className="p-6 text-center">
+                <CardContent className="pt-0">
+                  <p className="text-muted-foreground">{problem}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Core Features */}
+      <section id="features" className="py-20 px-4">
+        <div className="container mx-auto max-w-6xl">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold mb-4 text-foreground">Core Features</h2>
+            <p className="text-xl text-muted-foreground">Everything you need to organize your research</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
+            {[
+              {
+                icon: FolderIcon,
+                title: "Central Lab Hub",
+                description: "One workspace for all projects, researchers, and resources.",
+              },
+              {
+                icon: LinkIcon,
+                title: "Repository Linking",
+                description: "Connect GitHub, OneDrive, Dropbox, AWS seamlessly.",
+              },
+              {
+                icon: DocumentTextIcon,
+                title: "Documentation Layer",
+                description: "Notes, READMEs, lab notebooks in one organized place.",
+              },
+              {
+                icon: TagIcon,
+                title: "Metadata & Search",
+                description: "Tag datasets and scripts, find everything instantly.",
+              },
+              {
+                icon: LockClosedIcon,
+                title: "Persistent Access",
+                description: "No more locked university emails or lost accounts.",
+              },
+              {
+                icon: UserGroupIcon,
+                title: "Team Collaboration",
+                description: "Share knowledge and maintain continuity across team changes.",
+              },
+            ].map((feature, index) => (
+              <Card key={index} className="p-6 hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-4">
+                  <feature.icon className="h-12 w-12 text-primary mb-4" />
+                  <CardTitle className="text-xl">{feature.title}</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <CardDescription className="text-base">{feature.description}</CardDescription>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="space-y-12">
+            <div className="text-center">
+              <Button
+                size="lg"
+                variant="outline"
+                className="text-2xl font-bold px-8 py-6 mb-8 bg-transparent"
+                onClick={handleSeeInAction}
+              >
+                See LabsOS in Action
+              </Button>
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-8">
+              {/* Project Dashboard */}
+              <Card className="overflow-hidden">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FolderIcon className="h-5 w-5" />
+                    Project Dashboard
+                  </CardTitle>
+                  <CardDescription>Organize all lab projects with tags and status tracking</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="bg-muted/50 p-6 space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-background rounded border">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span className="font-medium">RNA-seq Analysis</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Badge variant="secondary">Python</Badge>
+                        <Badge variant="outline">Active</Badge>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-background rounded border">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        <span className="font-medium">Protein Structure</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Badge variant="secondary">R</Badge>
+                        <Badge variant="outline">Review</Badge>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-background rounded border">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
+                        <span className="font-medium">GWAS Pipeline</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Badge variant="secondary">Bash</Badge>
+                        <Badge variant="outline">Archived</Badge>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Documentation View */}
+              <Card className="overflow-hidden">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <DocumentTextIcon className="h-5 w-5" />
+                    Documentation View
+                  </CardTitle>
+                  <CardDescription>Notes linked with code snippets, like Notion + GitHub</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="bg-muted/50 p-6 space-y-4">
+                    <div className="bg-background p-4 rounded border">
+                      <h4 className="font-medium mb-2">RNA-seq Protocol</h4>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Quality control steps for raw sequencing data...
+                      </p>
+                      <div className="bg-muted p-2 rounded text-xs font-mono">
+                        <span className="text-blue-600">fastqc</span> input.fastq -o results/
+                      </div>
+                    </div>
+                    <div className="bg-background p-4 rounded border">
+                      <h4 className="font-medium mb-2">Analysis Notes</h4>
+                      <p className="text-sm text-muted-foreground">Updated parameters based on reviewer feedback...</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Search View */}
+              <Card className="overflow-hidden">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MagnifyingGlassIcon className="h-5 w-5" />
+                    Global Search
+                  </CardTitle>
+                  <CardDescription>Find datasets and scripts instantly with smart tagging</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="bg-muted/50 p-6 space-y-4">
+                    <div className="flex items-center gap-2 p-2 bg-background rounded border">
+                      <MagnifyingGlassIcon className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Search: "RNA sequencing"</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="p-3 bg-background rounded border">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium">rna_seq_pipeline.py</span>
+                          <Badge variant="secondary" className="text-xs">
+                            Script
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Main analysis pipeline for RNA-seq data</p>
+                      </div>
+                      <div className="p-3 bg-background rounded border">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium">sample_metadata.csv</span>
+                          <Badge variant="secondary" className="text-xs">
+                            Dataset
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Sample information and experimental conditions</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Future Features */}
+      <section className="py-16 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-4xl">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4 text-foreground">Coming Soon</h2>
+            <p className="text-lg text-muted-foreground">Advanced features in development</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {[
+              "Auto-doc generator",
+              "Built-in code quality checks",
+              "Lab handover mode",
+              "FAIR compliance exports",
+              "AI assistant for messy scripts",
+            ].map((feature, index) => (
+              <div key={index} className="flex items-center space-x-3">
+                <Badge variant="secondary" className="px-3 py-1">
+                  Soon
+                </Badge>
+                <span className="text-foreground">{feature}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Value Proposition */}
+      <section className="py-20 px-4">
+        <div className="container mx-auto max-w-4xl text-center">
+          <h2 className="text-4xl font-bold mb-8 text-foreground">Why LabsOS?</h2>
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                title: "Protect Investment",
+                description: "Safeguard years of grant-funded research work",
+              },
+              {
+                title: "Save Time",
+                description: "Prevent researchers from wasting weeks recreating lost work",
+              },
+              {
+                title: "Boost Impact",
+                description: "Improve reproducibility and enable better collaboration",
+              },
+            ].map((value, index) => (
+              <Card key={index} className="p-8 text-center">
+                <CardHeader>
+                  <CardTitle className="text-2xl text-primary">{value.title}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground text-lg">{value.description}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section id="faq" className="py-20 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-4xl">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold mb-4 text-foreground">Frequently Asked Questions</h2>
+            <p className="text-xl text-muted-foreground">Common questions from research teams</p>
+          </div>
+
+          <div className="space-y-4">
+            {[
+              {
+                question: "Do we need to move away from GitHub/Dropbox?",
+                answer:
+                  "No, LabsOS integrates with your existing tools. We wrap around your current workflow rather than replacing it.",
+              },
+              {
+                question: "What happens when lab members leave?",
+                answer:
+                  "Their work remains accessible through persistent accounts not tied to university emails. Knowledge stays with the lab.",
+              },
+              {
+                question: "Can we link to OneDrive or AWS?",
+                answer:
+                  "Yes, LabsOS is designed to wrap around your existing storage and repositories, including cloud services.",
+              },
+              {
+                question: "Is this only for biotech labs?",
+                answer: "No, LabsOS is designed for any computational research lab across all scientific disciplines.",
+              },
+            ].map((faq, index) => (
+              <Card key={index} className="overflow-hidden">
+                <CardHeader
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => toggleFAQ(index)}
+                >
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{faq.question}</CardTitle>
+                    <ChevronDownIcon
+                      className={`h-5 w-5 transition-transform ${openFAQ === index ? "rotate-180" : ""}`}
+                    />
+                  </div>
+                </CardHeader>
+                {openFAQ === index && (
+                  <CardContent className="pt-0 pb-6">
+                    <p className="text-muted-foreground">{faq.answer}</p>
+                  </CardContent>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* About the Team */}
+      <section id="team" className="py-20 px-4">
+        <div className="container mx-auto max-w-4xl">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold mb-4 text-foreground">About the Team</h2>
+            <p className="text-xl text-muted-foreground">Built by researchers, for researchers</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-12 max-w-3xl mx-auto">
+            <Card className="p-8 text-center">
+              <CardContent className="space-y-4">
+                <Avatar className="w-24 h-24 mx-auto">
+                  <AvatarImage src="/professional-headshot.png" />
+                  <AvatarFallback className="text-2xl">NC</AvatarFallback>
+                </Avatar>
+                <div>
+                  <h3 className="text-xl font-bold">Noah Chander</h3>
+                  <p className="text-muted-foreground mt-2">
+                    Mechanical Engineering MEng student at UCL, incoming SDE Intern at Amazon. Previous experience in
+                    financial modelling and biotech-related software.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="p-8 text-center">
+              <CardContent className="space-y-4">
+                <Avatar className="w-24 h-24 mx-auto">
+                  <AvatarImage src="/professional-headshot.png" />
+                  <AvatarFallback className="text-2xl">O</AvatarFallback>
+                </Avatar>
+                <div>
+                  <h3 className="text-xl font-bold">Oliver [Surname]</h3>
+                  <p className="text-muted-foreground mt-2">
+                    MSc in Bioinformatics, PhD candidate at Oxford. Specializes in computational biology and research
+                    data management.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Contact Section */}
+      <section id="contact" className="py-20 px-4">
+        <div className="container mx-auto max-w-2xl text-center">
+          <h2 className="text-4xl font-bold mb-6 text-foreground">Ready to organize your lab?</h2>
+          <p className="text-xl text-muted-foreground mb-8">
+            Book a free demo to see how LabsOS can transform your research workflow.
+          </p>
+
+          <Card className="p-8">
+            <CardContent className="space-y-6 pb-8">
+              <form className="space-y-8">
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-foreground border-b pb-2">Personal Information</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="name" className="text-sm font-medium">
+                        Researcher Name *
+                      </Label>
+                      <Input id="name" placeholder="Dr. Jane Smith" required className="h-11" />
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="title" className="text-sm font-medium">
+                        Title/Position
+                      </Label>
+                      <Input
+                        id="title"
+                        placeholder="Principal Investigator, Postdoc, PhD Student..."
+                        className="h-11"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <Label htmlFor="email" className="text-sm font-medium">
+                      Email Address *
+                    </Label>
+                    <Input id="email" type="email" placeholder="jane.smith@university.edu" required className="h-11" />
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-foreground border-b pb-2">Institution & Research</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="university" className="text-sm font-medium">
+                        University/Institution *
+                      </Label>
+                      <Input id="university" placeholder="University of Cambridge" required className="h-11" />
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="department" className="text-sm font-medium">
+                        Department/Lab
+                      </Label>
+                      <Input id="department" placeholder="Department of Biology" className="h-11" />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <Label htmlFor="research-topic" className="text-sm font-medium">
+                      Research Topic/Field *
+                    </Label>
+                    <Input
+                      id="research-topic"
+                      placeholder="Computational Biology, Neuroscience, Chemistry..."
+                      required
+                      className="h-11"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-foreground border-b pb-2">Lab Details</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="lab-size" className="text-sm font-medium">
+                        Lab Size
+                      </Label>
+                      <Input id="lab-size" placeholder="5-10 researchers" className="h-11" />
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="grant-funder" className="text-sm font-medium">
+                        Primary Grant Funder
+                      </Label>
+                      <Input id="grant-funder" placeholder="NIH, NSF, Wellcome Trust, ERC..." className="h-11" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-foreground border-b pb-2">Demo Preferences</h3>
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="current-tools" className="text-sm font-medium">
+                        Current Tools & Challenges
+                      </Label>
+                      <Textarea
+                        id="current-tools"
+                        placeholder="What tools do you currently use for data management? What are your biggest challenges with organizing research code and data?"
+                        rows={4}
+                        className="resize-none"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label htmlFor="demo-focus" className="text-sm font-medium">
+                        What would you like to see in the demo?
+                      </Label>
+                      <Textarea
+                        id="demo-focus"
+                        placeholder="Specific features, use cases, or workflows you'd like us to demonstrate..."
+                        rows={3}
+                        className="resize-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 pt-6 border-t">
+                  <Button type="submit" className="flex-1 h-12 text-base">
+                    Schedule Demo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowContactForm(false)}
+                    className="h-12 px-8"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-border py-12 px-4">
+        <div className="container mx-auto max-w-6xl">
+          <div className="grid md:grid-cols-4 gap-8">
+            <div className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <BeakerIcon className="h-6 w-6 text-primary" />
+                <span className="text-xl font-bold">LabsOS</span>
+              </div>
+              <p className="text-muted-foreground">Organizing research, one lab at a time.</p>
+              <Button variant="outline" size="sm" className="px-8 bg-transparent">
+                Book a Free Demo
+              </Button>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Product</h3>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>
+                  <a href="#features" className="hover:text-foreground transition-colors">
+                    Features
+                  </a>
+                </li>
+                <li>
+                  <a href="#faq" className="hover:text-foreground transition-colors">
+                    FAQ
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="hover:text-foreground transition-colors">
+                    Documentation
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Company</h3>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>
+                  <a href="#team" className="hover:text-foreground transition-colors">
+                    Team
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="hover:text-foreground transition-colors">
+                    Blog
+                  </a>
+                </li>
+                <li>
+                  <a href="#contact" className="hover:text-foreground transition-colors">
+                    Contact
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-4">Contact</h3>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>hello@labsos.com</li>
+                <li>+44 (0) 20 1234 5678</li>
+                <li>London, UK</li>
+              </ul>
+            </div>
+          </div>
+
+          <Separator className="my-8" />
+
+          <div className="text-center text-muted-foreground">
+            <p>&copy; 2024 LabsOS. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>
+
+      {showContactForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-3xl max-h-[95vh] overflow-y-auto">
+            <CardHeader className="pb-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-2">
+                  <CardTitle className="text-2xl">Book a Free Demo</CardTitle>
+                  <CardDescription className="text-base">
+                    Tell us about your research lab and we'll show you how LabsOS can help
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowContactForm(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  ✕
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-8 pb-8">
+              <form className="space-y-8">
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-foreground border-b pb-2">Personal Information</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="name" className="text-sm font-medium">
+                        Researcher Name *
+                      </Label>
+                      <Input id="name" placeholder="Dr. Jane Smith" required className="h-11" />
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="title" className="text-sm font-medium">
+                        Title/Position
+                      </Label>
+                      <Input
+                        id="title"
+                        placeholder="Principal Investigator, Postdoc, PhD Student..."
+                        className="h-11"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <Label htmlFor="email" className="text-sm font-medium">
+                      Email Address *
+                    </Label>
+                    <Input id="email" type="email" placeholder="jane.smith@university.edu" required className="h-11" />
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-foreground border-b pb-2">Institution & Research</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="university" className="text-sm font-medium">
+                        University/Institution *
+                      </Label>
+                      <Input id="university" placeholder="University of Cambridge" required className="h-11" />
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="department" className="text-sm font-medium">
+                        Department/Lab
+                      </Label>
+                      <Input id="department" placeholder="Department of Biology" className="h-11" />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <Label htmlFor="research-topic" className="text-sm font-medium">
+                      Research Topic/Field *
+                    </Label>
+                    <Input
+                      id="research-topic"
+                      placeholder="Computational Biology, Neuroscience, Chemistry..."
+                      required
+                      className="h-11"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-foreground border-b pb-2">Lab Details</h3>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="lab-size" className="text-sm font-medium">
+                        Lab Size
+                      </Label>
+                      <Input id="lab-size" placeholder="5-10 researchers" className="h-11" />
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="grant-funder" className="text-sm font-medium">
+                        Primary Grant Funder
+                      </Label>
+                      <Input id="grant-funder" placeholder="NIH, NSF, Wellcome Trust, ERC..." className="h-11" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold text-foreground border-b pb-2">Demo Preferences</h3>
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="current-tools" className="text-sm font-medium">
+                        Current Tools & Challenges
+                      </Label>
+                      <Textarea
+                        id="current-tools"
+                        placeholder="What tools do you currently use for data management? What are your biggest challenges with organizing research code and data?"
+                        rows={4}
+                        className="resize-none"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label htmlFor="demo-focus" className="text-sm font-medium">
+                        What would you like to see in the demo?
+                      </Label>
+                      <Textarea
+                        id="demo-focus"
+                        placeholder="Specific features, use cases, or workflows you'd like us to demonstrate..."
+                        rows={3}
+                        className="resize-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 pt-6 border-t">
+                  <Button type="submit" className="flex-1 h-12 text-base">
+                    Schedule Demo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowContactForm(false)}
+                    className="h-12 px-8"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  )
+}

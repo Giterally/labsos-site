@@ -1,0 +1,1040 @@
+"use client"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  BeakerIcon,
+  ArrowLeftIcon,
+  PlusIcon,
+  FolderIcon,
+  UserGroupIcon,
+  ChartBarIcon,
+  CogIcon,
+  ArrowRightOnRectangleIcon,
+  CodeBracketIcon,
+  DocumentTextIcon,
+  CurrencyDollarIcon,
+  GlobeAltIcon,
+  LinkIcon,
+  ComputerDesktopIcon,
+  ServerIcon,
+  CircleStackIcon,
+  UserIcon,
+  ClockIcon,
+} from "@heroicons/react/24/outline"
+import { useRouter, useParams } from "next/navigation"
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import AddExperimentTreeForm from "@/components/forms/AddExperimentTreeForm"
+import AddSoftwareForm from "@/components/forms/AddSoftwareForm"
+import AddOutputForm from "@/components/forms/AddOutputForm"
+
+interface Software {
+  id: string
+  name: string
+  type: "internal" | "external"
+  category: "analysis" | "visualization" | "data_processing" | "simulation" | "other"
+  description: string
+  version?: string
+  license_type?: "free" | "paid" | "academic" | "commercial"
+  license_cost?: number
+  license_period?: "monthly" | "yearly" | "one_time"
+  repository_url?: string
+  documentation_url?: string
+  used_by: string[]
+  linked_datasets?: string[]
+  linked_outputs?: string[]
+  last_updated: string
+}
+
+interface Dataset {
+  id: string
+  name: string
+  type: "raw_data" | "processed_data" | "training_data" | "validation_data"
+  description: string
+  format: string
+  size: number
+  size_unit: string
+  created_by: string[]
+  linked_to: {
+    software: string[]
+    outputs: string[]
+    experiment_nodes: string[]
+  }
+  repository_url?: string
+  access_level: "public" | "restricted" | "private"
+  last_updated: string
+}
+
+interface ProjectOutput {
+  id: string
+  type: "publication" | "software" | "dataset" | "presentation" | "report" | "patent"
+  title: string
+  description: string
+  authors: string[]
+  status: "published" | "submitted" | "in_preparation" | "draft"
+  date: string
+  url?: string
+  doi?: string
+  journal?: string
+  impact_factor?: number
+  citations?: number
+  repository_url?: string
+  license?: string
+  file_size?: number
+  format?: string
+  linked_datasets?: string[]
+  linked_software?: string[]
+}
+
+interface EnhancedExperimentTree {
+  id: string
+  name: string
+  description: string
+  status: "draft" | "active" | "completed" | "archived"
+  category: "protocol" | "analysis" | "data_collection" | "results"
+  node_count: number
+  node_types: {
+    protocol: number
+    data_creation: number
+    analysis: number
+    results: number
+  }
+  linked_datasets: string[]
+  linked_software: string[]
+  linked_outputs: string[]
+  created_at: string
+  updated_at: string
+}
+
+interface RelatedProject {
+  id: string
+  name: string
+  similarity_score: number
+  similarity_reason: string
+  institution: string
+  department: string
+}
+
+interface PastMember {
+  id: string
+  name: string
+  role: string
+  initials: string
+  duration: string
+  avatar_url?: string
+}
+
+interface ProjectData {
+  id: string
+  name: string
+  description: string
+  institution: string
+  department: string
+  members: Array<{
+    id: string
+    name: string
+    role: string
+    initials: string
+    avatar_url?: string
+  }>
+  past_members?: PastMember[]
+  related_projects?: RelatedProject[]
+  experiment_trees: EnhancedExperimentTree[]
+  software: Software[]
+  datasets?: Dataset[]
+  outputs: ProjectOutput[]
+  stats: {
+    total_trees: number
+    active_trees: number
+    completed_trees: number
+    total_nodes: number
+    total_software: number
+    total_datasets?: number
+    total_outputs: number
+    total_publications: number
+    total_citations: number
+  }
+}
+
+export default function ProjectPage() {
+  const router = useRouter()
+  const params = useParams()
+  const projectId = params.projectId as string
+
+  const [project, setProject] = useState<ProjectData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<any>(null)
+
+  useEffect(() => {
+    // Check if user is authenticated
+    const isAuthenticated = localStorage.getItem("labsos_authenticated")
+    const userData = localStorage.getItem("labsos_user")
+    
+    if (!isAuthenticated || !userData) {
+      router.push("/login")
+      return
+    }
+
+    try {
+      const parsedUser = JSON.parse(userData)
+      setUser(parsedUser)
+    } catch (error) {
+      console.error("Error parsing user data:", error)
+      router.push("/login")
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    
+    const fetchProject = async () => {
+      try {
+        const response = await fetch(`/api/projects/${projectId}`)
+        
+        if (!response.ok) {
+          if (response.status === 404) {
+            setError('Project not found')
+          } else {
+            setError('Failed to load project')
+          }
+          setLoading(false)
+          return
+        }
+
+        const data = await response.json()
+        setProject(data.project)
+        setLoading(false)
+      } catch (err) {
+        console.error('Error fetching project:', err)
+        setError('Failed to load project')
+        setLoading(false)
+      }
+    }
+
+    fetchProject()
+  }, [projectId, router])
+
+  const handleLogout = () => {
+    // Clear authentication data
+    localStorage.removeItem("labsos_authenticated")
+    localStorage.removeItem("labsos_user")
+    
+    // Redirect to landing page
+    router.push("/")
+  }
+
+  const handleSoftwareAdded = (newSoftware: Software) => {
+    if (project) {
+      setProject({
+        ...project,
+        software: [...project.software, newSoftware],
+        stats: {
+          ...project.stats,
+          total_software: project.stats.total_software + 1
+        }
+      })
+    }
+  }
+
+  const handleOutputAdded = (newOutput: ProjectOutput) => {
+    if (project) {
+      setProject({
+        ...project,
+        outputs: [...project.outputs, newOutput],
+        stats: {
+          ...project.stats,
+          total_outputs: project.stats.total_outputs + 1,
+          total_publications: newOutput.type === 'publication' ? project.stats.total_publications + 1 : project.stats.total_publications
+        }
+      })
+    }
+  }
+
+  const handleTreeAdded = (newTree: any) => {
+    if (project) {
+      setProject({
+        ...project,
+        experiment_trees: [...project.experiment_trees, newTree],
+        stats: {
+          ...project.stats,
+          total_trees: project.stats.total_trees + 1,
+          active_trees: newTree.status === 'active' ? project.stats.active_trees + 1 : project.stats.active_trees
+        }
+      })
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "active":
+        return "bg-green-100 text-green-800"
+      case "completed":
+        return "bg-blue-100 text-blue-800"
+      case "draft":
+        return "bg-gray-100 text-gray-800"
+      case "archived":
+        return "bg-yellow-100 text-yellow-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case "protocol":
+        return "bg-purple-100 text-purple-800"
+      case "analysis":
+        return "bg-blue-100 text-blue-800"
+      case "data_collection":
+        return "bg-orange-100 text-orange-800"
+      case "results":
+        return "bg-green-100 text-green-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getSoftwareTypeColor = (type: string) => {
+    switch (type) {
+      case "internal":
+        return "bg-blue-100 text-blue-800"
+      case "external":
+        return "bg-purple-100 text-purple-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getDatasetTypeColor = (type: string) => {
+    switch (type) {
+      case "raw_data":
+        return "bg-orange-100 text-orange-800"
+      case "processed_data":
+        return "bg-blue-100 text-blue-800"
+      case "training_data":
+        return "bg-green-100 text-green-800"
+      case "validation_data":
+        return "bg-purple-100 text-purple-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getAccessLevelColor = (level: string) => {
+    switch (level) {
+      case "public":
+        return "bg-green-100 text-green-800"
+      case "restricted":
+        return "bg-yellow-100 text-yellow-800"
+      case "private":
+        return "bg-red-100 text-red-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getOutputTypeColor = (type: string) => {
+    switch (type) {
+      case "publication":
+        return "bg-green-100 text-green-800"
+      case "software":
+        return "bg-blue-100 text-blue-800"
+      case "dataset":
+        return "bg-orange-100 text-orange-800"
+      case "presentation":
+        return "bg-purple-100 text-purple-800"
+      case "report":
+        return "bg-gray-100 text-gray-800"
+      case "patent":
+        return "bg-yellow-100 text-yellow-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getLicenseTypeColor = (type: string) => {
+    switch (type) {
+      case "free":
+        return "bg-green-100 text-green-800"
+      case "academic":
+        return "bg-blue-100 text-blue-800"
+      case "paid":
+        return "bg-red-100 text-red-800"
+      case "commercial":
+        return "bg-orange-100 text-orange-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  // Helper functions for data linking
+  const getSoftwareName = (softwareId: string) => {
+    return project?.software.find(s => s.id === softwareId)?.name || softwareId
+  }
+
+  const getOutputName = (outputId: string) => {
+    return project?.outputs.find(o => o.id === outputId)?.title || outputId
+  }
+
+  const getDatasetName = (datasetId: string) => {
+    return project?.datasets?.find(d => d.id === datasetId)?.name || datasetId
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <h1 className="text-2xl font-bold text-foreground mb-4">Loading Project...</h1>
+          <p className="text-muted-foreground">Please wait while we fetch your project details.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !project) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-foreground mb-4">Project Not Found</h1>
+          <p className="text-muted-foreground mb-6">
+            {error || "The project you're looking for doesn't exist."}
+          </p>
+          <Button onClick={() => router.push("/dashboard")}>
+            <ArrowLeftIcon className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b border-border bg-card">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-4">
+              <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
+                <ArrowLeftIcon className="h-4 w-4 mr-2" />
+                Back to Dashboard
+              </Button>
+              <Separator orientation="vertical" className="h-6" />
+              <div className="flex items-center space-x-2">
+                <BeakerIcon className="h-6 w-6 text-primary" />
+                <h1 className="text-lg font-semibold text-foreground">{project.name}</h1>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              {user && (
+                <div className="flex items-center space-x-3 mr-4">
+                  <Avatar className="h-6 w-6">
+                    <AvatarFallback className="text-xs">
+                      {user.name ? user.name.charAt(0).toUpperCase() : "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm font-medium text-foreground">{user.name}</span>
+                </div>
+              )}
+              <Button variant="outline" size="sm">
+                <CogIcon className="h-4 w-4 mr-2" />
+                Settings
+              </Button>
+              <AddExperimentTreeForm projectId={projectId} onTreeAdded={handleTreeAdded} />
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                <ArrowRightOnRectangleIcon className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          {/* Left Column - Project Info & Team */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* Project Overview */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <FolderIcon className="h-5 w-5" />
+                  <span>Project Overview</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">{project.description}</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm font-medium">Institution:</span>
+                    <span className="text-sm text-muted-foreground">{project.institution}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm font-medium">Department:</span>
+                    <span className="text-sm text-muted-foreground">{project.department}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm font-medium">Team Size:</span>
+                    <span className="text-sm text-muted-foreground">{project.members.length} members</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Team Members */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <UserGroupIcon className="h-5 w-5" />
+                  <span>Team Members</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {project.members.map((member) => (
+                    <Link key={member.id} href={`/researcher/${member.id}`}>
+                      <div className="flex items-center space-x-3 p-2 rounded-md hover:bg-muted/50 transition-colors cursor-pointer">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs">{member.initials}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{member.name}</p>
+                          <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Past Team Members */}
+            {project.past_members && project.past_members.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <UserIcon className="h-5 w-5 text-muted-foreground" />
+                    <span>Past Team Members</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {project.past_members.map((member) => (
+                      <Link key={member.id} href={`/researcher/${member.id}`}>
+                        <div className="flex items-center space-x-3 p-2 rounded-md opacity-75 hover:bg-muted/50 transition-colors cursor-pointer">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="text-xs bg-muted">{member.initials}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-muted-foreground truncate">{member.name}</p>
+                            <p className="text-xs text-muted-foreground">{member.role} • {member.duration}</p>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Related Projects */}
+            {project.related_projects && project.related_projects.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <BeakerIcon className="h-5 w-5" />
+                    <span>Related Projects</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                        <div className="p-3 rounded-md border hover:bg-muted/50 transition-colors cursor-pointer">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-sm">{relatedProject.name}</h4>
+                            <Badge variant="outline" className="text-xs">
+                              {relatedProject.similarity_score}% match
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-2">{relatedProject.similarity_reason}</p>
+                          <p className="text-xs text-muted-foreground">{relatedProject.institution} • {relatedProject.department}</p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Statistics */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <ChartBarIcon className="h-5 w-5" />
+                  <span>Statistics</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium">Total Trees:</span>
+                  <span className="text-sm text-muted-foreground">{project.stats.total_trees}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium">Active Trees:</span>
+                  <span className="text-sm text-muted-foreground">{project.stats.active_trees}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium">Software Tools:</span>
+                  <span className="text-sm text-muted-foreground">{project.stats.total_software}</span>
+                </div>
+                {project.stats.total_datasets && (
+                  <div className="flex justify-between">
+                    <span className="text-sm font-medium">Datasets:</span>
+                    <span className="text-sm text-muted-foreground">{project.stats.total_datasets}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium">Publications:</span>
+                  <span className="text-sm text-muted-foreground">{project.stats.total_publications}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm font-medium">Total Citations:</span>
+                  <span className="text-sm text-muted-foreground">{project.stats.total_citations}</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column - Enhanced Tabs */}
+          <div className="lg:col-span-3">
+            <Tabs defaultValue="trees" className="space-y-6">
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="trees">Experiment Trees</TabsTrigger>
+                <TabsTrigger value="software">Software & Tools</TabsTrigger>
+                <TabsTrigger value="datasets">Datasets</TabsTrigger>
+                <TabsTrigger value="outputs">Outputs</TabsTrigger>
+              </TabsList>
+
+              {/* Enhanced Experiment Trees */}
+              <TabsContent value="trees" className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-foreground">Experiment Trees</h2>
+                  <AddExperimentTreeForm projectId={projectId} onTreeAdded={handleTreeAdded} />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {project.experiment_trees.map((tree) => (
+                    <Link key={tree.id} href={`/project/${projectId}/trees/${tree.id}`}>
+                      <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">{tree.name}</CardTitle>
+                            <div className="flex space-x-1">
+                              <Badge className={getCategoryColor(tree.category)}>
+                                {tree.category}
+                              </Badge>
+                              <Badge className={getStatusColor(tree.status)}>
+                                {tree.status}
+                              </Badge>
+                            </div>
+                          </div>
+                          <CardDescription>{tree.description}</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            {/* Node Type Breakdown */}
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Protocols:</span>
+                                <span className="font-medium">{tree.node_types.protocol}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Data:</span>
+                                <span className="font-medium">{tree.node_types.data_creation}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Analysis:</span>
+                                <span className="font-medium">{tree.node_types.analysis}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Results:</span>
+                                <span className="font-medium">{tree.node_types.results}</span>
+                              </div>
+                            </div>
+                            
+                            {/* Linked Resources */}
+                            <div className="flex flex-wrap gap-1 text-xs">
+                              {tree.linked_datasets.length > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  🗃️ {tree.linked_datasets.length} datasets
+                                </Badge>
+                              )}
+                              {tree.linked_software.length > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  📱 {tree.linked_software.length} tools
+                                </Badge>
+                              )}
+                              {tree.linked_outputs.length > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  📄 {tree.linked_outputs.length} outputs
+                                </Badge>
+                              )}
+                            </div>
+
+                            <div className="flex justify-between text-sm pt-2 border-t">
+                              <span className="text-muted-foreground">Updated:</span>
+                              <span className="font-medium">
+                                {new Date(tree.updated_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+
+                {project.experiment_trees.length === 0 && (
+                  <Card className="text-center py-12">
+                    <CardContent>
+                      <FolderIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-foreground mb-2">No Experiment Trees Yet</h3>
+                      <p className="text-muted-foreground mb-6">
+                        Create your first experiment tree to start organizing your research workflow.
+                      </p>
+                      <AddExperimentTreeForm projectId={projectId} onTreeAdded={handleTreeAdded} />
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* Enhanced Software & Tools */}
+              <TabsContent value="software" className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-foreground">Software & Tools</h2>
+                  <AddSoftwareForm projectId={projectId} onSoftwareAdded={handleSoftwareAdded} />
+                </div>
+
+                <div className="space-y-4">
+                  {project.software.map((software) => (
+                    <Card key={software.id} className="hover:shadow-lg transition-shadow">
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-3 mb-2">
+                              <h3 className="text-lg font-semibold text-foreground">{software.name}</h3>
+                              <Badge className={getSoftwareTypeColor(software.type)}>
+                                {software.type}
+                              </Badge>
+                              {software.license_type && (
+                                <Badge className={getLicenseTypeColor(software.license_type)}>
+                                  {software.license_type}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-3">{software.description}</p>
+                            <div className="flex items-center space-x-4 text-sm text-muted-foreground mb-3">
+                              <div className="flex items-center space-x-1">
+                                <CodeBracketIcon className="h-4 w-4" />
+                                <span className="capitalize">{software.category.replace('_', ' ')}</span>
+                              </div>
+                              {software.version && (
+                                <div className="flex items-center space-x-1">
+                                  <span>v{software.version}</span>
+                                </div>
+                              )}
+                              {software.license_cost && (
+                                <div className="flex items-center space-x-1">
+                                  <CurrencyDollarIcon className="h-4 w-4" />
+                                  <span>${software.license_cost}/{software.license_period}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Data Linking */}
+                            {(software.linked_datasets || software.linked_outputs) && (
+                              <div className="space-y-2 mb-3">
+                                <div className="text-sm">
+                                  <span className="font-medium">Linked to:</span>
+                                  <div className="flex flex-wrap gap-2 mt-1">
+                                    {software.linked_datasets?.map(datasetId => (
+                                      <Badge key={datasetId} variant="outline" className="text-xs">
+                                        🗃️ {getDatasetName(datasetId)}
+                                      </Badge>
+                                    ))}
+                                    {software.linked_outputs?.map(outputId => (
+                                      <Badge key={outputId} variant="outline" className="text-xs">
+                                        📄 {getOutputName(outputId)}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {software.repository_url && (
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={software.repository_url} target="_blank" rel="noopener noreferrer">
+                                <LinkIcon className="h-4 w-4 mr-2" />
+                                Repository
+                              </a>
+                            </Button>
+                          )}
+                          {software.documentation_url && (
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={software.documentation_url} target="_blank" rel="noopener noreferrer">
+                                <DocumentTextIcon className="h-4 w-4 mr-2" />
+                                Documentation
+                              </a>
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {project.software.length === 0 && (
+                  <Card className="text-center py-12">
+                    <CardContent>
+                      <ComputerDesktopIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-foreground mb-2">No Software Tracked Yet</h3>
+                      <p className="text-muted-foreground mb-6">
+                        Add software and tools used in this project to track dependencies and costs.
+                      </p>
+                      <AddSoftwareForm projectId={projectId} onSoftwareAdded={handleSoftwareAdded} />
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* NEW: Datasets Tab */}
+              <TabsContent value="datasets" className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-foreground">Datasets</h2>
+                  <Button>
+                    <PlusIcon className="h-4 w-4 mr-2" />
+                    Add Dataset
+                  </Button>
+                </div>
+
+                <div className="space-y-4">
+                  {project.datasets?.map((dataset) => (
+                    <Card key={dataset.id} className="hover:shadow-lg transition-shadow">
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-3 mb-2">
+                              <h3 className="text-lg font-semibold text-foreground">{dataset.name}</h3>
+                              <Badge className={getDatasetTypeColor(dataset.type)}>
+                                {dataset.type.replace('_', ' ')}
+                              </Badge>
+                              <Badge className={getAccessLevelColor(dataset.access_level)}>
+                                {dataset.access_level}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-3">{dataset.description}</p>
+                            <div className="flex items-center space-x-4 text-sm text-muted-foreground mb-3">
+                              <div className="flex items-center space-x-1">
+                                <CircleStackIcon className="h-4 w-4" />
+                                <span>{dataset.format}</span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <span>{dataset.size} {dataset.size_unit}</span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <ClockIcon className="h-4 w-4" />
+                                <span>{new Date(dataset.last_updated).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+
+                            {/* Data Linking */}
+                            <div className="space-y-2 mb-3">
+                              <div className="text-sm">
+                                <span className="font-medium">Linked to:</span>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  {dataset.linked_to.software.map(softwareId => (
+                                    <Badge key={softwareId} variant="outline" className="text-xs">
+                                      📱 {getSoftwareName(softwareId)}
+                                    </Badge>
+                                  ))}
+                                  {dataset.linked_to.outputs.map(outputId => (
+                                    <Badge key={outputId} variant="outline" className="text-xs">
+                                      📄 {getOutputName(outputId)}
+                                    </Badge>
+                                  ))}
+                                  {dataset.linked_to.experiment_nodes.map(nodeId => (
+                                    <Badge key={nodeId} variant="outline" className="text-xs">
+                                      🧪 {nodeId}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-sm text-muted-foreground">
+                              <span className="font-medium">Created by:</span> {dataset.created_by.join(", ")}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {dataset.repository_url && (
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={dataset.repository_url} target="_blank" rel="noopener noreferrer">
+                                <LinkIcon className="h-4 w-4 mr-2" />
+                                Access Dataset
+                              </a>
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {(!project.datasets || project.datasets.length === 0) && (
+                  <Card className="text-center py-12">
+                    <CardContent>
+                      <CircleStackIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-foreground mb-2">No Datasets Yet</h3>
+                      <p className="text-muted-foreground mb-6">
+                        Add datasets to track your research data and link them to software and outputs.
+                      </p>
+                      <Button>
+                        <PlusIcon className="h-4 w-4 mr-2" />
+                        Add Dataset
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {/* Enhanced Outputs */}
+              <TabsContent value="outputs" className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-foreground">Project Outputs</h2>
+                  <AddOutputForm projectId={projectId} onOutputAdded={handleOutputAdded} />
+                </div>
+
+                <div className="space-y-4">
+                  {project.outputs.map((output) => (
+                    <Card key={output.id} className="hover:shadow-lg transition-shadow">
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-3 mb-2">
+                              <h3 className="text-lg font-semibold text-foreground">{output.title}</h3>
+                              <Badge className={getOutputTypeColor(output.type)}>
+                                {output.type}
+                              </Badge>
+                              <Badge className={getStatusColor(output.status)}>
+                                {output.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-3">{output.description}</p>
+                            <div className="flex items-center space-x-4 text-sm text-muted-foreground mb-3">
+                              <div className="flex items-center space-x-1">
+                                <UserGroupIcon className="h-4 w-4" />
+                                <span>{output.authors.join(", ")}</span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <span>{new Date(output.date).toLocaleDateString()}</span>
+                              </div>
+                              {output.journal && (
+                                <div className="flex items-center space-x-1">
+                                  <span>{output.journal}</span>
+                                </div>
+                              )}
+                              {output.impact_factor && (
+                                <div className="flex items-center space-x-1">
+                                  <span>IF: {output.impact_factor}</span>
+                                </div>
+                              )}
+                              {output.citations && (
+                                <div className="flex items-center space-x-1">
+                                  <span>{output.citations} citations</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Data Linking for Outputs */}
+                            {(output.linked_datasets || output.linked_software) && (
+                              <div className="space-y-2 mb-3">
+                                <div className="text-sm">
+                                  <span className="font-medium">Linked to:</span>
+                                  <div className="flex flex-wrap gap-2 mt-1">
+                                    {output.linked_datasets?.map(datasetId => (
+                                      <Badge key={datasetId} variant="outline" className="text-xs">
+                                        🗃️ {getDatasetName(datasetId)}
+                                      </Badge>
+                                    ))}
+                                    {output.linked_software?.map(softwareId => (
+                                      <Badge key={softwareId} variant="outline" className="text-xs">
+                                        📱 {getSoftwareName(softwareId)}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {output.url && (
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={output.url} target="_blank" rel="noopener noreferrer">
+                                <LinkIcon className="h-4 w-4 mr-2" />
+                                View
+                              </a>
+                            </Button>
+                          )}
+                          {output.doi && (
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={`https://doi.org/${output.doi}`} target="_blank" rel="noopener noreferrer">
+                                <DocumentTextIcon className="h-4 w-4 mr-2" />
+                                DOI
+                              </a>
+                            </Button>
+                          )}
+                          {output.repository_url && (
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={output.repository_url} target="_blank" rel="noopener noreferrer">
+                                <CodeBracketIcon className="h-4 w-4 mr-2" />
+                                Repository
+                              </a>
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {project.outputs.length === 0 && (
+                  <Card className="text-center py-12">
+                    <CardContent>
+                      <DocumentTextIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-foreground mb-2">No Outputs Tracked Yet</h3>
+                      <p className="text-muted-foreground mb-6">
+                        Add publications, software, datasets, and other outputs from this project.
+                      </p>
+                      <AddOutputForm projectId={projectId} onOutputAdded={handleOutputAdded} />
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
