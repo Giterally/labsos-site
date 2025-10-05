@@ -1,882 +1,1128 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  BeakerIcon,
-  ArrowLeftIcon,
-  PlusIcon,
-  FolderIcon,
-  UserGroupIcon,
-  ChartBarIcon,
-  CogIcon,
-  ArrowRightOnRectangleIcon,
-  CodeBracketIcon,
-  DocumentTextIcon,
-  CurrencyDollarIcon,
-  GlobeAltIcon,
-  LinkIcon,
-  ComputerDesktopIcon,
-  ServerIcon,
-  CircleStackIcon,
-  UserIcon,
-  ClockIcon,
-  ChevronRightIcon,
-  ChevronDownIcon,
-  PlayIcon,
-  VideoCameraIcon,
-  ShareIcon,
-  Bars3Icon,
-  XMarkIcon,
-  WrenchScrewdriverIcon,
-  CpuChipIcon,
-  DocumentArrowDownIcon,
-  PencilIcon,
-} from "@heroicons/react/24/outline"
+import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
-import { useEffect, useState } from "react"
-import Link from "next/link"
-import { getCurrentUser, signOut, onAuthStateChange, User } from "@/lib/auth-service"
 import { supabase } from "@/lib/supabase-client"
-import AddNodeForm from "@/components/forms/AddNodeForm"
-import EditNodeForm from "@/components/forms/EditNodeForm"
-import EditContentForm from "@/components/forms/EditContentForm"
-import EditAttachmentsForm from "@/components/forms/EditAttachmentsForm"
-import EditLinksForm from "@/components/forms/EditLinksForm"
-import EditMetadataForm from "@/components/forms/EditMetadataForm"
-import VideoEmbed from "@/components/VideoEmbed"
-import { isVideoUrl } from "@/lib/video-utils"
-import ExperimentStepsList from "@/components/ExperimentStepsList"
-import { cn } from "@/lib/utils"
 
-interface ExperimentTree {
+interface ExperimentNode {
   id: string
-  project_id: string
-  name: string
-  description: string | null
-  status: 'draft' | 'active' | 'completed' | 'archived'
-  category: 'protocol' | 'analysis' | 'data_collection' | 'results'
-  node_count: number
-  node_types: {
-    data: number
-    software_completed: number
-    software_development: number
-    results: number
-    protocols: number
-    final_outputs: number
-  }
-  linked_datasets: string[]
-  linked_software: string[]
-  linked_outputs: string[]
-  created_by: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface TreeNode {
-  id: string
-  tree_id: string
-  parent_id: string | null
-  name: string
-  description: string | null
-  node_type: 'data' | 'software_completed' | 'software_development' | 'results' | 'protocols' | 'final_outputs'
-  position: number | null
-  created_at: string
-  updated_at: string
-}
-
-interface Attachment {
-  id: string
-  name: string
-  url: string
+  title: string
+  description: string
   type: string
-  size?: number
+  status: string
+  position: number
+  content: string
+  attachments: Array<{
+    id: string
+    name: string
+    file_type: string
+    file_size: number
+    file_url: string
+    description: string
+  }>
+  links: Array<{
+    id: string
+    name: string
+    url: string
+    description: string
+    link_type: string
+  }>
+  metadata: {
+    created: string
+    updated: string
+    type: string
+    position: number
+  }
 }
 
-interface Link {
-  id: string
-  name: string
-  url: string
-  type: 'github' | 'documentation' | 'paper' | 'youtube' | 'vimeo' | 'video' | 'other'
-}
-
-interface MetadataField {
-  id: string
-  key: string
-  value: string
-  type: 'text' | 'number' | 'boolean' | 'json'
-}
-
-export default function ExperimentTreePage() {
+export default function SimpleExperimentTreePage() {
   const router = useRouter()
   const params = useParams()
   const projectId = params.projectId as string
   const treeId = params.treeId as string
-
-  const [tree, setTree] = useState<ExperimentTree | null>(null)
-  const [nodes, setNodes] = useState<TreeNode[]>([])
-  const [selectedNode, setSelectedNode] = useState<TreeNode | null>(null)
-  const [treeSidebarOpen, setTreeSidebarOpen] = useState(true)
+  
+  const [experimentNodes, setExperimentNodes] = useState<ExperimentNode[]>([])
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [user, setUser] = useState<User | null>(null)
-  const [editNodeOpen, setEditNodeOpen] = useState(false)
-  const [nodeToEdit, setNodeToEdit] = useState<TreeNode | null>(null)
-  const [activeTab, setActiveTab] = useState("content")
+  const [treeInfo, setTreeInfo] = useState<{name: string, description: string, status: string, category: string} | null>(null)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [showEditForm, setShowEditForm] = useState(false)
+  const [editing, setEditing] = useState(false)
   
-  // Tab edit states
-  const [editContentOpen, setEditContentOpen] = useState(false)
-  const [editAttachmentsOpen, setEditAttachmentsOpen] = useState(false)
-  const [editLinksOpen, setEditLinksOpen] = useState(false)
-  const [editMetadataOpen, setEditMetadataOpen] = useState(false)
+  // Tab editing states
+  const [editingContent, setEditingContent] = useState(false)
+  const [editingAttachments, setEditingAttachments] = useState(false)
+  const [editingLinks, setEditingLinks] = useState(false)
+  const [editingMetadata, setEditingMetadata] = useState(false)
   
-  // Tab data states
-  const [nodeContent, setNodeContent] = useState("")
-  const [nodeAttachments, setNodeAttachments] = useState<Attachment[]>([])
-  const [nodeLinks, setNodeLinks] = useState<Link[]>([])
-  const [nodeMetadata, setNodeMetadata] = useState<MetadataField[]>([])
+  // Temporary edit states
+  const [tempContent, setTempContent] = useState('')
+  const [tempAttachments, setTempAttachments] = useState<ExperimentNode['attachments']>([])
+  const [tempLinks, setTempLinks] = useState<ExperimentNode['links']>([])
+  const [tempMetadata, setTempMetadata] = useState<ExperimentNode['metadata'] | null>(null)
+  
+  // Modal states
+  const [showAddAttachmentModal, setShowAddAttachmentModal] = useState(false)
+  const [showEditAttachmentModal, setShowEditAttachmentModal] = useState(false)
+  const [showAddLinkModal, setShowAddLinkModal] = useState(false)
+  const [showEditLinkModal, setShowEditLinkModal] = useState(false)
+  const [editingAttachment, setEditingAttachment] = useState<ExperimentNode['attachments'][0] | null>(null)
+  const [editingLink, setEditingLink] = useState<ExperimentNode['links'][0] | null>(null)
+  const [showVideoModal, setShowVideoModal] = useState(false)
+  const [videoAttachment, setVideoAttachment] = useState<ExperimentNode['attachments'][0] | null>(null)
+  
+  const selectedNode = experimentNodes.find(node => node.id === selectedNodeId) || null
 
+  // Fetch tree information
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = onAuthStateChange((user) => {
-      if (user) {
-        setUser(user)
-        fetchTree()
-        fetchNodes()
-      } else {
-        setUser(null)
-        router.push("/login")
-      }
-    })
-
-    // Get initial user
-    getCurrentUser().then((user) => {
-      if (user) {
-        setUser(user)
-        fetchTree()
-        fetchNodes()
-      } else {
-        router.push("/login")
-      }
-    }).catch(() => {
-      router.push("/login")
-    })
-
-    return () => {
-      subscription?.unsubscribe()
-    }
-  }, [router, projectId, treeId])
-
-  const fetchTree = async () => {
-    try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError || !session) {
-        throw new Error('Not authenticated')
-      }
-
-      const response = await fetch(`/api/projects/${projectId}/trees/${treeId}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || 'Failed to fetch experiment tree')
-      }
-
-      const { tree } = await response.json()
-      setTree(tree)
-    } catch (err: any) {
-      console.error('Error fetching tree:', err)
-      setError(err.message || 'Failed to load experiment tree')
-    }
-  }
-
-  const fetchNodes = async () => {
-    try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError || !session) {
-        throw new Error('Not authenticated')
-      }
-
-      const response = await fetch(`/api/trees/${treeId}/nodes`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || 'Failed to fetch nodes')
-      }
-
-      const { nodes } = await response.json()
-      setNodes(nodes)
-    } catch (err: any) {
-      console.error('Error fetching nodes:', err)
-      // Don't set error for nodes, just log it
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleLogout = async () => {
-    try {
-      await signOut()
-      router.push("/")
-    } catch (error) {
-      console.error('Error signing out:', error)
-    }
-  }
-
-  const handleNodeAdded = (newNode: TreeNode) => {
-    setNodes([...nodes, newNode])
-    // Update tree node count
-    if (tree) {
-      setTree({
-        ...tree,
-        node_count: tree.node_count + 1,
-        node_types: {
-          ...tree.node_types,
-          [newNode.node_type]: tree.node_types[newNode.node_type] + 1
+    const fetchTreeInfo = async () => {
+      try {
+        const response = await fetch(`/api/trees/${treeId}`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch tree information')
         }
-      })
-    }
-  }
-
-  const handleNodeUpdated = (updatedNode: TreeNode) => {
-    setNodes(nodes.map(node => node.id === updatedNode.id ? updatedNode : node))
-    if (selectedNode?.id === updatedNode.id) {
-      setSelectedNode(updatedNode)
-      setNodeContent(updatedNode.description || "")
-    }
-  }
-
-  const handleNodeDeleted = async (nodeToDelete: TreeNode) => {
-    try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError || !session) {
-        throw new Error('Not authenticated')
+        const data = await response.json()
+        setTreeInfo({
+          name: data.tree.name,
+          description: data.tree.description,
+          status: data.tree.status,
+          category: data.tree.category
+        })
+      } catch (err) {
+        console.error('Error fetching tree info:', err)
       }
+    }
 
-      const response = await fetch(`/api/trees/${treeId}/nodes/${nodeToDelete.id}`, {
-        method: 'DELETE',
+    fetchTreeInfo()
+  }, [treeId])
+
+  // Fetch nodes from Supabase
+  useEffect(() => {
+    const fetchNodes = async () => {
+      try {
+        setLoading(true)
+        
+        // For now, no authentication required
+        // TODO: Implement proper project ownership and member system
+        const response = await fetch(`/api/trees/${treeId}/nodes`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch nodes')
+        }
+        const data = await response.json()
+        setExperimentNodes(data.nodes)
+        
+        // Select the first node if available
+        if (data.nodes.length > 0) {
+          setSelectedNodeId(data.nodes[0].id)
+        }
+      } catch (err) {
+        console.error('Error fetching nodes:', err)
+        setError('Failed to load experiment tree nodes')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchNodes()
+  }, [treeId])
+
+  // Create new node
+  const createNode = async (name: string, description: string, nodeType: string) => {
+    try {
+      setCreating(true)
+      
+      const requestData = {
+        name,
+        description,
+        node_type: nodeType,
+        position: experimentNodes.length + 1, // Add at the end
+        content: '' // Empty content initially
+      }
+      
+      console.log('Creating node with data:', requestData)
+      console.log('Tree ID:', treeId)
+      
+      const response = await fetch(`/api/trees/${treeId}/nodes`, {
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
         },
+        body: JSON.stringify(requestData),
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || 'Failed to delete node')
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.details ? 
+          `${errorData.error}: ${errorData.details}` : 
+          errorData.error || 'Failed to create node'
+        throw new Error(errorMessage)
       }
 
-      setNodes(nodes.filter(node => node.id !== nodeToDelete.id))
-      if (selectedNode?.id === nodeToDelete.id) {
-        setSelectedNode(null)
+      const data = await response.json()
+      
+      // Transform the new node to match our interface
+      const newNode: ExperimentNode = {
+        id: data.node.id,
+        title: data.node.name,
+        description: data.node.description,
+        type: data.node.node_type,
+        status: 'draft',
+        position: data.node.position,
+        content: '',
+        attachments: [],
+        links: [],
+        metadata: {
+          created: data.node.created_at,
+          updated: data.node.updated_at,
+          type: data.node.node_type,
+          position: data.node.position
+        }
       }
-
-      // Update tree node count
-      if (tree) {
-        setTree({
-          ...tree,
-          node_count: tree.node_count - 1,
-          node_types: {
-            ...tree.node_types,
-            [nodeToDelete.node_type]: tree.node_types[nodeToDelete.node_type] - 1
-          }
-        })
-      }
-    } catch (err: any) {
-      console.error('Error deleting node:', err)
-      alert('Failed to delete node: ' + err.message)
+      
+      setExperimentNodes(prev => [...prev, newNode])
+      setSelectedNodeId(newNode.id) // Select the new node
+      setShowCreateForm(false)
+    } catch (err) {
+      console.error('Error creating node:', err)
+      alert('Failed to create node: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setCreating(false)
     }
   }
 
-  const handleNodeMove = async (nodeId: string, newPosition: number) => {
+  // Edit node
+  const editNode = async (nodeId: string, name: string, description: string, nodeType: string, content?: string) => {
     try {
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError || !session) {
-        throw new Error('Not authenticated')
-      }
-
+      setEditing(true)
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          position: newPosition
-        }),
+          name: name.trim(),
+          description: description.trim(),
+          node_type: nodeType,
+          content: content || ''
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to update node')
+      }
+      
+      // Refresh the nodes list by updating the state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === nodeId 
+          ? { ...node, title: name, description, type: nodeType, content: content || '' }
+          : node
+      ))
+      setShowEditForm(false)
+    } catch (err) {
+      console.error('Error updating node:', err)
+      alert(err instanceof Error ? err.message : 'Failed to update node')
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  // Content editing functions
+  const startEditingContent = () => {
+    if (selectedNode) {
+      setTempContent(selectedNode.content)
+      setEditingContent(true)
+    }
+  }
+
+  const cancelEditingContent = () => {
+    setEditingContent(false)
+    setTempContent('')
+  }
+
+  const saveContent = async () => {
+    if (!selectedNode) return
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: selectedNode.title,
+          description: selectedNode.description,
+          node_type: selectedNode.type,
+          content: tempContent,
+          status: 'draft'
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to save content')
+      }
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { ...node, content: tempContent }
+          : node
+      ))
+      
+      setEditingContent(false)
+      setTempContent('')
+    } catch (err) {
+      console.error('Error saving content:', err)
+      alert('Failed to save content')
+    }
+  }
+
+  // Attachment management functions
+  const addAttachment = async (name: string, fileType: string, fileSize: number, fileUrl: string, description: string) => {
+    if (!selectedNode) return
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/attachments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name,
+          file_type: fileType,
+          file_size: fileSize,
+          file_url: fileUrl,
+          description
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to add attachment')
+      }
+      
+      const { attachment } = await response.json()
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { ...node, attachments: [...node.attachments, attachment] }
+          : node
+      ))
+    } catch (err) {
+      console.error('Error adding attachment:', err)
+      alert('Failed to add attachment')
+    }
+  }
+
+  const updateAttachment = async (attachmentId: string, name: string, fileType: string, fileSize: number, fileUrl: string, description: string) => {
+    if (!selectedNode) return
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/attachments/${attachmentId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name,
+          file_type: fileType,
+          file_size: fileSize,
+          file_url: fileUrl,
+          description
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to update attachment')
+      }
+      
+      const { attachment } = await response.json()
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { 
+              ...node, 
+              attachments: node.attachments.map(att => 
+                att.id === attachmentId ? attachment : att
+              )
+            }
+          : node
+      ))
+    } catch (err) {
+      console.error('Error updating attachment:', err)
+      alert('Failed to update attachment')
+    }
+  }
+
+  const deleteAttachment = async (attachmentId: string) => {
+    if (!selectedNode) return
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/attachments/${attachmentId}`, {
+        method: 'DELETE'
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete attachment')
+      }
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { 
+              ...node, 
+              attachments: node.attachments.filter(att => att.id !== attachmentId)
+            }
+          : node
+      ))
+    } catch (err) {
+      console.error('Error deleting attachment:', err)
+      alert('Failed to delete attachment')
+    }
+  }
+
+  // Link management functions
+  const addLink = async (name: string, url: string, description: string, linkType: string) => {
+    if (!selectedNode) return
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/links`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name,
+          url,
+          description,
+          link_type: linkType
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to add link')
+      }
+      
+      const { link } = await response.json()
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { ...node, links: [...node.links, link] }
+          : node
+      ))
+    } catch (err) {
+      console.error('Error adding link:', err)
+      alert('Failed to add link')
+    }
+  }
+
+  const updateLink = async (linkId: string, name: string, url: string, description: string, linkType: string) => {
+    if (!selectedNode) return
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/links/${linkId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name,
+          url,
+          description,
+          link_type: linkType
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to update link')
+      }
+      
+      const { link } = await response.json()
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { 
+              ...node, 
+              links: node.links.map(l => 
+                l.id === linkId ? link : l
+              )
+            }
+          : node
+      ))
+    } catch (err) {
+      console.error('Error updating link:', err)
+      alert('Failed to update link')
+    }
+  }
+
+  const deleteLink = async (linkId: string) => {
+    if (!selectedNode) return
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/links/${linkId}`, {
+        method: 'DELETE'
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete link')
+      }
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { 
+              ...node, 
+              links: node.links.filter(l => l.id !== linkId)
+            }
+          : node
+      ))
+    } catch (err) {
+      console.error('Error deleting link:', err)
+      alert('Failed to delete link')
+    }
+  }
+
+  // Metadata editing functions
+  const startEditingMetadata = () => {
+    if (selectedNode) {
+      setTempMetadata(selectedNode.metadata)
+      setEditingMetadata(true)
+    }
+  }
+
+  const cancelEditingMetadata = () => {
+    setEditingMetadata(false)
+    setTempMetadata(null)
+  }
+
+  const saveMetadata = async (newType: string, newPosition: number, newStatus: string) => {
+    if (!selectedNode) return
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: selectedNode.title,
+          description: selectedNode.description,
+          node_type: newType,
+          position: newPosition,
+          content: selectedNode.content,
+          status: newStatus
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to save metadata')
+      }
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { 
+              ...node, 
+              type: newType,
+              status: newStatus,
+              position: newPosition,
+              metadata: {
+                ...node.metadata,
+                type: newType,
+                position: newPosition,
+                updated: new Date().toISOString()
+              }
+            }
+          : node
+      ))
+      
+      setEditingMetadata(false)
+      setTempMetadata(null)
+    } catch (err) {
+      console.error('Error saving metadata:', err)
+      alert('Failed to save metadata')
+    }
+  }
+
+  // Delete node
+  const deleteNode = async (nodeId: string) => {
+    if (!confirm('Are you sure you want to delete this node? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
+        method: 'DELETE'
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || 'Failed to move node')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete node')
       }
 
-      const { node: updatedNode } = await response.json()
-      setNodes(nodes.map(node => node.id === updatedNode.id ? updatedNode : node))
-    } catch (err: any) {
-      console.error('Error moving node:', err)
-      alert('Failed to move node: ' + err.message)
-    }
-  }
-
-  const handleNodeEdit = (node: TreeNode) => {
-    setNodeToEdit(node)
-    setEditNodeOpen(true)
-  }
-
-  const handleNodeSelect = (node: TreeNode) => {
-    setSelectedNode(node)
-    setNodeContent(node.description || "")
-    // Reset tab data when selecting a new node
-    setNodeAttachments([])
-    setNodeLinks([])
-    setNodeMetadata([])
-  }
-
-  const handleContentUpdated = (content: string) => {
-    setNodeContent(content)
-    // Update the selected node's description
-    if (selectedNode) {
-      const updatedNode = { ...selectedNode, description: content }
-      setSelectedNode(updatedNode)
-      setNodes(nodes.map(node => node.id === updatedNode.id ? updatedNode : node))
-    }
-  }
-
-  const handleAttachmentsUpdated = (attachments: Attachment[]) => {
-    setNodeAttachments(attachments)
-  }
-
-  const handleLinksUpdated = (links: Link[]) => {
-    setNodeLinks(links)
-  }
-
-  const handleMetadataUpdated = (metadata: MetadataField[]) => {
-    setNodeMetadata(metadata)
-  }
-
-  const getNodeIcon = (nodeType: string) => {
-    switch (nodeType) {
-      case "data":
-        return <CircleStackIcon className="h-4 w-4" />
-      case "software_completed":
-        return <CpuChipIcon className="h-4 w-4" />
-      case "software_development":
-        return <WrenchScrewdriverIcon className="h-4 w-4" />
-      case "results":
-        return <ChartBarIcon className="h-4 w-4" />
-      case "protocols":
-        return <DocumentTextIcon className="h-4 w-4" />
-      case "final_outputs":
-        return <DocumentArrowDownIcon className="h-4 w-4" />
-      default:
-        return <DocumentTextIcon className="h-4 w-4" />
-    }
-  }
-
-  const getNodeTypeColor = (nodeType: string) => {
-    switch (nodeType) {
-      case "data":
-        return "bg-blue-100 text-blue-800"
-      case "software_completed":
-        return "bg-green-100 text-green-800"
-      case "software_development":
-        return "bg-yellow-100 text-yellow-800"
-      case "results":
-        return "bg-purple-100 text-purple-800"
-      case "protocols":
-        return "bg-orange-100 text-orange-800"
-      case "final_outputs":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
-
-  const getNodeTypeLabel = (nodeType: string) => {
-    switch (nodeType) {
-      case "data":
-        return "Data"
-      case "software_completed":
-        return "Software (Completed)"
-      case "software_development":
-        return "Software (Development)"
-      case "results":
-        return "Results"
-      case "protocols":
-        return "Protocols"
-      case "final_outputs":
-        return "Final Outputs"
-      default:
-        return nodeType
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active":
-        return "bg-green-100 text-green-800"
-      case "completed":
-        return "bg-blue-100 text-blue-800"
-      case "draft":
-        return "bg-gray-100 text-gray-800"
-      case "archived":
-        return "bg-yellow-100 text-yellow-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
-
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case "protocol":
-        return "bg-purple-100 text-purple-800"
-      case "analysis":
-        return "bg-blue-100 text-blue-800"
-      case "data_collection":
-        return "bg-orange-100 text-orange-800"
-      case "results":
-        return "bg-green-100 text-green-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+      setExperimentNodes(prev => prev.filter(node => node.id !== nodeId))
+      
+      // If the deleted node was selected, clear the selection
+      if (selectedNodeId === nodeId) {
+        setSelectedNodeId(null)
+      }
+    } catch (err) {
+      console.error('Error deleting node:', err)
+      alert('Failed to delete node: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center pt-20">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <h1 className="text-2xl font-bold text-foreground mb-4">Loading Experiment Tree...</h1>
-          <p className="text-muted-foreground">Please wait while we fetch your experiment tree.</p>
+          <p className="text-muted-foreground">Loading experiment tree...</p>
         </div>
       </div>
     )
   }
 
-  if (error || !tree) {
+  if (error) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-foreground mb-4">Experiment Tree Not Found</h1>
-          <p className="text-muted-foreground mb-6">
-            {error || "The experiment tree you're looking for doesn't exist."}
-          </p>
-          <Button onClick={() => router.push(`/project/${projectId}`)}>
-            <ArrowLeftIcon className="h-4 w-4 mr-2" />
-            Back to Project
-          </Button>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center pt-20">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <CardTitle className="text-red-500">Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>{error}</p>
+            <Button onClick={() => router.push(`/project/${projectId}`)} className="mt-4">
+              Back to Project
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" onClick={() => router.push(`/project/${projectId}`)}>
-                <ArrowLeftIcon className="h-4 w-4 mr-2" />
-                Back to Project
-              </Button>
-              <Separator orientation="vertical" className="h-6" />
-              <div className="flex items-center space-x-2">
-                <BeakerIcon className="h-6 w-6 text-primary" />
-                <h1 className="text-lg font-semibold text-foreground">{tree.name}</h1>
-              </div>
-            </div>
-            <div className="flex items-center space-x-2">
-              {user && (
-                <div className="flex items-center space-x-3 mr-4">
-                  <Avatar className="h-6 w-6">
-                    <AvatarFallback className="text-xs">
-                      {user.full_name ? user.full_name.charAt(0).toUpperCase() : "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="text-sm font-medium text-foreground">{user.full_name || user.email}</span>
-                </div>
-              )}
-              <Button variant="outline" size="sm">
-                <CogIcon className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                <ArrowRightOnRectangleIcon className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
       {/* Main Content */}
-      <main className="flex h-[calc(100vh-4rem)]">
-        {/* Left Sidebar - Experiment Steps */}
-        <div className={cn(
-          "w-80 border-r border-border bg-card transition-all duration-300 flex flex-col",
-          treeSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        )}>
-          {/* Steps Header */}
-          <div className="p-3 border-b border-border flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-foreground">Experiment Steps</h2>
-              <div className="flex items-center space-x-2">
-                <AddNodeForm treeId={treeId} nodes={nodes} onNodeAdded={handleNodeAdded} />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setTreeSidebarOpen(!treeSidebarOpen)}
-                  className="lg:hidden h-6 w-6 p-0"
-                >
-                  <XMarkIcon className="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Experiment Steps List - Fixed height with scrolling */}
-          <div className="flex-1 overflow-hidden">
-            <ScrollArea className="h-full p-3">
-              <ExperimentStepsList
-                nodes={nodes}
-                selectedNode={selectedNode}
-                onNodeSelect={handleNodeSelect}
-                onNodeEdit={handleNodeEdit}
-                onNodeDelete={handleNodeDeleted}
-                onNodeMove={handleNodeMove}
-              />
-            </ScrollArea>
-          </div>
-
-          {/* Tree Info Blocks */}
-          <div className="border-t border-border p-3 space-y-3 flex-shrink-0">
-            {/* Tree Overview */}
-            <div className="space-y-1">
-              <h3 className="text-xs font-medium text-foreground">Tree Overview</h3>
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status:</span>
-                  <Badge className={cn("text-xs px-1.5 py-0.5", getStatusColor(tree.status))}>
-                    {tree.status}
-                  </Badge>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Category:</span>
-                  <Badge className={cn("text-xs px-1.5 py-0.5", getCategoryColor(tree.category))}>
-                    {tree.category}
-                  </Badge>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Steps:</span>
-                  <span className="text-foreground">{tree.node_count}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Node Type Breakdown */}
-            <div className="space-y-1">
-              <h3 className="text-xs font-medium text-foreground">Step Types</h3>
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Data:</span>
-                  <span className="text-foreground">{tree.node_types.data}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Software (Completed):</span>
-                  <span className="text-foreground">{tree.node_types.software_completed}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Software (Development):</span>
-                  <span className="text-foreground">{tree.node_types.software_development}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Results:</span>
-                  <span className="text-foreground">{tree.node_types.results}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Protocols:</span>
-                  <span className="text-foreground">{tree.node_types.protocols}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Final Outputs:</span>
-                  <span className="text-foreground">{tree.node_types.final_outputs}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+      <div className="container mx-auto px-4 py-8 pt-20">
+        {/* Back Button */}
+        <div className="mb-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push(`/project/${projectId}`)}
+            className="flex items-center space-x-2"
+          >
+            <ArrowLeftIcon className="h-4 w-4" />
+            <span>Back to Project</span>
+          </Button>
         </div>
 
-        {/* Main Content Area - Node Details */}
-        <div className="flex-1 flex flex-col">
-          {/* Mobile Sidebar Toggle */}
-          <div className="lg:hidden p-4 border-b border-border">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setTreeSidebarOpen(!treeSidebarOpen)}
-            >
-              <Bars3Icon className="h-4 w-4 mr-2" />
-              {treeSidebarOpen ? "Hide Steps" : "Show Steps"}
-            </Button>
+        {/* Tree Information Header */}
+        {treeInfo && (
+          <div className="mb-8">
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-2xl mb-2">{treeInfo.name}</CardTitle>
+                    {treeInfo.description && (
+                      <CardDescription className="text-base mb-4">
+                        {treeInfo.description}
+                      </CardDescription>
+                    )}
+                    <div className="flex items-center space-x-4">
+                      <Badge variant="outline" className={
+                        treeInfo.status === 'active' ? 'bg-green-100 text-green-800' :
+                        treeInfo.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                        treeInfo.status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                        'bg-orange-100 text-orange-800'
+                      }>
+                        {treeInfo.status}
+                      </Badge>
+                      <Badge variant="outline">
+                        {treeInfo.category}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+            </Card>
           </div>
+        )}
+        
+        <div className="grid lg:grid-cols-4 gap-8">
+          {/* Left Sidebar - Experiment Steps */}
+          <div className="lg:col-span-1 space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Experiment Steps</CardTitle>
+                    <CardDescription>
+                      Click on a step to view details
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowCreateForm(true)}
+                    className="flex items-center space-x-1"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    <span>Add</span>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {experimentNodes.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No experiment steps yet.</p>
+                      <p className="text-sm">Click "Add" to create your first step.</p>
+                    </div>
+                  ) : (
+                    experimentNodes.map((node) => {
+                      const isSelected = selectedNodeId === node.id
+                      const getStatusColor = (status: string) => {
+                        switch (status) {
+                          case 'completed': return 'bg-green-500'
+                          case 'in-progress': return 'bg-orange-500'
+                          case 'pending': return 'bg-gray-400'
+                          default: return 'bg-blue-500'
+                        }
+                      }
+                      
+                      return (
+                        <div 
+                          key={node.id}
+                          className={`border rounded-lg p-3 cursor-pointer transition-all duration-200 ${
+                            isSelected 
+                              ? 'bg-primary/10 border-primary shadow-md' 
+                              : 'hover:bg-muted/50'
+                          }`}
+                          onClick={() => setSelectedNodeId(node.id)}
+                        >
+                          <div className="flex items-center space-x-2">
+                            <div className={`w-2 h-2 ${getStatusColor(node.status)} rounded-full`}></div>
+                            <span className={`text-sm font-medium ${isSelected ? 'text-primary' : ''}`}>
+                              {node.title}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {node.type} {node.status === 'completed' ? '(Completed)' : node.status === 'in-progress' ? '(In Progress)' : ''}
+                          </p>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
-          {/* Node Content */}
-          <div className="flex-1 p-6">
-            {selectedNode ? (
-              <div className="h-full flex flex-col">
-                {/* Node Header */}
-                <div className="mb-6">
-                  <div className="flex items-center space-x-3 mb-2">
-                    {getNodeIcon(selectedNode.node_type)}
-                    <h1 className="text-2xl font-bold text-foreground">{selectedNode.name}</h1>
-                    <Badge className={getNodeTypeColor(selectedNode.node_type)}>
-                      {getNodeTypeLabel(selectedNode.node_type)}
+            <Card>
+              <CardHeader>
+                <CardTitle>Tree Overview</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Status:</span>
+                    <Badge className={
+                      treeInfo?.status === 'active' ? 'bg-green-100 text-green-800' :
+                      treeInfo?.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                      treeInfo?.status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                      'bg-orange-100 text-orange-800'
+                    }>
+                      {treeInfo?.status || 'Unknown'}
                     </Badge>
                   </div>
-                  <p className="text-muted-foreground">
-                    {selectedNode.description || "No description provided"}
-                  </p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Category:</span>
+                    <Badge variant="outline">{treeInfo?.category || 'Unknown'}</Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Steps:</span>
+                    <span>{experimentNodes.length}</span>
+                  </div>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
 
-                {/* Node Content Tabs - Full width with new order */}
-                <div className="flex-1 flex flex-col">
-                  <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-                    <TabsList className="grid w-full grid-cols-4 mb-4">
+          {/* Right Column - Node Details */}
+          <div className="lg:col-span-3">
+            {selectedNode ? (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>{selectedNode.title}</CardTitle>
+                      <CardDescription>
+                        {selectedNode.description}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowEditForm(true)}
+                        className="flex items-center space-x-1"
+                      >
+                        <PencilIcon className="h-4 w-4" />
+                        <span>Edit</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => deleteNode(selectedNode.id)}
+                        className="flex items-center space-x-1 text-destructive hover:text-destructive"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                        <span>Delete</span>
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="content" className="space-y-4">
+                    <TabsList className="grid w-full grid-cols-4">
                       <TabsTrigger value="content">Content</TabsTrigger>
                       <TabsTrigger value="attachments">Attachments</TabsTrigger>
                       <TabsTrigger value="links">Links</TabsTrigger>
                       <TabsTrigger value="metadata">Metadata</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="content" className="flex-1">
-                      <Card className="h-full">
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <div>
-                            <CardTitle>Content</CardTitle>
-                            <CardDescription>
-                              Main content for this step - descriptions, instructions, or detailed information.
-                            </CardDescription>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEditContentOpen(true)}
-                          >
-                            <PencilIcon className="h-4 w-4 mr-2" />
-                            Edit
-                          </Button>
-                        </CardHeader>
-                        <CardContent className="flex-1">
-                          {nodeContent ? (
-                            <div className="h-full border rounded-md p-4">
-                              <pre className="whitespace-pre-wrap text-sm">{nodeContent}</pre>
-                            </div>
-                          ) : (
-                            <div className="h-full border border-dashed rounded-md p-6 text-center text-muted-foreground flex items-center justify-center">
-                              <div>
-                                <DocumentTextIcon className="h-8 w-8 mx-auto mb-2" />
-                                <p>No content yet. Click Edit to add content.</p>
-                              </div>
-                            </div>
+                    <TabsContent value="content">
+                      <div className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="font-medium">Content</h4>
+                          {!editingContent && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={startEditingContent}
+                              className="flex items-center space-x-1"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                              <span>Edit</span>
+                            </Button>
                           )}
-                        </CardContent>
-                      </Card>
+                        </div>
+                        
+                        {editingContent ? (
+                          <div className="space-y-4">
+                            <textarea
+                              value={tempContent}
+                              onChange={(e) => setTempContent(e.target.value)}
+                              placeholder="Enter content for this node..."
+                              className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                              rows={6}
+                            />
+                            <div className="flex space-x-2">
+                              <Button
+                                size="sm"
+                                onClick={saveContent}
+                                className="flex items-center space-x-1"
+                              >
+                                <span>Save</span>
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={cancelEditingContent}
+                                className="flex items-center space-x-1"
+                              >
+                                <span>Cancel</span>
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm whitespace-pre-wrap">
+                            {selectedNode.content || 'No content available. Click Edit to add content.'}
+                          </div>
+                        )}
+                      </div>
                     </TabsContent>
 
-                    <TabsContent value="attachments" className="flex-1">
-                      <Card className="h-full">
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <div>
-                            <CardTitle>Attachments</CardTitle>
-                            <CardDescription>
-                              Files, documents, and media associated with this step.
-                            </CardDescription>
-                          </div>
+                    <TabsContent value="attachments">
+                      <div className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="font-medium">Attachments</h4>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setEditAttachmentsOpen(true)}
+                            onClick={() => setEditingAttachments(!editingAttachments)}
+                            className="flex items-center space-x-1"
                           >
-                            <PencilIcon className="h-4 w-4 mr-2" />
-                            Edit
+                            <PencilIcon className="h-4 w-4" />
+                            <span>{editingAttachments ? 'Done' : 'Edit'}</span>
                           </Button>
-                        </CardHeader>
-                        <CardContent className="flex-1">
-                          {nodeAttachments.length > 0 ? (
-                            <div className="space-y-4">
-                              {nodeAttachments.map((attachment) => (
-                                <div key={attachment.id}>
-                                  {isVideoUrl(attachment.url) ? (
-                                    <VideoEmbed
-                                      url={attachment.url}
-                                      title={attachment.name}
-                                      type={attachment.type}
-                                    />
-                                  ) : (
-                                    <Card>
-                                      <CardContent className="p-3">
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex items-center space-x-2">
-                                            <Badge variant="outline">{attachment.type}</Badge>
-                                            <span className="text-sm font-medium">{attachment.name}</span>
-                                          </div>
-                                          <a
-                                            href={attachment.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-sm text-blue-600 hover:underline"
-                                          >
-                                            View
-                                          </a>
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="h-full border border-dashed rounded-md p-6 text-center text-muted-foreground flex items-center justify-center">
-                              <div>
-                                <DocumentArrowDownIcon className="h-8 w-8 mx-auto mb-2" />
-                                <p>No attachments yet. Click Edit to add files.</p>
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-
-                    <TabsContent value="links" className="flex-1">
-                      <Card className="h-full">
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <div>
-                            <CardTitle>Links</CardTitle>
-                            <CardDescription>
-                              External links, GitHub repositories, documentation, and related resources.
-                            </CardDescription>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEditLinksOpen(true)}
-                          >
-                            <PencilIcon className="h-4 w-4 mr-2" />
-                            Edit
-                          </Button>
-                        </CardHeader>
-                        <CardContent className="flex-1">
-                          {nodeLinks.length > 0 ? (
-                            <div className="space-y-4">
-                              {nodeLinks.map((link) => (
-                                <div key={link.id}>
-                                  {isVideoUrl(link.url) ? (
-                                    <VideoEmbed
-                                      url={link.url}
-                                      title={link.name}
-                                      type={link.type}
-                                    />
-                                  ) : (
-                                    <Card>
-                                      <CardContent className="p-3">
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex items-center space-x-2">
-                                            <LinkIcon className="h-4 w-4 text-muted-foreground" />
-                                            <Badge variant="outline">{link.type}</Badge>
-                                            <span className="text-sm font-medium">{link.name}</span>
-                                          </div>
-                                          <a
-                                            href={link.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-sm text-blue-600 hover:underline"
-                                          >
-                                            View
-                                          </a>
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="h-full border border-dashed rounded-md p-6 text-center text-muted-foreground flex items-center justify-center">
-                              <div>
-                                <LinkIcon className="h-8 w-8 mx-auto mb-2" />
-                                <p>No links yet. Click Edit to add external resources.</p>
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-
-                    <TabsContent value="metadata" className="flex-1">
-                      <Card className="h-full">
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <div>
-                            <CardTitle>Metadata</CardTitle>
-                            <CardDescription>
-                              Technical details, parameters, and configuration information.
-                            </CardDescription>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEditMetadataOpen(true)}
-                          >
-                            <PencilIcon className="h-4 w-4 mr-2" />
-                            Edit
-                          </Button>
-                        </CardHeader>
-                        <CardContent className="flex-1">
-                          {nodeMetadata.length > 0 ? (
-                            <div className="space-y-2">
-                              {nodeMetadata.map((field) => (
-                                <Card key={field.id}>
-                                  <CardContent className="p-3">
-                                    <div className="flex items-center space-x-2">
-                                      <Badge variant="outline">{field.type}</Badge>
-                                      <span className="text-sm font-medium">{field.key}:</span>
-                                      <span className="text-sm text-muted-foreground">{field.value}</span>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          {selectedNode.attachments.length > 0 ? (
+                            selectedNode.attachments.map((attachment) => (
+                              <div key={attachment.id} className="border rounded-lg p-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-3">
+                                    <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center">
+                                      <span className="text-xs font-medium">
+                                        {attachment.file_type === 'PDF' ? 'PDF' : 
+                                         attachment.file_type === 'HTML Report' ? 'HTML' :
+                                         attachment.file_type === 'Image' ? 'IMG' :
+                                         attachment.file_type === 'Log File' ? 'LOG' :
+                                         attachment.file_type === 'CSV' ? 'CSV' : 'FILE'}
+                                      </span>
                                     </div>
-                                  </CardContent>
-                                </Card>
-                              ))}
-                            </div>
+                                    <div>
+                                      <p className="text-sm font-medium">{attachment.name}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {attachment.file_type} • {attachment.file_size ? `${(attachment.file_size / 1024 / 1024).toFixed(1)} MB` : 'Unknown size'}
+                                      </p>
+                                      {attachment.description && (
+                                        <p className="text-xs text-muted-foreground mt-1">{attachment.description}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    {editingAttachments && (
+                                      <>
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm"
+                                          onClick={() => {
+                                            setEditingAttachment(attachment)
+                                            setShowEditAttachmentModal(true)
+                                          }}
+                                        >
+                                          <PencilIcon className="h-4 w-4" />
+                                        </Button>
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm"
+                                          onClick={() => {
+                                            if (confirm('Are you sure you want to delete this attachment?')) {
+                                              deleteAttachment(attachment.id)
+                                            }
+                                          }}
+                                          className="text-destructive hover:text-destructive"
+                                        >
+                                          <TrashIcon className="h-4 w-4" />
+                                        </Button>
+                                      </>
+                                    )}
+                                    {attachment.file_type === 'video/youtube' || attachment.file_type === 'video/file' ? (
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => {
+                                          setVideoAttachment(attachment)
+                                          setShowVideoModal(true)
+                                        }}
+                                      >
+                                        🎥 Watch
+                                      </Button>
+                                    ) : (
+                                      <Button variant="outline" size="sm" asChild>
+                                        <a href={attachment.file_url} target="_blank" rel="noopener noreferrer">
+                                          Download
+                                        </a>
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))
                           ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+                            <div className="border border-dashed rounded-lg p-6 text-center text-muted-foreground">
+                              <p>No attachments yet.</p>
+                              {editingAttachments && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setShowAddAttachmentModal(true)}
+                                  className="mt-2"
+                                >
+                                  <PlusIcon className="h-4 w-4 mr-2" />
+                                  Add Attachment
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                          
+                          {editingAttachments && selectedNode.attachments.length > 0 && (
+                            <div className="border-t pt-4">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowAddAttachmentModal(true)}
+                                className="flex items-center space-x-1"
+                              >
+                                <PlusIcon className="h-4 w-4" />
+                                <span>Add Attachment</span>
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="links">
+                      <div className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="font-medium">Links</h4>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingLinks(!editingLinks)}
+                            className="flex items-center space-x-1"
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                            <span>{editingLinks ? 'Done' : 'Edit'}</span>
+                          </Button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          {selectedNode.links.length > 0 ? (
+                            selectedNode.links.map((link) => (
+                              <div key={link.id} className="border rounded-lg p-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1">
+                                    <p className="text-sm font-medium">{link.name}</p>
+                                    <p className="text-xs text-muted-foreground">{link.url}</p>
+                                    {link.description && (
+                                      <p className="text-xs text-muted-foreground mt-1">{link.description}</p>
+                                    )}
+                                    <Badge variant="outline" className="mt-1 text-xs">
+                                      {link.link_type}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    {editingLinks && (
+                                      <>
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm"
+                                          onClick={() => {
+                                            setEditingLink(link)
+                                            setShowEditLinkModal(true)
+                                          }}
+                                        >
+                                          <PencilIcon className="h-4 w-4" />
+                                        </Button>
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm"
+                                          onClick={() => {
+                                            if (confirm('Are you sure you want to delete this link?')) {
+                                              deleteLink(link.id)
+                                            }
+                                          }}
+                                          className="text-destructive hover:text-destructive"
+                                        >
+                                          <TrashIcon className="h-4 w-4" />
+                                        </Button>
+                                      </>
+                                    )}
+                                    <Button variant="outline" size="sm" asChild>
+                                      <a href={link.url} target="_blank" rel="noopener noreferrer">
+                                        Open
+                                      </a>
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="border border-dashed rounded-lg p-6 text-center text-muted-foreground">
+                              <p>No links yet.</p>
+                              {editingLinks && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setShowAddLinkModal(true)}
+                                  className="mt-2"
+                                >
+                                  <PlusIcon className="h-4 w-4 mr-2" />
+                                  Add Link
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                          
+                          {editingLinks && selectedNode.links.length > 0 && (
+                            <div className="border-t pt-4">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowAddLinkModal(true)}
+                                className="flex items-center space-x-1"
+                              >
+                                <PlusIcon className="h-4 w-4" />
+                                <span>Add Link</span>
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="metadata">
+                      <div className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="font-medium">Metadata</h4>
+                          {!editingMetadata && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={startEditingMetadata}
+                              className="flex items-center space-x-1"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                              <span>Edit</span>
+                            </Button>
+                          )}
+                        </div>
+                        
+                        {editingMetadata && tempMetadata ? (
+                          <MetadataEditForm
+                            metadata={tempMetadata}
+                            status={selectedNode.status}
+                            onSave={saveMetadata}
+                            onCancel={cancelEditingMetadata}
+                          />
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <h4 className="font-medium mb-2">Step Information</h4>
                                 <div className="space-y-2 text-sm">
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Type:</span>
-                                    <Badge className={getNodeTypeColor(selectedNode.node_type)}>
-                                      {getNodeTypeLabel(selectedNode.node_type)}
-                                    </Badge>
+                                    <Badge>{selectedNode.metadata.type}</Badge>
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Position:</span>
-                                    <span>{selectedNode.position || "Not set"}</span>
+                                    <span>{selectedNode.metadata.position}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Status:</span>
+                                    <Badge variant={selectedNode.status === 'completed' ? 'default' : 'secondary'}>
+                                      {selectedNode.status}
+                                    </Badge>
                                   </div>
                                 </div>
                               </div>
@@ -885,76 +1131,890 @@ export default function ExperimentTreePage() {
                                 <div className="space-y-2 text-sm">
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Created:</span>
-                                    <span>{new Date(selectedNode.created_at).toLocaleDateString()}</span>
+                                    <span>{new Date(selectedNode.metadata.created).toLocaleDateString()}</span>
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Updated:</span>
-                                    <span>{new Date(selectedNode.updated_at).toLocaleDateString()}</span>
+                                    <span>{new Date(selectedNode.metadata.updated).toLocaleDateString()}</span>
                                   </div>
                                 </div>
                               </div>
                             </div>
-                          )}
-                        </CardContent>
-                      </Card>
+                          </div>
+                        )}
+                      </div>
                     </TabsContent>
                   </Tabs>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <BeakerIcon className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                  <h2 className="text-xl font-semibold text-foreground mb-2">No Step Selected</h2>
-                  <p className="text-muted-foreground mb-6">
-                    Click on a step in the list to view its details and content.
-                  </p>
-                  <Button onClick={() => setTreeSidebarOpen(true)} className="lg:hidden">
-                    <Bars3Icon className="h-4 w-4 mr-2" />
-                    Show Steps
-                  </Button>
-                </div>
-              </div>
+              <Card>
+                <CardContent className="flex items-center justify-center py-12">
+                  <div className="text-center text-muted-foreground">
+                    <p className="text-lg font-medium">No node selected</p>
+                    <p className="text-sm">Click on an experiment step to view its details</p>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </div>
         </div>
-      </main>
+      </div>
 
-      {/* Edit Dialogs */}
-      <EditNodeForm
-        node={nodeToEdit}
-        open={editNodeOpen}
-        onOpenChange={setEditNodeOpen}
-        onNodeUpdated={handleNodeUpdated}
-      />
+      {/* Create Node Modal */}
+      {showCreateForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Create New Node</h3>
+            <CreateNodeForm
+              onSubmit={createNode}
+              onCancel={() => setShowCreateForm(false)}
+              loading={creating}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Edit Node Modal */}
+      {showEditForm && selectedNode && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Edit Node</h3>
+            <EditNodeForm
+              node={selectedNode}
+              onSubmit={(name, description, nodeType, content) => 
+                editNode(selectedNode.id, name, description, nodeType, content)
+              }
+              onCancel={() => setShowEditForm(false)}
+              loading={editing}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Add Attachment Modal */}
+      {showAddAttachmentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Add Attachment</h3>
+            <AddAttachmentForm
+              onSubmit={(name, fileType, fileSize, fileUrl, description) => {
+                addAttachment(name, fileType, fileSize, fileUrl, description)
+                setShowAddAttachmentModal(false)
+              }}
+              onCancel={() => setShowAddAttachmentModal(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Edit Attachment Modal */}
+      {showEditAttachmentModal && editingAttachment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Edit Attachment</h3>
+            <EditAttachmentForm
+              attachment={editingAttachment}
+              onSubmit={(name, fileType, fileSize, fileUrl, description) => {
+                updateAttachment(editingAttachment.id, name, fileType, fileSize, fileUrl, description)
+                setShowEditAttachmentModal(false)
+                setEditingAttachment(null)
+              }}
+              onCancel={() => {
+                setShowEditAttachmentModal(false)
+                setEditingAttachment(null)
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Add Link Modal */}
+      {showAddLinkModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Add Link</h3>
+            <AddLinkForm
+              onSubmit={(name, url, description, linkType) => {
+                addLink(name, url, description, linkType)
+                setShowAddLinkModal(false)
+              }}
+              onCancel={() => setShowAddLinkModal(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Edit Link Modal */}
+      {showEditLinkModal && editingLink && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Edit Link</h3>
+            <EditLinkForm
+              link={editingLink}
+              onSubmit={(name, url, description, linkType) => {
+                updateLink(editingLink.id, name, url, description, linkType)
+                setShowEditLinkModal(false)
+                setEditingLink(null)
+              }}
+              onCancel={() => {
+                setShowEditLinkModal(false)
+                setEditingLink(null)
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Video Viewer Modal */}
+      {showVideoModal && videoAttachment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-4xl mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">{videoAttachment.name}</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowVideoModal(false)
+                  setVideoAttachment(null)
+                }}
+              >
+                ✕
+              </Button>
+            </div>
+            <VideoEmbed
+              url={videoAttachment.file_url}
+              type={videoAttachment.file_type}
+            />
+            {videoAttachment.description && (
+              <p className="text-sm text-muted-foreground mt-4">{videoAttachment.description}</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Create Node Form Component
+function CreateNodeForm({ 
+  onSubmit, 
+  onCancel, 
+  loading 
+}: { 
+  onSubmit: (name: string, description: string, nodeType: string) => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [nodeType, setNodeType] = useState('protocol')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (name.trim()) {
+      onSubmit(name.trim(), description.trim(), nodeType)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Node Name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter node name"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
       
-      <EditContentForm
-        node={selectedNode}
-        open={editContentOpen}
-        onOpenChange={setEditContentOpen}
-        onContentUpdated={handleContentUpdated}
-      />
+      <div>
+        <label className="block text-sm font-medium mb-2">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Enter node description"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={3}
+        />
+      </div>
       
-      <EditAttachmentsForm
-        node={selectedNode}
-        open={editAttachmentsOpen}
-        onOpenChange={setEditAttachmentsOpen}
-        onAttachmentsUpdated={handleAttachmentsUpdated}
-      />
+      <div>
+        <label className="block text-sm font-medium mb-2">Node Type</label>
+        <select
+          value={nodeType}
+          onChange={(e) => setNodeType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="protocol">Protocol</option>
+          <option value="analysis">Analysis</option>
+          <option value="data_collection">Data Collection</option>
+          <option value="results">Results</option>
+        </select>
+      </div>
       
-      <EditLinksForm
-        node={selectedNode}
-        open={editLinksOpen}
-        onOpenChange={setEditLinksOpen}
-        onLinksUpdated={handleLinksUpdated}
-      />
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={loading || !name.trim()} className="flex-1">
+          {loading ? 'Creating...' : 'Create Node'}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function EditNodeForm({ 
+  node,
+  onSubmit, 
+  onCancel, 
+  loading 
+}: { 
+  node: ExperimentNode
+  onSubmit: (name: string, description: string, nodeType: string, content: string) => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  const [name, setName] = useState(node.title)
+  const [description, setDescription] = useState(node.description)
+  const [nodeType, setNodeType] = useState(node.type)
+  const [content, setContent] = useState(node.content)
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (name.trim()) {
+      onSubmit(name.trim(), description.trim(), nodeType, content)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Node Name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter node name"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
       
-      <EditMetadataForm
-        node={selectedNode}
-        open={editMetadataOpen}
-        onOpenChange={setEditMetadataOpen}
-        onMetadataUpdated={handleMetadataUpdated}
-      />
+      <div>
+        <label className="block text-sm font-medium mb-2">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Enter node description"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={3}
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Node Type</label>
+        <select
+          value={nodeType}
+          onChange={(e) => setNodeType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="protocol">Protocol</option>
+          <option value="analysis">Analysis</option>
+          <option value="data_collection">Data Collection</option>
+          <option value="results">Results</option>
+        </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Content</label>
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Enter node content"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={4}
+        />
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={loading || !name.trim()} className="flex-1">
+          {loading ? 'Updating...' : 'Update Node'}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function MetadataEditForm({ 
+  metadata,
+  status,
+  onSave, 
+  onCancel
+}: { 
+  metadata: ExperimentNode['metadata']
+  status: string
+  onSave: (type: string, position: number, status: string) => void
+  onCancel: () => void
+}) {
+  const [nodeType, setNodeType] = useState(metadata.type)
+  const [position, setPosition] = useState(metadata.position)
+  const [nodeStatus, setNodeStatus] = useState(status)
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onSave(nodeType, position, nodeStatus)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Node Type</label>
+        <select
+          value={nodeType}
+          onChange={(e) => setNodeType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="protocol">Protocol</option>
+          <option value="analysis">Analysis</option>
+          <option value="data_collection">Data Collection</option>
+          <option value="results">Results</option>
+        </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Position</label>
+        <input
+          type="number"
+          value={position}
+          onChange={(e) => setPosition(parseInt(e.target.value) || 1)}
+          min="1"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Status</label>
+        <select
+          value={nodeStatus}
+          onChange={(e) => setNodeStatus(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="draft">Draft</option>
+          <option value="pending">Pending</option>
+          <option value="in-progress">In Progress</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" className="flex-1">
+          Save Changes
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Add Attachment Form Component
+function AddAttachmentForm({ 
+  onSubmit, 
+  onCancel
+}: { 
+  onSubmit: (name: string, fileType: string, fileSize: number, fileUrl: string, description: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState('')
+  const [fileType, setFileType] = useState('')
+  const [fileSize, setFileSize] = useState(0)
+  const [fileUrl, setFileUrl] = useState('')
+  const [description, setDescription] = useState('')
+  const [isVideo, setIsVideo] = useState(false)
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (name.trim() && fileUrl.trim()) {
+      onSubmit(name.trim(), fileType, fileSize, fileUrl.trim(), description.trim())
+    }
+  }
+
+  const handleUrlChange = (url: string) => {
+    setFileUrl(url)
+    
+    // Auto-detect YouTube videos
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      setIsVideo(true)
+      setFileType('video/youtube')
+    } else if (url.match(/\.(mp4|avi|mov|wmv|flv|webm|mkv)$/i)) {
+      setIsVideo(true)
+      setFileType('video/file')
+    } else {
+      setIsVideo(false)
+      // Auto-detect file type from URL
+      const extension = url.split('.').pop()?.toLowerCase()
+      if (extension) {
+        switch (extension) {
+          case 'pdf': setFileType('application/pdf'); break
+          case 'doc': case 'docx': setFileType('application/msword'); break
+          case 'xls': case 'xlsx': setFileType('application/vnd.ms-excel'); break
+          case 'jpg': case 'jpeg': case 'png': case 'gif': setFileType('image'); break
+          case 'txt': setFileType('text/plain'); break
+          default: setFileType('application/octet-stream')
+        }
+      }
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter attachment name"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">File URL</label>
+        <input
+          type="url"
+          value={fileUrl}
+          onChange={(e) => handleUrlChange(e.target.value)}
+          placeholder="Enter file URL or YouTube link"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+        {isVideo && (
+          <p className="text-xs text-muted-foreground mt-1">
+            🎥 Video detected - will be embedded for viewing
+          </p>
+        )}
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">File Type</label>
+        <select
+          value={fileType}
+          onChange={(e) => setFileType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">Auto-detect</option>
+          <option value="application/pdf">PDF</option>
+          <option value="application/msword">Word Document</option>
+          <option value="application/vnd.ms-excel">Excel Spreadsheet</option>
+          <option value="image">Image</option>
+          <option value="video/youtube">YouTube Video</option>
+          <option value="video/file">Video File</option>
+          <option value="text/plain">Text File</option>
+          <option value="application/octet-stream">Other</option>
+        </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">File Size (bytes)</label>
+        <input
+          type="number"
+          value={fileSize}
+          onChange={(e) => setFileSize(parseInt(e.target.value) || 0)}
+          placeholder="Enter file size in bytes"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Enter attachment description"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={3}
+        />
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={!name.trim() || !fileUrl.trim()} className="flex-1">
+          Add Attachment
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Edit Attachment Form Component
+function EditAttachmentForm({ 
+  attachment,
+  onSubmit, 
+  onCancel
+}: { 
+  attachment: ExperimentNode['attachments'][0]
+  onSubmit: (name: string, fileType: string, fileSize: number, fileUrl: string, description: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState(attachment.name)
+  const [fileType, setFileType] = useState(attachment.file_type)
+  const [fileSize, setFileSize] = useState(attachment.file_size)
+  const [fileUrl, setFileUrl] = useState(attachment.file_url)
+  const [description, setDescription] = useState(attachment.description)
+  const [isVideo, setIsVideo] = useState(false)
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (name.trim() && fileUrl.trim()) {
+      onSubmit(name.trim(), fileType, fileSize, fileUrl.trim(), description.trim())
+    }
+  }
+
+  const handleUrlChange = (url: string) => {
+    setFileUrl(url)
+    
+    // Auto-detect YouTube videos
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      setIsVideo(true)
+      setFileType('video/youtube')
+    } else if (url.match(/\.(mp4|avi|mov|wmv|flv|webm|mkv)$/i)) {
+      setIsVideo(true)
+      setFileType('video/file')
+    } else {
+      setIsVideo(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter attachment name"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">File URL</label>
+        <input
+          type="url"
+          value={fileUrl}
+          onChange={(e) => handleUrlChange(e.target.value)}
+          placeholder="Enter file URL or YouTube link"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+        {isVideo && (
+          <p className="text-xs text-muted-foreground mt-1">
+            🎥 Video detected - will be embedded for viewing
+          </p>
+        )}
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">File Type</label>
+        <select
+          value={fileType}
+          onChange={(e) => setFileType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="application/pdf">PDF</option>
+          <option value="application/msword">Word Document</option>
+          <option value="application/vnd.ms-excel">Excel Spreadsheet</option>
+          <option value="image">Image</option>
+          <option value="video/youtube">YouTube Video</option>
+          <option value="video/file">Video File</option>
+          <option value="text/plain">Text File</option>
+          <option value="application/octet-stream">Other</option>
+        </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">File Size (bytes)</label>
+        <input
+          type="number"
+          value={fileSize}
+          onChange={(e) => setFileSize(parseInt(e.target.value) || 0)}
+          placeholder="Enter file size in bytes"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Enter attachment description"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={3}
+        />
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={!name.trim() || !fileUrl.trim()} className="flex-1">
+          Update Attachment
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Add Link Form Component
+function AddLinkForm({ 
+  onSubmit, 
+  onCancel
+}: { 
+  onSubmit: (name: string, url: string, description: string, linkType: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState('')
+  const [url, setUrl] = useState('')
+  const [description, setDescription] = useState('')
+  const [linkType, setLinkType] = useState('external')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (name.trim() && url.trim()) {
+      onSubmit(name.trim(), url.trim(), description.trim(), linkType)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter link name"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">URL</label>
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="Enter link URL"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Link Type</label>
+        <select
+          value={linkType}
+          onChange={(e) => setLinkType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="external">External Link</option>
+          <option value="internal">Internal Link</option>
+          <option value="documentation">Documentation</option>
+          <option value="reference">Reference</option>
+        </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Enter link description"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={3}
+        />
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={!name.trim() || !url.trim()} className="flex-1">
+          Add Link
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Edit Link Form Component
+function EditLinkForm({ 
+  link,
+  onSubmit, 
+  onCancel
+}: { 
+  link: ExperimentNode['links'][0]
+  onSubmit: (name: string, url: string, description: string, linkType: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState(link.name)
+  const [url, setUrl] = useState(link.url)
+  const [description, setDescription] = useState(link.description)
+  const [linkType, setLinkType] = useState(link.link_type)
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (name.trim() && url.trim()) {
+      onSubmit(name.trim(), url.trim(), description.trim(), linkType)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter link name"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">URL</label>
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="Enter link URL"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Link Type</label>
+        <select
+          value={linkType}
+          onChange={(e) => setLinkType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="external">External Link</option>
+          <option value="internal">Internal Link</option>
+          <option value="documentation">Documentation</option>
+          <option value="reference">Reference</option>
+        </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Enter link description"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={3}
+        />
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={!name.trim() || !url.trim()} className="flex-1">
+          Update Link
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Video Embed Component
+function VideoEmbed({ url, type }: { url: string; type: string }) {
+  const getYouTubeVideoId = (url: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/
+    const match = url.match(regExp)
+    return (match && match[2].length === 11) ? match[2] : null
+  }
+
+  const getYouTubeEmbedUrl = (url: string) => {
+    const videoId = getYouTubeVideoId(url)
+    return videoId ? `https://www.youtube.com/embed/${videoId}` : null
+  }
+
+  if (type === 'video/youtube') {
+    const embedUrl = getYouTubeEmbedUrl(url)
+    if (embedUrl) {
+      return (
+        <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+          <iframe
+            src={embedUrl}
+            title="YouTube video player"
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="absolute top-0 left-0 w-full h-full rounded-lg"
+          />
+        </div>
+      )
+    } else {
+      return (
+        <div className="text-center py-8 text-muted-foreground">
+          <p>Invalid YouTube URL</p>
+          <Button variant="outline" size="sm" asChild className="mt-2">
+            <a href={url} target="_blank" rel="noopener noreferrer">
+              Open in YouTube
+            </a>
+          </Button>
+        </div>
+      )
+    }
+  } else if (type === 'video/file') {
+    return (
+      <div className="relative w-full">
+        <video
+          controls
+          className="w-full h-auto rounded-lg"
+          style={{ maxHeight: '70vh' }}
+        >
+          <source src={url} type="video/mp4" />
+          <source src={url} type="video/webm" />
+          <source src={url} type="video/ogg" />
+          Your browser does not support the video tag.
+        </video>
+      </div>
+    )
+  }
+
+  return (
+    <div className="text-center py-8 text-muted-foreground">
+      <p>Unsupported video type</p>
+      <Button variant="outline" size="sm" asChild className="mt-2">
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          Open Video
+        </a>
+      </Button>
     </div>
   )
 }

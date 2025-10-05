@@ -1,161 +1,160 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ projectId: string }> }
+  request: NextRequest,
+  { params }: { params: { projectId: string } }
 ) {
-  const { projectId } = await params
-
   try {
-    // Mock data for now - replace with Supabase queries
-    const mockOutputs = [
-      {
-        id: "output-1",
-        type: "publication",
-        title: "Novel E. coli Expression Systems for Therapeutic Proteins",
-        description: "Development of optimized expression systems for high-yield protein production",
-        status: "published",
-        date: "2023-12-15",
-        url: "https://nature.com/articles/s41587-023-01234-5",
-        doi: "10.1038/s41587-023-01234-5",
-        journal: "Nature Biotechnology",
-        impact_factor: 54.9,
-        citations: 23,
-        repository_url: null,
-        license: null,
-        file_size: null,
-        format: null,
-        project_id: projectId,
-        created_by: "user-1",
-        created_at: "2023-12-15T00:00:00Z",
-        updated_at: "2023-12-15T00:00:00Z"
-      },
-      {
-        id: "output-2",
-        type: "software",
-        title: "ProteinAnalyzer: A Comprehensive Tool for Protein Structure Analysis",
-        description: "Open-source Python package for protein structure prediction and analysis",
-        status: "published",
-        date: "2023-11-20",
-        url: null,
-        doi: null,
-        journal: null,
-        impact_factor: null,
-        citations: null,
-        repository_url: "https://github.com/bioeng-lab/protein-analyzer",
-        license: "MIT",
-        file_size: null,
-        format: "Python Package",
-        project_id: projectId,
-        created_by: "user-1",
-        created_at: "2023-11-20T00:00:00Z",
-        updated_at: "2023-11-20T00:00:00Z"
-      }
-    ]
+    const { projectId } = params
 
-    return NextResponse.json({ outputs: mockOutputs })
+    // For now, use the anon client without authentication
+    // TODO: Implement proper project ownership and member system
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+    // Check if projectId is a UUID or slug
+    let actualProjectId = projectId
+    if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      // It's a slug, get the actual UUID
+      const { data: project, error: projectError } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('slug', projectId)
+        .single()
+
+      if (projectError || !project) {
+        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+      }
+      actualProjectId = project.id
+    }
+
+    // Get outputs associated with this project
+    const { data: projectOutputs, error: projectOutputsError } = await supabase
+      .from('project_outputs')
+      .select(`
+        output:output_id (
+          id,
+          type,
+          title,
+          description,
+          authors,
+          status,
+          date,
+          url,
+          doi,
+          journal
+        )
+      `)
+      .eq('project_id', actualProjectId)
+
+    if (projectOutputsError) {
+      console.error('Error fetching project outputs:', projectOutputsError)
+      return NextResponse.json({ error: 'Failed to fetch outputs' }, { status: 500 })
+    }
+
+    const outputs = projectOutputs?.map(item => item.output).filter(Boolean) || []
+
+    return NextResponse.json({ outputs })
   } catch (error) {
-    console.error('Error fetching outputs:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch outputs' },
-      { status: 500 }
-    )
+    console.error('Error in GET /api/projects/[projectId]/outputs:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ projectId: string }> }
+  request: NextRequest,
+  { params }: { params: { projectId: string } }
 ) {
-  const { projectId } = await params
-
   try {
-    const body = await req.json()
-    const {
-      type,
-      title,
-      description,
-      status = 'draft',
-      date,
-      url,
-      doi,
-      journal,
-      impact_factor,
-      citations,
-      repository_url,
-      license,
-      file_size,
-      format
+    const { projectId } = params
+    const body = await request.json()
+    const { 
+      type, 
+      title, 
+      description, 
+      authors, 
+      status, 
+      date, 
+      url, 
+      doi, 
+      journal 
     } = body
 
     // Validate required fields
-    if (!type || !title || !date) {
-      return NextResponse.json(
-        { error: 'Missing required fields: type, title, date' },
-        { status: 400 }
-      )
+    if (!title || !title.trim()) {
+      return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
 
-    // Validate enum values
-    const validTypes = ['publication', 'software', 'dataset', 'presentation', 'report', 'patent']
-    const validStatuses = ['published', 'submitted', 'in_preparation', 'draft']
+    // For now, use the anon client without authentication
+    // TODO: Implement proper project ownership and member system
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-    if (!validTypes.includes(type)) {
-      return NextResponse.json(
-        { error: 'Invalid type. Must be one of: ' + validTypes.join(', ') },
-        { status: 400 }
-      )
+    // Check if projectId is a UUID or slug
+    let actualProjectId = projectId
+    if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      // It's a slug, get the actual UUID
+      const { data: project, error: projectError } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('slug', projectId)
+        .single()
+
+      if (projectError || !project) {
+        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+      }
+      actualProjectId = project.id
     }
 
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json(
-        { error: 'Invalid status. Must be one of: ' + validStatuses.join(', ') },
-        { status: 400 }
-      )
+    // Create the output entry
+    const { data: output, error: outputError } = await supabase
+      .from('outputs')
+      .insert({
+        type: type || 'publication',
+        title: title.trim(),
+        description: description?.trim() || null,
+        authors: authors || [],
+        status: status || 'draft',
+        date: date || null,
+        url: url?.trim() || null,
+        doi: doi?.trim() || null,
+        journal: journal?.trim() || null,
+        created_by: null // No authentication for now
+      })
+      .select()
+      .single()
+
+    if (outputError) {
+      console.error('Error creating output:', outputError)
+      return NextResponse.json({ 
+        error: 'Failed to create output',
+        details: outputError.message 
+      }, { status: 500 })
     }
 
-    // Validate date format
-    const dateObj = new Date(date)
-    if (isNaN(dateObj.getTime())) {
-      return NextResponse.json(
-        { error: 'Invalid date format' },
-        { status: 400 }
-      )
+    // Link output to project
+    const { error: linkError } = await supabase
+      .from('project_outputs')
+      .insert({
+        project_id: actualProjectId,
+        output_id: output.id
+      })
+
+    if (linkError) {
+      console.error('Error linking output to project:', linkError)
+      // Clean up the output entry
+      await supabase.from('outputs').delete().eq('id', output.id)
+      return NextResponse.json({ 
+        error: 'Failed to link output to project',
+        details: linkError.message 
+      }, { status: 500 })
     }
 
-    // Mock output creation - replace with Supabase insert
-    const newOutput = {
-      id: `output-${Date.now()}`,
-      type,
-      title,
-      description: description || '',
-      status,
-      date,
-      url: url || null,
-      doi: doi || null,
-      journal: journal || null,
-      impact_factor: impact_factor ? parseFloat(impact_factor) : null,
-      citations: citations ? parseInt(citations) : null,
-      repository_url: repository_url || null,
-      license: license || null,
-      file_size: file_size ? parseInt(file_size) : null,
-      format: format || null,
-      project_id: projectId,
-      created_by: 'user-1', // This should come from auth
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }
-
-    // In a real implementation, you would:
-    // 1. Insert into Supabase outputs table
-    // 2. Return the created output
-
-    return NextResponse.json({ output: newOutput }, { status: 201 })
+    return NextResponse.json({ output })
   } catch (error) {
-    console.error('Error creating output:', error)
-    return NextResponse.json(
-      { error: 'Failed to create output' },
-      { status: 500 }
-    )
+    console.error('Error in POST /api/projects/[projectId]/outputs:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -211,10 +211,12 @@ Current accuracy metrics:
             </Button>
             <Avatar className="h-8 w-8">
               <AvatarFallback>
-                {user.name
-                  .split(" ")
-                  .map((n: string) => n[0])
-                  .join("")}
+                {user?.full_name
+                  ? user.full_name
+                      .split(" ")
+                      .map((n: string) => n[0])
+                      .join("")
+                  : "U"}
               </AvatarFallback>
             </Avatar>
             <Button variant="outline" size="sm" onClick={handleLogout}>

@@ -2,9 +2,9 @@ import { NextResponse, NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export async function GET(
   req: NextRequest,
@@ -13,22 +13,8 @@ export async function GET(
   try {
     const { treeId, nodeId } = await params
 
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // For now, use the anon client without authentication
+    // TODO: Implement proper project ownership and member system
 
     // Get the node content from the database
     const { data: node, error } = await supabase
@@ -78,22 +64,8 @@ export async function PUT(
   try {
     const { treeId, nodeId } = await params
 
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // For now, use the anon client without authentication
+    // TODO: Implement proper project ownership and member system
 
     const body = await request.json()
     

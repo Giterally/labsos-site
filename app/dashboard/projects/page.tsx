@@ -24,87 +24,101 @@ import {
 } from "@heroicons/react/24/outline"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase-client"
 
 export default function ProjectsPage() {
   const [user, setUser] = useState<any>(null)
+  const [projects, setProjects] = useState<any[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(true)
   const [showNewProject, setShowNewProject] = useState(false)
   const [selectedProject, setSelectedProject] = useState<any>(null)
   const router = useRouter()
 
-  useEffect(() => {
-    const isAuthenticated = localStorage.getItem("labsos_authenticated")
-    const userData = localStorage.getItem("labsos_user")
+  const fetchProjects = async () => {
+    try {
+      setProjectsLoading(true)
+      const { data: projectsData, error } = await supabase
+        .from('projects')
+        .select('id, name, description, slug, created_at')
+        .order('created_at', { ascending: false })
 
-    if (!isAuthenticated || !userData) {
-      router.push("/login")
-      return
+      if (error) {
+        console.error('Error fetching projects:', error)
+        // Fallback to empty array if fetch fails
+        setProjects([])
+      } else {
+        // Transform the data to match the expected format
+        const transformedProjects = projectsData.map(project => ({
+          id: project.slug || project.id, // Use slug if available, fallback to UUID
+          name: project.name,
+          description: project.description || 'No description available',
+          status: "Active", // Default status
+          language: "Python", // Default language
+          lastUpdated: "Recently", // Default last updated
+          color: "bg-green-500", // Default color
+          collaborators: ["JS", "MJ", "AK"], // Default collaborators
+          tags: ["Project", "Research"], // Default tags
+          repository: null, // Default repository
+          createdDate: new Date(project.created_at).toISOString().split('T')[0], // Format date
+        }))
+        setProjects(transformedProjects)
+      }
+    } catch (err) {
+      console.error('Error in fetchProjects:', err)
+      setProjects([])
+    } finally {
+      setProjectsLoading(false)
     }
-
-    setUser(JSON.parse(userData))
-  }, [router])
-
-  const handleLogout = () => {
-    localStorage.removeItem("labsos_authenticated")
-    localStorage.removeItem("labsos_user")
-    router.push("/")
   }
 
-  const projects = [
-    {
-      id: 1,
-      name: "RNA-seq Analysis Pipeline",
-      description:
-        "Comprehensive pipeline for RNA sequencing data analysis including quality control, alignment, and differential expression analysis.",
-      status: "Active",
-      language: "Python",
-      lastUpdated: "2 hours ago",
-      color: "bg-green-500",
-      collaborators: ["JS", "MJ", "AK"],
-      tags: ["RNA-seq", "Bioinformatics", "Pipeline"],
-      repository: "github.com/lab/rna-seq-pipeline",
-      createdDate: "2024-01-15",
-    },
-    {
-      id: 2,
-      name: "Protein Structure Prediction",
-      description:
-        "Machine learning approach to predict protein structures using AlphaFold and custom neural networks.",
-      status: "Review",
-      language: "R",
-      lastUpdated: "1 day ago",
-      color: "bg-blue-500",
-      collaborators: ["MJ", "RK"],
-      tags: ["Protein", "ML", "Structure"],
-      repository: "github.com/lab/protein-prediction",
-      createdDate: "2024-02-01",
-    },
-    {
-      id: 3,
-      name: "GWAS Meta-Analysis",
-      description: "Large-scale genome-wide association study meta-analysis across multiple cohorts.",
-      status: "Draft",
-      language: "Python",
-      lastUpdated: "3 days ago",
-      color: "bg-yellow-500",
-      collaborators: ["AK", "JS"],
-      tags: ["GWAS", "Genetics", "Meta-analysis"],
-      repository: "github.com/lab/gwas-meta",
-      createdDate: "2024-01-20",
-    },
-    {
-      id: 4,
-      name: "Single Cell RNA-seq",
-      description: "Single cell transcriptomics analysis pipeline for developmental biology studies.",
-      status: "Planning",
-      language: "R",
-      lastUpdated: "1 week ago",
-      color: "bg-purple-500",
-      collaborators: ["RK"],
-      tags: ["scRNA-seq", "Development", "Clustering"],
-      repository: null,
-      createdDate: "2024-02-10",
-    },
-  ]
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+
+      if (authError || !authUser) {
+        router.push("/login")
+        return
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('full_name, email, institution, field_of_study')
+        .eq('user_id', authUser.id)
+        .single()
+
+      if (profileError) {
+        console.error("Error fetching profile:", profileError)
+        // Use basic user info if profile fails
+        setUser({
+          full_name: authUser.user_metadata?.full_name || authUser.email || 'User',
+          email: authUser.email || '',
+          institution: authUser.user_metadata?.institution || 'N/A',
+          field_of_study: authUser.user_metadata?.field_of_study || 'N/A',
+        })
+      } else {
+        setUser(profile)
+      }
+    }
+
+    fetchUser()
+    fetchProjects() // Fetch projects when component mounts
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        router.push('/login')
+      }
+    })
+
+    return () => {
+      authListener.subscription.unsubscribe()
+    }
+  }, [router])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push("/login")
+  }
+
 
   if (!user) {
     return <div>Loading...</div>
@@ -112,42 +126,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-background/95 backdrop-blur">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
-              <ArrowLeftIcon className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center space-x-2">
-              <BeakerIcon className="h-8 w-8 text-primary" />
-              <span className="text-2xl font-bold text-foreground">LabsOS</span>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm">
-              <BellIcon className="h-5 w-5" />
-            </Button>
-            <Button variant="ghost" size="sm">
-              <Cog6ToothIcon className="h-5 w-5" />
-            </Button>
-            <Avatar className="h-8 w-8">
-              <AvatarFallback>
-                {user.name
-                  .split(" ")
-                  .map((n: string) => n[0])
-                  .join("")}
-              </AvatarFallback>
-            </Avatar>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              Sign Out
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 pt-20">
         {!selectedProject ? (
           <>
             {/* Projects Header */}
@@ -164,11 +143,41 @@ export default function ProjectsPage() {
 
             {/* Project Grid */}
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map((project) => (
+              {projectsLoading ? (
+                // Loading state
+                Array.from({ length: 3 }).map((_, index) => (
+                  <Card key={index} className="animate-pulse">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-start justify-between">
+                        <div className="w-4 h-4 rounded-full bg-gray-300 mt-1"></div>
+                        <div className="w-6 h-6 bg-gray-300 rounded"></div>
+                      </div>
+                      <div className="h-6 bg-gray-300 rounded mb-2"></div>
+                      <div className="h-4 bg-gray-300 rounded"></div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="h-4 bg-gray-300 rounded"></div>
+                      <div className="h-4 bg-gray-300 rounded w-3/4"></div>
+                    </CardContent>
+                  </Card>
+                ))
+              ) : projects.length === 0 ? (
+                // Empty state
+                <div className="col-span-full text-center py-12">
+                  <FolderIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-muted-foreground mb-2">No projects yet</h3>
+                  <p className="text-muted-foreground mb-4">Create your first project to get started</p>
+                  <Button onClick={() => setShowNewProject(true)}>
+                    <PlusIcon className="h-4 w-4 mr-2" />
+                    Create Project
+                  </Button>
+                </div>
+              ) : (
+                projects.map((project) => (
                 <Card
                   key={project.id}
                   className="hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => setSelectedProject(project)}
+                  onClick={() => router.push(`/project/${project.id}`)}
                 >
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
@@ -208,7 +217,8 @@ export default function ProjectsPage() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                ))
+              )}
             </div>
           </>
         ) : (

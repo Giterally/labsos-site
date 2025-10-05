@@ -1,200 +1,191 @@
-import { NextResponse, NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ treeId: string; nodeId: string }> }
+  request: NextRequest,
+  { params }: { params: { treeId: string; nodeId: string } }
 ) {
   try {
-    const { treeId, nodeId } = await params
+    const { treeId, nodeId } = params
 
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
+    // For now, use the anon client without authentication
+    // TODO: Implement proper project ownership and member system
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
-
-    const { data: node, error } = await supabase
+    // Get the specific node with its content, attachments, and links
+    const { data: node, error: nodeError } = await supabase
       .from('tree_nodes')
-      .select('*')
+      .select(`
+        *,
+        node_content (
+          id,
+          content,
+          status,
+          created_at,
+          updated_at
+        ),
+        node_attachments (
+          id,
+          name,
+          file_type,
+          file_size,
+          file_url,
+          description,
+          created_at,
+          updated_at
+        ),
+        node_links (
+          id,
+          name,
+          url,
+          description,
+          link_type,
+          created_at,
+          updated_at
+        )
+      `)
       .eq('id', nodeId)
       .eq('tree_id', treeId)
       .single()
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { message: 'Node not found' },
-          { status: 404 }
-        )
-      }
-      throw new Error(`Failed to fetch node: ${error.message}`)
+    if (nodeError) {
+      console.error('Error fetching node:', nodeError)
+      return NextResponse.json({ error: 'Node not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ node })
-  } catch (error: any) {
-    console.error('Error fetching node:', error)
-    return NextResponse.json(
-      { message: 'Failed to fetch node', error: error.message },
-      { status: 500 }
-    )
+    // Transform the data to match the expected format
+    const transformedNode = {
+      id: node.id,
+      title: node.name,
+      description: node.description,
+      type: node.node_type,
+      status: node.node_content?.[0]?.status || 'draft',
+      position: node.position,
+      content: node.node_content?.[0]?.content || '',
+      attachments: node.node_attachments || [],
+      links: node.node_links || [],
+      metadata: {
+        created: node.created_at,
+        updated: node.updated_at,
+        type: node.node_type,
+        position: node.position
+      }
+    }
+
+    return NextResponse.json({ node: transformedNode })
+  } catch (error) {
+    console.error('Error in GET /api/trees/[treeId]/nodes/[nodeId]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ treeId: string; nodeId: string }> }
+  request: NextRequest,
+  { params }: { params: { treeId: string; nodeId: string } }
 ) {
   try {
-    const { treeId, nodeId } = await params
-
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
-
+    const { treeId, nodeId } = params
     const body = await request.json()
-    
-    // Only update fields that exist in the database schema
-    const updateData: any = {
-      updated_at: new Date().toISOString(),
-    }
+    const { name, description, node_type, position, content, status } = body
 
-    // Add fields that are provided and exist in the schema
-    if (body.name !== undefined) updateData.name = body.name
-    if (body.description !== undefined) updateData.description = body.description
-    if (body.node_type !== undefined) updateData.node_type = body.node_type
-    if (body.position !== undefined) updateData.position = body.position
-    if (body.parent_id !== undefined) updateData.parent_id = body.parent_id
+    // For now, use the anon client without authentication
+    // TODO: Implement proper project ownership and member system
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-    const { data: updatedNode, error } = await supabase
+    // Update the node
+    const { data: updatedNode, error: nodeError } = await supabase
       .from('tree_nodes')
-      .update(updateData)
+      .update({
+        name,
+        description,
+        node_type,
+        position,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', nodeId)
       .eq('tree_id', treeId)
       .select()
       .single()
 
-    if (error) {
-      throw new Error(`Failed to update node: ${error.message}`)
+    if (nodeError) {
+      console.error('Error updating node:', nodeError)
+      return NextResponse.json({ error: 'Failed to update node' }, { status: 500 })
+    }
+
+    // Update or create node content
+    if (content !== undefined || status !== undefined) {
+      const { data: existingContent } = await supabase
+        .from('node_content')
+        .select('id')
+        .eq('node_id', nodeId)
+        .single()
+
+      if (existingContent) {
+        // Update existing content
+        const { error: contentError } = await supabase
+          .from('node_content')
+          .update({
+            content,
+            status,
+            updated_at: new Date().toISOString()
+          })
+          .eq('node_id', nodeId)
+
+        if (contentError) {
+          console.error('Error updating node content:', contentError)
+        }
+      } else {
+        // Create new content
+        const { error: contentError } = await supabase
+          .from('node_content')
+          .insert({
+            node_id: nodeId,
+            content: content || '',
+            status: status || 'draft'
+          })
+
+        if (contentError) {
+          console.error('Error creating node content:', contentError)
+        }
+      }
     }
 
     return NextResponse.json({ node: updatedNode })
-  } catch (error: any) {
-    console.error('Error updating node:', error)
-    return NextResponse.json(
-      { message: 'Failed to update node', error: error.message },
-      { status: 500 }
-    )
+  } catch (error) {
+    console.error('Error in PUT /api/trees/[treeId]/nodes/[nodeId]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ treeId: string; nodeId: string }> }
+  request: NextRequest,
+  { params }: { params: { treeId: string; nodeId: string } }
 ) {
   try {
-    const { treeId, nodeId } = await params
+    const { treeId, nodeId } = params
 
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
+    // For now, use the anon client without authentication
+    // TODO: Implement proper project ownership and member system
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
-
-    // Fetch the node to get its type before deleting
-    const { data: nodeToDelete, error: fetchError } = await supabase
-      .from('tree_nodes')
-      .select('node_type')
-      .eq('id', nodeId)
-      .eq('tree_id', treeId)
-      .single()
-
-    if (fetchError || !nodeToDelete) {
-      throw new Error(`Failed to fetch node for deletion: ${fetchError?.message || 'Node not found'}`)
-    }
-
-    const { error } = await supabase
+    // Delete the node (this will cascade delete content, attachments, and links)
+    const { error: nodeError } = await supabase
       .from('tree_nodes')
       .delete()
       .eq('id', nodeId)
       .eq('tree_id', treeId)
 
-    if (error) {
-      throw new Error(`Failed to delete node: ${error.message}`)
+    if (nodeError) {
+      console.error('Error deleting node:', nodeError)
+      return NextResponse.json({ error: 'Failed to delete node' }, { status: 500 })
     }
 
-    // Update node_count and node_types in experiment_trees table
-    const { data: tree, error: fetchTreeError } = await supabase
-      .from('experiment_trees')
-      .select('node_count, node_types')
-      .eq('id', treeId)
-      .single()
-
-    if (fetchTreeError) {
-      console.error('Error fetching tree for node count update after deletion:', fetchTreeError)
-      // Continue without updating tree stats if fetch fails
-    } else if (tree) {
-      const updatedNodeTypes = { ...tree.node_types as any }
-      if (updatedNodeTypes[nodeToDelete.node_type] > 0) {
-        updatedNodeTypes[nodeToDelete.node_type] -= 1
-      }
-
-      await supabase
-        .from('experiment_trees')
-        .update({
-          node_count: Math.max(0, (tree.node_count || 0) - 1),
-          node_types: updatedNodeTypes,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', treeId)
-    }
-
-    return NextResponse.json({ message: 'Node deleted successfully' })
-  } catch (error: any) {
-    console.error('Error deleting node:', error)
-    return NextResponse.json(
-      { message: 'Failed to delete node', error: error.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error in DELETE /api/trees/[treeId]/nodes/[nodeId]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

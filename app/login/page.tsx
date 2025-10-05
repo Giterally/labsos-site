@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BeakerIcon } from "@heroicons/react/24/outline"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
@@ -15,6 +16,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [fullName, setFullName] = useState("")
+  const [institution, setInstitution] = useState("")
+  const [fieldOfStudy, setFieldOfStudy] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSignUp, setIsSignUp] = useState(false)
@@ -44,10 +47,30 @@ export default function LoginPage() {
       return
     }
 
+    if (isSignUp && !institution) {
+      setError("Please enter your university/institution")
+      setIsLoading(false)
+      return
+    }
+
+    if (isSignUp && !fieldOfStudy) {
+      setError("Please select your primary field of study")
+      setIsLoading(false)
+      return
+    }
+
     try {
       if (isSignUp) {
+        // Store additional profile data for after email verification
+        const profileData = {
+          full_name: fullName,
+          institution: institution,
+          field_of_study: fieldOfStudy
+        }
+        localStorage.setItem('pendingProfileData', JSON.stringify(profileData))
+        
         await signUp(email, password, fullName)
-        setError("Account created successfully! Please check your email to verify your account.")
+        router.push("/verify-email-sent")
       } else {
         await signIn(email, password)
         router.push("/dashboard")
@@ -79,17 +102,55 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleAuth} className="space-y-4">
             {isSignUp && (
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  type="text"
-                  placeholder="Jane Smith"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    type="text"
+                    placeholder="Jane Smith"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="institution">University/Institution</Label>
+                  <Input
+                    id="institution"
+                    type="text"
+                    placeholder="Stanford University"
+                    value={institution}
+                    onChange={(e) => setInstitution(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fieldOfStudy">Primary Field of Study</Label>
+                  <Select value={fieldOfStudy} onValueChange={setFieldOfStudy} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your field" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="computer_science">Computer Science</SelectItem>
+                      <SelectItem value="biology">Biology</SelectItem>
+                      <SelectItem value="chemistry">Chemistry</SelectItem>
+                      <SelectItem value="physics">Physics</SelectItem>
+                      <SelectItem value="mathematics">Mathematics</SelectItem>
+                      <SelectItem value="engineering">Engineering</SelectItem>
+                      <SelectItem value="medicine">Medicine</SelectItem>
+                      <SelectItem value="psychology">Psychology</SelectItem>
+                      <SelectItem value="economics">Economics</SelectItem>
+                      <SelectItem value="business">Business</SelectItem>
+                      <SelectItem value="education">Education</SelectItem>
+                      <SelectItem value="arts">Arts & Humanities</SelectItem>
+                      <SelectItem value="social_sciences">Social Sciences</SelectItem>
+                      <SelectItem value="environmental">Environmental Science</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
