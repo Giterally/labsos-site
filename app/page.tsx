@@ -24,12 +24,15 @@ import {
   CircleStackIcon,
   ShareIcon,
 } from "@heroicons/react/24/outline"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { getCurrentUser } from "@/lib/auth-service"
 
 export default function KnowledgeCaptureLanding() {
   const [showContactForm, setShowContactForm] = useState(false)
   const [openFAQ, setOpenFAQ] = useState<number | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [formData, setFormData] = useState({
     name: '',
     title: '',
@@ -45,13 +48,26 @@ export default function KnowledgeCaptureLanding() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitMessage, setSubmitMessage] = useState('')
 
+  // Check authentication status
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const user = await getCurrentUser()
+        setIsAuthenticated(!!user)
+      } catch (error) {
+        setIsAuthenticated(false)
+      } finally {
+        setLoading(false)
+      }
+    }
+    checkAuth()
+  }, [])
+
   const toggleFAQ = (index: number) => {
     setOpenFAQ(openFAQ === index ? null : index)
   }
 
   const handleSeeInAction = () => {
-    // Check if user is authenticated
-    const isAuthenticated = localStorage.getItem("labsos_authenticated")
     if (isAuthenticated) {
       window.location.href = "/dashboard"
     } else {
@@ -109,6 +125,15 @@ export default function KnowledgeCaptureLanding() {
     }
   }
 
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -132,13 +157,15 @@ export default function KnowledgeCaptureLanding() {
               Contact
             </a>
           </nav>
-          <Button 
-            size="lg" 
-            className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold px-8 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
-            onClick={() => (window.location.href = "/login")}
-          >
-            Sign In
-          </Button>
+          {!loading && !isAuthenticated && (
+            <Button 
+              size="lg" 
+              className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold px-8 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
+              onClick={() => (window.location.href = "/login")}
+            >
+              Sign In
+            </Button>
+          )}
         </div>
       </header>
 
