@@ -1092,9 +1092,9 @@ export default function SimpleExperimentTreePage() {
           </div>
         )}
         
-        <div className="grid lg:grid-cols-4 gap-8">
+        <div className="grid lg:grid-cols-6 gap-8">
           {/* Left Sidebar - Experiment Steps */}
-          <div className="lg:col-span-1 space-y-6">
+          <div className="lg:col-span-2 space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -1155,16 +1155,16 @@ export default function SimpleExperimentTreePage() {
                           }`}
                         >
                           {/* Block Header */}
-                          <div className={`px-3 py-2 transition-colors ${
+                          <div className={`px-4 py-3 transition-colors ${
                             isHighlighted ? 'bg-primary/10' : 'bg-muted/30'
                           }`}>
                             <div className="flex items-center justify-between">
                               <div 
-                                className="flex items-center space-x-2 cursor-pointer hover:bg-muted/50 transition-colors rounded px-1 py-1 -mx-1 -my-1 flex-1"
+                                className="flex items-center space-x-3 cursor-pointer hover:bg-muted/50 transition-colors rounded px-2 py-1 -mx-2 -my-1 flex-1"
                                 onClick={() => toggleBlock(nodeType)}
                               >
-                                <span className="text-lg">{getBlockIcon(nodeType)}</span>
-                                <span className="text-sm font-medium">{getBlockTitle(nodeType)}</span>
+                                <span className="text-lg flex-shrink-0">{getBlockIcon(nodeType)}</span>
+                                <span className="text-sm font-medium flex-1 min-w-0">{getBlockTitle(nodeType)}</span>
                                 <Badge variant="secondary" className="text-xs">
                                   {nodes.length}
                                 </Badge>
@@ -1176,7 +1176,7 @@ export default function SimpleExperimentTreePage() {
                               </div>
                               
                               {/* Block Management Menu */}
-                              <div className="flex items-center space-x-1 ml-2">
+                              <div className="flex items-center space-x-1 ml-3">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1221,7 +1221,7 @@ export default function SimpleExperimentTreePage() {
                           
                           {/* Block Content */}
                           {!isCollapsed && (
-                            <div className="p-2 space-y-2">
+                            <div className="p-3 space-y-2">
                               {(nodeOrder[nodeType] ? 
                                 nodeOrder[nodeType].map(nodeId => nodes.find(n => n.id === nodeId)).filter((node): node is ExperimentNode => node !== undefined) :
                                 nodes
@@ -1333,7 +1333,7 @@ export default function SimpleExperimentTreePage() {
           </div>
 
           {/* Right Column - Node Details */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-4">
             {selectedNode ? (
               <Card>
                 <CardHeader>
