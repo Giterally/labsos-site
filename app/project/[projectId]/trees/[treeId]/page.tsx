@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon } from "@heroicons/react/24/outline"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, ChevronRightIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 
@@ -52,10 +53,14 @@ export default function SimpleExperimentTreePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [treeInfo, setTreeInfo] = useState<{name: string, description: string, status: string, category: string} | null>(null)
+  const [projectInfo, setProjectInfo] = useState<{name: string, description: string} | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [creating, setCreating] = useState(false)
   const [showEditForm, setShowEditForm] = useState(false)
   const [editing, setEditing] = useState(false)
+  
+  // Track which block to add nodes to
+  const [targetBlockForNewNode, setTargetBlockForNewNode] = useState<string | null>(null)
   
   // Tab editing states
   const [editingContent, setEditingContent] = useState(false)
@@ -79,7 +84,369 @@ export default function SimpleExperimentTreePage() {
   const [showVideoModal, setShowVideoModal] = useState(false)
   const [videoAttachment, setVideoAttachment] = useState<ExperimentNode['attachments'][0] | null>(null)
   
+  // Collapsible blocks state
+  const [collapsedBlocks, setCollapsedBlocks] = useState<Set<string>>(new Set())
+  
+  // Block management state
+  const [showBlockMenu, setShowBlockMenu] = useState<string | null>(null)
+  const [showAddBlockForm, setShowAddBlockForm] = useState(false)
+  const [showEditBlockForm, setShowEditBlockForm] = useState(false)
+  const [editingBlockType, setEditingBlockType] = useState<string | null>(null)
+  
+  // Custom block names and ordering state
+  const [blockNames, setBlockNames] = useState<Record<string, string>>({})
+  const [customBlocks, setCustomBlocks] = useState<Array<{id: string, name: string, block_type: string, position: number}>>([])
+  const [blockOrder, setBlockOrder] = useState<string[]>([])
+  const [nodeOrder, setNodeOrder] = useState<Record<string, string[]>>({})
+  
+  // Drag and drop state
+  const [draggedItem, setDraggedItem] = useState<{type: 'block' | 'node', id: string, blockType?: string} | null>(null)
+  const [dragOverItem, setDragOverItem] = useState<{type: 'block' | 'node', id: string, blockType?: string} | null>(null)
+  
   const selectedNode = experimentNodes.find(node => node.id === selectedNodeId) || null
+
+  // Helper functions for collapsible blocks
+  const toggleBlock = (blockType: string) => {
+    setCollapsedBlocks(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(blockType)) {
+        newSet.delete(blockType)
+      } else {
+        newSet.add(blockType)
+      }
+      return newSet
+    })
+  }
+
+  const getBlockTitle = (nodeType: string) => {
+    // Use custom name if available, otherwise fall back to default
+    if (blockNames[nodeType]) {
+      return blockNames[nodeType]
+    }
+    
+    switch (nodeType) {
+      case 'protocol': return 'Protocols'
+      case 'analysis': return 'Analysis'
+      case 'data_creation': return 'Data Creation'
+      case 'results': return 'Results'
+      default: return nodeType.charAt(0).toUpperCase() + nodeType.slice(1)
+    }
+  }
+
+  const getBlockIcon = (nodeType: string) => {
+    // Check if this is a custom block and get its block_type
+    const customBlock = customBlocks.find(block => block.id === nodeType)
+    const actualBlockType = customBlock ? customBlock.block_type : nodeType
+    
+    switch (actualBlockType) {
+      case 'protocol': return '📋'
+      case 'analysis': return '🔬'
+      case 'data_creation': return '📊'
+      case 'results': return '📈'
+      case 'custom': return '📄'
+      default: 
+        // Fallback for any other types
+        return '📄'
+    }
+  }
+
+  // Block management functions
+  const handleBlockMenuToggle = (blockType: string) => {
+    setShowBlockMenu(showBlockMenu === blockType ? null : blockType)
+  }
+
+  const handleEditBlock = (blockType: string) => {
+    setEditingBlockType(blockType)
+    setShowEditBlockForm(true)
+    setShowBlockMenu(null)
+  }
+
+  const handleDeleteBlock = async (blockType: string) => {
+    if (!confirm(`Are you sure you want to delete the "${getBlockTitle(blockType)}" block? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      // Check if it's a custom block
+      const isCustomBlock = customBlocks.some(block => block.id === blockType)
+      
+      if (isCustomBlock) {
+        // Delete custom block from Supabase
+        const response = await fetch(`/api/trees/${treeId}/blocks/${blockType}`, {
+          method: 'DELETE',
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to delete block')
+        }
+
+        // Refresh blocks from API instead of updating local state
+        const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
+        if (blocksResponse.ok) {
+          const blocksData = await blocksResponse.json()
+          setCustomBlocks(blocksData.customBlocks || [])
+          
+          // Set block names from custom blocks
+          const names: Record<string, string> = {}
+          blocksData.customBlocks?.forEach((block: any) => {
+            names[block.id] = block.name
+          })
+          setBlockNames(names)
+          
+          // Set block order
+          const order = blocksData.blockOrder?.map((item: any) => item.block_type) || []
+          setBlockOrder(order)
+        }
+      } else {
+        // For regular blocks, delete all nodes of this type
+        const nodesToDelete = groupedNodes[blockType] || []
+        for (const node of nodesToDelete) {
+          await deleteNode(node.id)
+        }
+      }
+      
+      setShowBlockMenu(null)
+    } catch (err) {
+      console.error('Error deleting block:', err)
+      alert('Failed to delete block')
+    }
+  }
+
+  const handleAddNodeToBlock = (blockType: string) => {
+    // Set the target block for the new node
+    setTargetBlockForNewNode(blockType)
+    setShowCreateForm(true)
+    setShowBlockMenu(null)
+  }
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, type: 'block' | 'node', id: string, blockType?: string) => {
+    setDraggedItem({ type, id, blockType })
+    e.dataTransfer.effectAllowed = 'move'
+    
+    // Prevent event propagation for nodes to avoid triggering block drag
+    if (type === 'node') {
+      e.stopPropagation()
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent, type: 'block' | 'node', id: string, blockType?: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverItem({ type, id, blockType })
+    
+    // Prevent event propagation for nodes to avoid triggering block drag
+    if (type === 'node') {
+      e.stopPropagation()
+    }
+  }
+
+  const handleDragLeave = (e: React.DragEvent, type?: 'block' | 'node') => {
+    // Only clear if we're leaving the entire drop zone
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverItem(null)
+    }
+    
+    // Prevent event propagation for nodes to avoid triggering block drag leave
+    if (type === 'node') {
+      e.stopPropagation()
+    }
+  }
+
+  const handleDrop = async (e: React.DragEvent, targetType: 'block' | 'node', targetId: string, targetBlockType?: string) => {
+    e.preventDefault()
+    
+    // Prevent event propagation for nodes to avoid triggering block drop
+    if (targetType === 'node') {
+      e.stopPropagation()
+    }
+    
+    if (!draggedItem) return
+
+    try {
+      if (draggedItem.type === 'block' && targetType === 'block') {
+        // Block reordering
+        await handleBlockReorder(draggedItem.id, targetId)
+      } else if (draggedItem.type === 'node' && targetType === 'node') {
+        // Node reordering within same block
+        if (draggedItem.blockType === targetBlockType) {
+          await handleNodeReorder(draggedItem.id, targetId, draggedItem.blockType!)
+        } else {
+          // Move node to different block
+          await handleNodeMoveToBlock(draggedItem.id, targetBlockType!)
+        }
+      } else if (draggedItem.type === 'node' && targetType === 'block') {
+        // Move node to different block
+        await handleNodeMoveToBlock(draggedItem.id, targetId)
+      }
+    } catch (error) {
+      console.error('Error handling drop:', error)
+    }
+
+    setDraggedItem(null)
+    setDragOverItem(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedItem(null)
+    setDragOverItem(null)
+  }
+
+  // Block reordering
+  const handleBlockReorder = async (draggedBlockId: string, targetBlockId: string) => {
+    const currentOrder = [...allBlockTypes]
+    const draggedIndex = currentOrder.indexOf(draggedBlockId)
+    const targetIndex = currentOrder.indexOf(targetBlockId)
+    
+    if (draggedIndex === -1 || targetIndex === -1) return
+    
+    // Remove dragged item and insert at target position
+    const [draggedItem] = currentOrder.splice(draggedIndex, 1)
+    currentOrder.splice(targetIndex, 0, draggedItem)
+    
+    // Save to Supabase (only custom blocks need to be saved)
+    const customBlockOrder = currentOrder.filter((id: string) => customBlocks.some(block => block.id === id))
+    
+    try {
+      const response = await fetch(`/api/trees/${treeId}/blocks/order`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          blockOrder: customBlockOrder
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update block order')
+      }
+      
+      setBlockOrder(customBlockOrder)
+    } catch (err) {
+      console.error('Error updating block order:', err)
+    }
+  }
+
+  // Node reordering within same block
+  const handleNodeReorder = async (draggedNodeId: string, targetNodeId: string, blockType: string) => {
+    const currentOrder = nodeOrder[blockType] || []
+    const draggedIndex = currentOrder.indexOf(draggedNodeId)
+    const targetIndex = currentOrder.indexOf(targetNodeId)
+    
+    if (draggedIndex === -1 || targetIndex === -1) return
+    
+    // Remove dragged item and insert at target position
+    const [draggedItem] = currentOrder.splice(draggedIndex, 1)
+    currentOrder.splice(targetIndex, 0, draggedItem)
+    
+    // Update local state
+    setNodeOrder(prev => ({
+      ...prev,
+      [blockType]: currentOrder
+    }))
+    
+    // TODO: Save to Supabase when node ordering API is implemented
+  }
+
+  // Move node to different block
+  const handleNodeMoveToBlock = async (nodeId: string, targetBlockType: string) => {
+    try {
+      const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          node_type: targetBlockType
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to move node')
+      }
+      
+      // Refresh nodes to get updated data
+      const nodesResponse = await fetch(`/api/trees/${treeId}/nodes`)
+      if (nodesResponse.ok) {
+        const nodesData = await nodesResponse.json()
+        setExperimentNodes(nodesData.nodes)
+        
+        // Update node order
+        const newNodeOrder: Record<string, string[]> = {}
+        nodesData.nodes.forEach((node: ExperimentNode) => {
+          if (!newNodeOrder[node.type]) {
+            newNodeOrder[node.type] = []
+          }
+          newNodeOrder[node.type].push(node.id)
+        })
+        setNodeOrder(newNodeOrder)
+      }
+    } catch (err) {
+      console.error('Error moving node:', err)
+    }
+  }
+
+  // Check if a block should be highlighted (contains selected node)
+  const isBlockHighlighted = (blockType: string) => {
+    if (!selectedNode) return false
+    return selectedNode.type === blockType
+  }
+
+  // Group nodes by type and include custom blocks
+  const groupedNodes = useMemo(() => {
+    const grouped = experimentNodes.reduce((acc, node) => {
+      if (!acc[node.type]) {
+        acc[node.type] = []
+      }
+      acc[node.type].push(node)
+      return acc
+    }, {} as Record<string, ExperimentNode[]>)
+
+    // Add custom blocks to the grouped nodes
+    customBlocks.forEach(block => {
+      if (!grouped[block.id]) {
+        grouped[block.id] = []
+      }
+    })
+
+    return grouped
+  }, [experimentNodes, customBlocks])
+
+  // Get all block types in the desired order
+  const allBlockTypes = useMemo(() => {
+    const regularBlockTypes = Object.keys(groupedNodes).filter(type => !type.startsWith('custom_') && !customBlocks.some(block => block.id === type))
+    const customBlockTypes = blockOrder.filter(id => customBlocks.some(block => block.id === id))
+    
+    // Combine regular and custom blocks in the correct order
+    // Regular blocks come first, then custom blocks in their saved order
+    return [...regularBlockTypes, ...customBlockTypes]
+  }, [groupedNodes, customBlocks, blockOrder])
+  
+
+  // Fetch project information
+  useEffect(() => {
+    const fetchProjectInfo = async () => {
+      try {
+        const response = await fetch(`/api/projects/${projectId}`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch project information')
+        }
+        const data = await response.json()
+        setProjectInfo({
+          name: data.project.name,
+          description: data.project.description
+        })
+      } catch (error) {
+        console.error('Error fetching project info:', error)
+        // Don't set error state for project info, just log it
+      }
+    }
+
+    if (projectId) {
+      fetchProjectInfo()
+    }
+  }, [projectId])
 
   // Fetch tree information
   useEffect(() => {
@@ -104,6 +471,36 @@ export default function SimpleExperimentTreePage() {
     fetchTreeInfo()
   }, [treeId])
 
+  // Fetch blocks and ordering
+  useEffect(() => {
+    const fetchBlocks = async () => {
+      try {
+        const response = await fetch(`/api/trees/${treeId}/blocks`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch blocks')
+        }
+        const data = await response.json()
+        
+        setCustomBlocks(data.customBlocks || [])
+        
+        // Set block names from custom blocks
+        const names: Record<string, string> = {}
+        data.customBlocks?.forEach((block: any) => {
+          names[block.id] = block.name
+        })
+        setBlockNames(names)
+        
+        // Set block order
+        const order = data.blockOrder?.map((item: any) => item.block_type) || []
+        setBlockOrder(order)
+      } catch (err) {
+        console.error('Error fetching blocks:', err)
+      }
+    }
+
+    fetchBlocks()
+  }, [treeId])
+
   // Fetch nodes from Supabase
   useEffect(() => {
     const fetchNodes = async () => {
@@ -118,6 +515,16 @@ export default function SimpleExperimentTreePage() {
         }
         const data = await response.json()
         setExperimentNodes(data.nodes)
+        
+        // Initialize node order for each block type
+        const initialNodeOrder: Record<string, string[]> = {}
+        data.nodes.forEach((node: ExperimentNode) => {
+          if (!initialNodeOrder[node.type]) {
+            initialNodeOrder[node.type] = []
+          }
+          initialNodeOrder[node.type].push(node.id)
+        })
+        setNodeOrder(initialNodeOrder)
         
         // Select the first node if available
         if (data.nodes.length > 0) {
@@ -139,10 +546,13 @@ export default function SimpleExperimentTreePage() {
     try {
       setCreating(true)
       
+      // Use target block if specified, otherwise use the provided nodeType
+      const actualNodeType = targetBlockForNewNode || nodeType
+      
       const requestData = {
         name,
         description,
-        node_type: nodeType,
+        node_type: actualNodeType,
         position: experimentNodes.length + 1, // Add at the end
         content: '' // Empty content initially
       }
@@ -187,9 +597,28 @@ export default function SimpleExperimentTreePage() {
         }
       }
       
-      setExperimentNodes(prev => [...prev, newNode])
-      setSelectedNodeId(newNode.id) // Select the new node
+      // Refresh nodes from API to get the complete data
+      const nodesResponse = await fetch(`/api/trees/${treeId}/nodes`)
+      if (nodesResponse.ok) {
+        const nodesData = await nodesResponse.json()
+        setExperimentNodes(nodesData.nodes)
+        
+        // Initialize node order for each block type
+        const initialNodeOrder: Record<string, string[]> = {}
+        nodesData.nodes.forEach((node: ExperimentNode) => {
+          if (!initialNodeOrder[node.type]) {
+            initialNodeOrder[node.type] = []
+          }
+          initialNodeOrder[node.type].push(node.id)
+        })
+        setNodeOrder(initialNodeOrder)
+        
+        // Select the new node
+        setSelectedNodeId(data.node.id)
+      }
+      
       setShowCreateForm(false)
+      setTargetBlockForNewNode(null) // Reset target block
     } catch (err) {
       console.error('Error creating node:', err)
       alert('Failed to create node: ' + (err instanceof Error ? err.message : 'Unknown error'))
@@ -605,7 +1034,7 @@ export default function SimpleExperimentTreePage() {
           <CardContent>
             <p>{error}</p>
             <Button onClick={() => router.push(`/project/${projectId}`)} className="mt-4">
-              Back to Project
+              Back to {projectInfo?.name || 'Project'}
             </Button>
           </CardContent>
         </Card>
@@ -626,7 +1055,7 @@ export default function SimpleExperimentTreePage() {
             className="flex items-center space-x-2"
           >
             <ArrowLeftIcon className="h-4 w-4" />
-            <span>Back to Project</span>
+            <span>Back to {projectInfo?.name || 'Project'}</span>
           </Button>
         </div>
 
@@ -678,11 +1107,11 @@ export default function SimpleExperimentTreePage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowCreateForm(true)}
+                    onClick={() => setShowAddBlockForm(true)}
                     className="flex items-center space-x-1"
                   >
                     <PlusIcon className="h-4 w-4" />
-                    <span>Add</span>
+                    <span>Add Block</span>
                   </Button>
                 </div>
               </CardHeader>
@@ -694,8 +1123,9 @@ export default function SimpleExperimentTreePage() {
                       <p className="text-sm">Click "Add" to create your first step.</p>
                     </div>
                   ) : (
-                    experimentNodes.map((node) => {
-                      const isSelected = selectedNodeId === node.id
+                    allBlockTypes.map((nodeType) => {
+                      const nodes = groupedNodes[nodeType] || []
+                      const isCollapsed = collapsedBlocks.has(nodeType)
                       const getStatusColor = (status: string) => {
                         switch (status) {
                           case 'completed': return 'bg-green-500'
@@ -705,25 +1135,165 @@ export default function SimpleExperimentTreePage() {
                         }
                       }
                       
+                      const isHighlighted = isBlockHighlighted(nodeType)
+                      
                       return (
                         <div 
-                          key={node.id}
-                          className={`border rounded-lg p-3 cursor-pointer transition-all duration-200 ${
-                            isSelected 
-                              ? 'bg-primary/10 border-primary shadow-md' 
-                              : 'hover:bg-muted/50'
+                          key={nodeType} 
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, 'block', nodeType)}
+                          onDragOver={(e) => handleDragOver(e, 'block', nodeType)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDrop(e, 'block', nodeType)}
+                          onDragEnd={handleDragEnd}
+                          className={`border rounded-lg overflow-hidden transition-all duration-200 cursor-move ${
+                            isHighlighted ? 'border-primary shadow-md' : ''
+                          } ${
+                            draggedItem?.type === 'block' && draggedItem.id === nodeType ? 'opacity-50' : ''
+                          } ${
+                            dragOverItem?.type === 'block' && dragOverItem.id === nodeType ? 'border-blue-500 bg-blue-50' : ''
                           }`}
-                          onClick={() => setSelectedNodeId(node.id)}
                         >
-                          <div className="flex items-center space-x-2">
-                            <div className={`w-2 h-2 ${getStatusColor(node.status)} rounded-full`}></div>
-                            <span className={`text-sm font-medium ${isSelected ? 'text-primary' : ''}`}>
-                              {node.title}
-                            </span>
+                          {/* Block Header */}
+                          <div className={`px-3 py-2 transition-colors ${
+                            isHighlighted ? 'bg-primary/10' : 'bg-muted/30'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <div 
+                                className="flex items-center space-x-2 cursor-pointer hover:bg-muted/50 transition-colors rounded px-1 py-1 -mx-1 -my-1 flex-1"
+                                onClick={() => toggleBlock(nodeType)}
+                              >
+                                <span className="text-lg">{getBlockIcon(nodeType)}</span>
+                                <span className="text-sm font-medium">{getBlockTitle(nodeType)}</span>
+                                <Badge variant="secondary" className="text-xs">
+                                  {nodes.length}
+                                </Badge>
+                                {isCollapsed ? (
+                                  <ChevronRightIcon className="h-4 w-4 text-muted-foreground ml-auto" />
+                                ) : (
+                                  <ChevronDownIcon className="h-4 w-4 text-muted-foreground ml-auto" />
+                                )}
+                              </div>
+                              
+                              {/* Block Management Menu */}
+                              <div className="flex items-center space-x-1 ml-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleAddNodeToBlock(nodeType)
+                                  }}
+                                  title={`Add ${getBlockTitle(nodeType).slice(0, -1)}`}
+                                >
+                                  <PlusIcon className="h-3 w-3" />
+                                </Button>
+                                
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <EllipsisVerticalIcon className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleEditBlock(nodeType)}>
+                                      <PencilIcon className="h-4 w-4 mr-2" />
+                                      Edit Block
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleDeleteBlock(nodeType)}
+                                      className="text-destructive"
+                                    >
+                                      <TrashIcon className="h-4 w-4 mr-2" />
+                                      Delete Block
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </div>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {node.type} {node.status === 'completed' ? '(Completed)' : node.status === 'in-progress' ? '(In Progress)' : ''}
-                          </p>
+                          
+                          {/* Block Content */}
+                          {!isCollapsed && (
+                            <div className="p-2 space-y-2">
+                              {(nodeOrder[nodeType] ? 
+                                nodeOrder[nodeType].map(nodeId => nodes.find(n => n.id === nodeId)).filter((node): node is ExperimentNode => node !== undefined) :
+                                nodes
+                              ).map((node) => {
+                                const isSelected = selectedNodeId === node.id
+                                
+                                return (
+                                  <div 
+                                    key={node.id}
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, 'node', node.id, nodeType)}
+                                    onDragOver={(e) => handleDragOver(e, 'node', node.id, nodeType)}
+                                    onDragLeave={(e) => handleDragLeave(e, 'node')}
+                                    onDrop={(e) => handleDrop(e, 'node', node.id, nodeType)}
+                                    onDragEnd={handleDragEnd}
+                                    className={`border rounded-lg p-3 transition-all duration-200 cursor-move ${
+                                      isSelected 
+                                        ? 'bg-primary/10 border-primary shadow-md' 
+                                        : 'hover:bg-muted/50'
+                                    } ${
+                                      draggedItem?.type === 'node' && draggedItem.id === node.id ? 'opacity-50' : ''
+                                    } ${
+                                      dragOverItem?.type === 'node' && dragOverItem.id === node.id ? 'border-blue-500 bg-blue-50' : ''
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div 
+                                        className="flex items-center space-x-2 cursor-pointer flex-1"
+                                        onClick={() => setSelectedNodeId(node.id)}
+                                      >
+                                        <div className={`w-2 h-2 ${getStatusColor(node.status)} rounded-full`}></div>
+                                        <span className={`text-sm font-medium ${isSelected ? 'text-primary' : ''}`}>
+                                          {node.title}
+                                        </span>
+                                      </div>
+                                      
+                                      {/* Node Management Buttons */}
+                                      <div className="flex items-center space-x-1 ml-2">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setShowEditForm(true)
+                                          }}
+                                          title="Edit Node"
+                                        >
+                                          <PencilIcon className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            deleteNode(node.id)
+                                          }}
+                                          title="Delete Node"
+                                        >
+                                          <TrashIcon className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      {node.status === 'completed' ? '(Completed)' : node.status === 'in-progress' ? '(In Progress)' : ''}
+                                    </p>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       )
                     })
@@ -1290,6 +1860,121 @@ export default function SimpleExperimentTreePage() {
             {videoAttachment.description && (
               <p className="text-sm text-muted-foreground mt-4">{videoAttachment.description}</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Block Modal */}
+      {showAddBlockForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Add New Block</h3>
+            <AddBlockForm
+              onSubmit={async (blockName, blockType) => {
+                try {
+                  const response = await fetch(`/api/trees/${treeId}/blocks`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      name: blockName,
+                      blockType: blockType
+                    }),
+                  })
+
+                  if (!response.ok) {
+                    throw new Error('Failed to create block')
+                  }
+
+                  const data = await response.json()
+                  
+                  // Refresh blocks from API instead of updating local state
+                  // This prevents duplicates and ensures consistency
+                  const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
+                  if (blocksResponse.ok) {
+                    const blocksData = await blocksResponse.json()
+                    setCustomBlocks(blocksData.customBlocks || [])
+                    
+                    // Set block names from custom blocks
+                    const names: Record<string, string> = {}
+                    blocksData.customBlocks?.forEach((block: any) => {
+                      names[block.id] = block.name
+                    })
+                    setBlockNames(names)
+                    
+                    // Set block order
+                    const order = blocksData.blockOrder?.map((item: any) => item.block_type) || []
+                    setBlockOrder(order)
+                  }
+                  
+                  setShowAddBlockForm(false)
+                } catch (err) {
+                  console.error('Error creating block:', err)
+                  alert('Failed to create block')
+                }
+              }}
+              onCancel={() => setShowAddBlockForm(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Edit Block Modal */}
+      {showEditBlockForm && editingBlockType && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Edit Block</h3>
+            <EditBlockForm
+              blockType={editingBlockType}
+              onSubmit={async (newBlockName) => {
+                try {
+                  if (!editingBlockType) return
+
+                  const response = await fetch(`/api/trees/${treeId}/blocks/${editingBlockType}`, {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      name: newBlockName
+                    }),
+                  })
+
+                  if (!response.ok) {
+                    throw new Error('Failed to update block')
+                  }
+
+                  // Refresh blocks from API instead of updating local state
+                  const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
+                  if (blocksResponse.ok) {
+                    const blocksData = await blocksResponse.json()
+                    setCustomBlocks(blocksData.customBlocks || [])
+                    
+                    // Set block names from custom blocks
+                    const names: Record<string, string> = {}
+                    blocksData.customBlocks?.forEach((block: any) => {
+                      names[block.id] = block.name
+                    })
+                    setBlockNames(names)
+                    
+                    // Set block order
+                    const order = blocksData.blockOrder?.map((item: any) => item.block_type) || []
+                    setBlockOrder(order)
+                  }
+                  
+                  setShowEditBlockForm(false)
+                  setEditingBlockType(null)
+                } catch (err) {
+                  console.error('Error updating block:', err)
+                  alert('Failed to update block')
+                }
+              }}
+              onCancel={() => {
+                setShowEditBlockForm(false)
+                setEditingBlockType(null)
+              }}
+            />
           </div>
         </div>
       )}
@@ -2016,5 +2701,109 @@ function VideoEmbed({ url, type }: { url: string; type: string }) {
         </a>
       </Button>
     </div>
+  )
+}
+
+// Add Block Form Component
+function AddBlockForm({ 
+  onSubmit, 
+  onCancel
+}: { 
+  onSubmit: (blockName: string, blockType: string) => void
+  onCancel: () => void
+}) {
+  const [blockName, setBlockName] = useState('')
+  const [blockType, setBlockType] = useState('custom')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (blockName.trim()) {
+      onSubmit(blockName.trim(), blockType)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Block Name</label>
+        <input
+          type="text"
+          value={blockName}
+          onChange={(e) => setBlockName(e.target.value)}
+          placeholder="Enter block name (e.g., 'Data Collection', 'Quality Control')"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Block Type (for categorization)</label>
+        <select
+          value={blockType}
+          onChange={(e) => setBlockType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="protocol">Protocol</option>
+          <option value="analysis">Analysis</option>
+          <option value="data_creation">Data Creation</option>
+          <option value="results">Results</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" className="flex-1" disabled={!blockName.trim()}>
+          Add Block
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Edit Block Form Component
+function EditBlockForm({ 
+  blockType,
+  onSubmit, 
+  onCancel
+}: { 
+  blockType: string
+  onSubmit: (newBlockName: string) => void
+  onCancel: () => void
+}) {
+  const [newBlockName, setNewBlockName] = useState('')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (newBlockName.trim()) {
+      onSubmit(newBlockName.trim())
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Block Name</label>
+        <input
+          type="text"
+          value={newBlockName}
+          onChange={(e) => setNewBlockName(e.target.value)}
+          placeholder="Enter new block name"
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        />
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" className="flex-1" disabled={!newBlockName.trim()}>
+          Update Block
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   )
 }

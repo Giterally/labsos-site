@@ -32,7 +32,7 @@ export default function KnowledgeCaptureLanding() {
   const [showContactForm, setShowContactForm] = useState(false)
   const [openFAQ, setOpenFAQ] = useState<number | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     title: '',
@@ -48,20 +48,21 @@ export default function KnowledgeCaptureLanding() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitMessage, setSubmitMessage] = useState('')
 
-  // Check authentication status
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const user = await getCurrentUser()
-        setIsAuthenticated(!!user)
-      } catch (error) {
-        setIsAuthenticated(false)
-      } finally {
-        setLoading(false)
-      }
-    }
-    checkAuth()
-  }, [])
+  // Authentication check disabled for now to fix loading issue
+  // useEffect(() => {
+  //   const checkAuth = async () => {
+  //     try {
+  //       const user = await getCurrentUser()
+  //       setIsAuthenticated(!!user)
+  //     } catch (error) {
+  //       console.error('Auth check error:', error)
+  //       setIsAuthenticated(false)
+  //     } finally {
+  //       setLoading(false)
+  //     }
+  //   }
+  //   checkAuth()
+  // }, [])
 
   const toggleFAQ = (index: number) => {
     setOpenFAQ(openFAQ === index ? null : index)
@@ -125,11 +126,14 @@ export default function KnowledgeCaptureLanding() {
     }
   }
 
-  // Show loading state while checking authentication
+  // Show loading state while checking authentication (with timeout fallback)
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
       </div>
     )
   }

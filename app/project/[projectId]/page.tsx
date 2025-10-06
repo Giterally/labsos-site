@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
+import ManageTeamForm from "@/components/forms/ManageTeamForm"
 
 interface ExperimentTree {
   id: string
@@ -125,7 +126,25 @@ export default function SimpleProjectPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [teamMembersLoading, setTeamMembersLoading] = useState(false)
   const [showAddMemberForm, setShowAddMemberForm] = useState(false)
-  const [addingMember, setAddingMember] = useState(false)
+
+  // Function to refresh team members
+  const refreshTeamMembers = async () => {
+    try {
+      setTeamMembersLoading(true)
+      const response = await fetch(`/api/projects/${projectId}/team`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch team members')
+      }
+      
+      const data = await response.json()
+      setTeamMembers(data.members || [])
+    } catch (err) {
+      console.error('Error fetching team members:', err)
+    } finally {
+      setTeamMembersLoading(false)
+    }
+  }
   
   // Project info state
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
@@ -269,7 +288,7 @@ export default function SimpleProjectPage() {
         }
         
         const data = await response.json()
-        setTeamMembers(data.teamMembers || [])
+        setTeamMembers(data.members || [])
       } catch (err) {
         console.error('Error fetching team members:', err)
       } finally {
@@ -584,35 +603,27 @@ export default function SimpleProjectPage() {
   }
 
   // Team member management functions
-  const addTeamMember = async (email: string, role: string) => {
-    try {
-      setAddingMember(true)
-      
-      const response = await fetch(`/api/projects/${projectId}/team`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          email,
-          role
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to add team member')
+  const handleMemberAdded = () => {
+    // Refresh team members list
+    const fetchTeamMembers = async () => {
+      try {
+        setTeamMembersLoading(true)
+        const response = await fetch(`/api/projects/${projectId}/team`)
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch team members')
+        }
+        
+        const data = await response.json()
+        setTeamMembers(data.members || [])
+      } catch (err) {
+        console.error('Error fetching team members:', err)
+      } finally {
+        setTeamMembersLoading(false)
       }
-
-      const data = await response.json()
-      setTeamMembers(prev => [...prev, data.teamMember])
-      setShowAddMemberForm(false)
-    } catch (err) {
-      console.error('Error adding team member:', err)
-      alert('Failed to add team member: ' + (err instanceof Error ? err.message : 'Unknown error'))
-    } finally {
-      setAddingMember(false)
     }
+
+    fetchTeamMembers()
   }
 
   const removeTeamMember = async (memberId: string, memberName: string) => {
@@ -1144,21 +1155,21 @@ export default function SimpleProjectPage() {
       {/* Add Team Member Modal */}
       {showAddMemberForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Add Team Member</CardTitle>
-              <CardDescription>
-                Invite a team member to join this project
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <AddTeamMemberForm
-                onSubmit={addTeamMember}
-                onCancel={() => setShowAddMemberForm(false)}
-                loading={addingMember}
-              />
-            </CardContent>
-          </Card>
+          <ManageTeamForm
+            projectId={projectId}
+            members={teamMembers.map(member => ({
+              id: member.id,
+              name: member.profile?.full_name || 'Unknown',
+              email: member.profile?.email || 'unknown@example.com',
+              role: member.role,
+              avatar_url: undefined
+            }))}
+            onTeamUpdated={(updatedMembers) => {
+              // Refresh the team members from the database
+              refreshTeamMembers()
+              setShowAddMemberForm(false)
+            }}
+          />
         </div>
       )}
     </div>
@@ -1515,63 +1526,3 @@ function SoftwareForm({
   )
 }
 
-// Add Team Member Form Component
-function AddTeamMemberForm({ 
-  onSubmit, 
-  onCancel, 
-  loading 
-}: { 
-  onSubmit: (email: string, role: string) => void
-  onCancel: () => void
-  loading: boolean
-}) {
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState('')
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (email.trim() && role.trim()) {
-      onSubmit(email.trim(), role.trim())
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Email Address *</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="colleague@university.edu"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-          required
-        />
-        <p className="text-xs text-muted-foreground">
-          The person must have an account on this platform
-        </p>
-      </div>
-      
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Role *</label>
-        <input
-          type="text"
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-          placeholder="e.g., Lead Researcher, Data Analyst, Bioinformatician"
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-          required
-        />
-      </div>
-      
-      <div className="flex space-x-3 pt-4">
-        <Button type="submit" disabled={loading || !email.trim() || !role.trim()} className="flex-1">
-          {loading ? 'Adding...' : 'Add Team Member'}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  )
-}

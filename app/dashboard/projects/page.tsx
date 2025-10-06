@@ -37,32 +37,73 @@ export default function ProjectsPage() {
   const fetchProjects = async () => {
     try {
       setProjectsLoading(true)
-      const { data: projectsData, error } = await supabase
+      
+      // Get current user
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+      if (authError || !authUser) {
+        console.error('Error getting user:', authError)
+        setProjects([])
+        return
+      }
+
+      // Fetch all projects (RLS allows this for authenticated users)
+      const { data: allProjects, error } = await supabase
         .from('projects')
-        .select('id, name, description, slug, created_at')
+        .select(`
+          id, 
+          name, 
+          description, 
+          slug, 
+          created_at,
+          created_by
+        `)
         .order('created_at', { ascending: false })
 
       if (error) {
         console.error('Error fetching projects:', error)
-        // Fallback to empty array if fetch fails
         setProjects([])
-      } else {
-        // Transform the data to match the expected format
-        const transformedProjects = projectsData.map(project => ({
+        return
+      }
+
+      // Get user's project memberships
+      const { data: memberships, error: membershipError } = await supabase
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', authUser.id)
+        .is('left_at', null)
+
+      if (membershipError) {
+        console.error('Error fetching memberships:', membershipError)
+        setProjects([])
+        return
+      }
+
+      // Filter projects to only show those the user owns or is a member of
+      const userProjectIds = new Set([
+        ...allProjects.filter(p => p.created_by === authUser.id).map(p => p.id),
+        ...(memberships || []).map(m => m.project_id)
+      ])
+
+      const projectsData = allProjects.filter(project => userProjectIds.has(project.id))
+
+      // Transform the data to match the expected format
+      const transformedProjects = projectsData.map(project => {
+        return {
           id: project.slug || project.id, // Use slug if available, fallback to UUID
           name: project.name,
           description: project.description || 'No description available',
           status: "Active", // Default status
           language: "Python", // Default language
           lastUpdated: "Recently", // Default last updated
-          color: "bg-green-500", // Default color
-          collaborators: ["JS", "MJ", "AK"], // Default collaborators
+          color: project.created_by === authUser.id ? "bg-blue-500" : "bg-green-500", // Blue for owned, green for member
+          collaborators: [], // Will be populated later if needed
           tags: ["Project", "Research"], // Default tags
           repository: null, // Default repository
           createdDate: new Date(project.created_at).toISOString().split('T')[0], // Format date
-        }))
-        setProjects(transformedProjects)
-      }
+          isOwner: project.created_by === authUser.id
+        }
+      })
+      setProjects(transformedProjects)
     } catch (err) {
       console.error('Error in fetchProjects:', err)
       setProjects([])
@@ -435,6 +476,7 @@ export default function ProjectsPage() {
                     <Label htmlFor="project-language">Primary Language</Label>
                     <Input id="project-language" placeholder="Python, R, MATLAB..." />
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="project-status">Status</Label>
                     <Input id="project-status" placeholder="Planning, Active, Review..." />
@@ -469,3 +511,4 @@ export default function ProjectsPage() {
     </div>
   )
 }
+

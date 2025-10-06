@@ -109,11 +109,16 @@ export async function POST(
       return NextResponse.json({ error: 'Tree ID is required' }, { status: 400 })
     }
 
-    // Validate node_type against allowed values
+    // Validate node_type against allowed values or custom block IDs
     const allowedNodeTypes = ['protocol', 'data_creation', 'analysis', 'results']
-    if (node_type && !allowedNodeTypes.includes(node_type)) {
+    
+    // Check if it's a custom block ID (UUID format)
+    const isCustomBlockId = node_type && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(node_type)
+    
+    
+    if (node_type && !allowedNodeTypes.includes(node_type) && !isCustomBlockId) {
       return NextResponse.json({ 
-        error: `Invalid node type. Must be one of: ${allowedNodeTypes.join(', ')}` 
+        error: `Invalid node type. Must be one of: ${allowedNodeTypes.join(', ')} or a valid custom block ID` 
       }, { status: 400 })
     }
 
@@ -150,7 +155,7 @@ export async function POST(
         }, { status: 400 })
       } else if (nodeError.code === '23514') {
         return NextResponse.json({ 
-          error: `Invalid node type. Must be one of: ${allowedNodeTypes.join(', ')}` 
+          error: `Invalid node type. Must be one of: ${allowedNodeTypes.join(', ')} or a valid custom block ID` 
         }, { status: 400 })
       } else {
         return NextResponse.json({ 

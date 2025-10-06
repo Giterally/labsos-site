@@ -97,7 +97,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4 pt-20">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader className="text-center space-y-4">
           <div className="flex items-center justify-center space-x-2">
@@ -125,8 +125,8 @@ export default function DashboardPage() {
             <Button onClick={() => router.push("/dashboard/projects")} className="w-full max-w-xs">
               View My Projects
             </Button>
-            <Button onClick={() => router.push("/profile")} variant="outline" className="w-full max-w-xs">
-              View My Profile
+            <Button onClick={handleSignOut} variant="outline" className="w-full max-w-xs">
+              Sign Out
             </Button>
           </div>
         </CardContent>

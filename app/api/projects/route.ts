@@ -113,6 +113,21 @@ export async function POST(request: Request) {
       throw new Error(`Failed to create project: ${error.message}`)
     }
 
+    // Add the creator as a team member with "Lead Researcher" role
+    const { error: memberError } = await supabase
+      .from('project_members')
+      .insert([{
+        project_id: project.id,
+        user_id: user.id,
+        role: 'Lead Researcher',
+        initials: user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'
+      }])
+
+    if (memberError) {
+      console.warn('Failed to add creator as team member:', memberError)
+      // Don't fail the project creation if team member addition fails
+    }
+
     // Transform project to include empty related data
     const transformedProject = {
       ...project,
