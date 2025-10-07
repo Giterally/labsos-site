@@ -6,6 +6,9 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
 import {
   ArrowLeftIcon,
   BeakerIcon,
@@ -22,10 +25,15 @@ import {
   ShareIcon,
   EnvelopeIcon,
   GlobeAltIcon,
+  PencilIcon,
+  CheckIcon,
+  XMarkIcon,
+  PlusIcon,
 } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { getCurrentUser } from "@/lib/auth-service"
 
 interface ResearcherProfile {
   id: string
@@ -96,6 +104,36 @@ export default function ResearcherProfilePage() {
   const [researcher, setResearcher] = useState<ResearcherProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [isOwnProfile, setIsOwnProfile] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editData, setEditData] = useState<Partial<ResearcherProfile>>({})
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const user = await getCurrentUser()
+        setCurrentUser(user)
+        setIsAuthenticated(!!user)
+        
+        // Check if this is the user's own profile
+        if (user && researcherId) {
+          setIsOwnProfile(user.id === researcherId)
+        }
+      } catch (error) {
+        setIsAuthenticated(false)
+        setCurrentUser(null)
+        setIsOwnProfile(false)
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+
+    checkAuth()
+  }, [researcherId])
 
   useEffect(() => {
     const fetchResearcher = async () => {
@@ -122,8 +160,125 @@ export default function ResearcherProfilePage() {
       }
     }
 
-    fetchResearcher()
+    if (researcherId) {
+      fetchResearcher()
+    }
   }, [researcherId])
+
+  // Initialize edit data when researcher data loads
+  useEffect(() => {
+    if (researcher) {
+      setEditData({
+        name: researcher.name,
+        title: researcher.title,
+        bio: researcher.bio,
+        institution: researcher.institution,
+        department: researcher.department,
+        location: researcher.location,
+        website: researcher.website,
+        linkedin: researcher.linkedin,
+        orcid: researcher.orcid,
+        skills: [...researcher.skills],
+        interests: [...researcher.interests],
+      })
+    }
+  }, [researcher])
+
+  const handleEditToggle = () => {
+    if (isEditing) {
+      // Cancel editing - reset to original data
+      if (researcher) {
+        setEditData({
+          name: researcher.name,
+          title: researcher.title,
+          bio: researcher.bio,
+          institution: researcher.institution,
+          department: researcher.department,
+          location: researcher.location,
+          website: researcher.website,
+          linkedin: researcher.linkedin,
+          orcid: researcher.orcid,
+          skills: [...researcher.skills],
+          interests: [...researcher.interests],
+        })
+      }
+    }
+    setIsEditing(!isEditing)
+  }
+
+  const handleSave = async () => {
+    if (!researcher || !currentUser) return
+    
+    setSaving(true)
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: currentUser.id,
+          full_name: editData.name,
+          bio: editData.bio,
+          institution: editData.institution,
+          department: editData.department,
+          location: editData.location,
+          website: editData.website,
+          linkedin: editData.linkedin,
+          orcid: editData.orcid,
+          skills: editData.skills,
+          interests: editData.interests,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to save profile')
+      }
+
+      const result = await response.json()
+      console.log('Profile saved successfully:', result)
+      
+      // Update local state with the saved data
+      setResearcher({
+        ...researcher,
+        ...editData,
+      })
+      
+      setIsEditing(false)
+    } catch (error) {
+      console.error('Error saving profile:', error)
+      // TODO: Show error message to user
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleInputChange = (field: string, value: any) => {
+    setEditData(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const handleArrayFieldChange = (field: 'skills' | 'interests', value: string[]) => {
+    setEditData(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const addArrayItem = (field: 'skills' | 'interests', value: string) => {
+    if (!value.trim()) return
+    const currentArray = editData[field] || []
+    if (!currentArray.includes(value.trim())) {
+      handleArrayFieldChange(field, [...currentArray, value.trim()])
+    }
+  }
+
+  const removeArrayItem = (field: 'skills' | 'interests', index: number) => {
+    const currentArray = editData[field] || []
+    handleArrayFieldChange(field, currentArray.filter((_, i) => i !== index))
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -140,7 +295,7 @@ export default function ResearcherProfilePage() {
     }
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -170,7 +325,7 @@ export default function ResearcherProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={`min-h-screen ${isOwnProfile ? 'bg-background' : 'bg-background'}`}>
       {/* Header */}
       <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -182,12 +337,21 @@ export default function ResearcherProfilePage() {
             <Separator orientation="vertical" className="h-6" />
             <div className="flex items-center space-x-2">
               <BeakerIcon className="h-6 w-6 text-primary" />
-              <span className="text-lg font-semibold text-foreground">Researcher Profile</span>
+              <span className="text-lg font-semibold text-foreground">
+                {isOwnProfile ? "My Profile" : "Researcher Profile"}
+              </span>
+              {isOwnProfile && (
+                <Badge variant="secondary" className="text-xs">
+                  You
+                </Badge>
+              )}
             </div>
           </div>
-          <Button variant="outline" onClick={() => (window.location.href = "/login")}>
-            Sign In
-          </Button>
+          {!isAuthenticated && (
+            <Button variant="outline" onClick={() => (window.location.href = "/login")}>
+              Sign In
+            </Button>
+          )}
         </div>
       </header>
 
@@ -197,7 +361,7 @@ export default function ResearcherProfilePage() {
           {/* Left Column - Profile Info */}
           <div className="lg:col-span-1 space-y-6">
             {/* Profile Card */}
-            <Card>
+            <Card className={isOwnProfile ? "ring-2 ring-primary/20" : ""}>
               <CardContent className="p-6">
                 <div className="text-center space-y-4">
                   <Avatar className="h-24 w-24 mx-auto">
@@ -206,16 +370,53 @@ export default function ResearcherProfilePage() {
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <h1 className="text-2xl font-bold text-foreground">{researcher.name}</h1>
-                    <p className="text-lg text-muted-foreground">{researcher.title}</p>
-                    <p className="text-sm text-muted-foreground">{researcher.institution}</p>
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        <Input
+                          value={editData.name || ''}
+                          onChange={(e) => handleInputChange('name', e.target.value)}
+                          className="text-2xl font-bold text-center"
+                          placeholder="Full Name"
+                        />
+                        <Input
+                          value={editData.title || ''}
+                          onChange={(e) => handleInputChange('title', e.target.value)}
+                          className="text-lg text-center"
+                          placeholder="Title/Position"
+                        />
+                        <Input
+                          value={editData.institution || ''}
+                          onChange={(e) => handleInputChange('institution', e.target.value)}
+                          className="text-sm text-center"
+                          placeholder="Institution"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <h1 className="text-2xl font-bold text-foreground">{researcher.name}</h1>
+                        <p className="text-lg text-muted-foreground">{researcher.title}</p>
+                        <p className="text-sm text-muted-foreground">{researcher.institution}</p>
+                      </>
+                    )}
                   </div>
                   
                   <div className="space-y-2">
-                    <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground">
-                      <MapPinIcon className="h-4 w-4" />
-                      <span>{researcher.location}</span>
-                    </div>
+                    {isEditing ? (
+                      <div className="flex items-center justify-center space-x-2">
+                        <MapPinIcon className="h-4 w-4 text-muted-foreground" />
+                        <Input
+                          value={editData.location || ''}
+                          onChange={(e) => handleInputChange('location', e.target.value)}
+                          className="text-sm text-center w-32"
+                          placeholder="Location"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground">
+                        <MapPinIcon className="h-4 w-4" />
+                        <span>{researcher.location}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground">
                       <CalendarIcon className="h-4 w-4" />
                       <span>Joined {new Date(researcher.joinedDate).toLocaleDateString()}</span>
@@ -223,29 +424,101 @@ export default function ResearcherProfilePage() {
                   </div>
 
                   {/* Contact Links */}
-                  <div className="flex justify-center space-x-2">
-                    {researcher.email && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={`mailto:${researcher.email}`}>
-                          <EnvelopeIcon className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    )}
-                    {researcher.website && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={researcher.website} target="_blank" rel="noopener noreferrer">
-                          <GlobeAltIcon className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    )}
-                    {researcher.linkedin && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={researcher.linkedin} target="_blank" rel="noopener noreferrer">
-                          <LinkIcon className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    )}
-                  </div>
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <EnvelopeIcon className="h-4 w-4 text-muted-foreground" />
+                        <Input
+                          value={editData.website || ''}
+                          onChange={(e) => handleInputChange('website', e.target.value)}
+                          placeholder="Website URL"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                        <Input
+                          value={editData.linkedin || ''}
+                          onChange={(e) => handleInputChange('linkedin', e.target.value)}
+                          placeholder="LinkedIn URL"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <AcademicCapIcon className="h-4 w-4 text-muted-foreground" />
+                        <Input
+                          value={editData.orcid || ''}
+                          onChange={(e) => handleInputChange('orcid', e.target.value)}
+                          placeholder="ORCID ID"
+                          className="text-sm"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-center space-x-2">
+                      {researcher.email && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={`mailto:${researcher.email}`}>
+                            <EnvelopeIcon className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                      {researcher.website && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={researcher.website} target="_blank" rel="noopener noreferrer">
+                            <GlobeAltIcon className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                      {researcher.linkedin && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={researcher.linkedin} target="_blank" rel="noopener noreferrer">
+                            <LinkIcon className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Edit Profile Button - Only show for own profile */}
+                  {isOwnProfile && (
+                    <div className="pt-4 border-t">
+                      {!isEditing ? (
+                        <Button 
+                          variant="default" 
+                          size="sm" 
+                          className="w-full"
+                          onClick={handleEditToggle}
+                        >
+                          <PencilIcon className="h-4 w-4 mr-2" />
+                          Edit Profile
+                        </Button>
+                      ) : (
+                        <div className="flex space-x-2">
+                          <Button 
+                            variant="default" 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={handleSave}
+                            disabled={saving}
+                          >
+                            <CheckIcon className="h-4 w-4 mr-2" />
+                            {saving ? 'Saving...' : 'Save'}
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={handleEditToggle}
+                            disabled={saving}
+                          >
+                            <XMarkIcon className="h-4 w-4 mr-2" />
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -259,9 +532,18 @@ export default function ResearcherProfilePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {researcher.bio}
-                </p>
+                {isEditing ? (
+                  <Textarea
+                    value={editData.bio || ''}
+                    onChange={(e) => handleInputChange('bio', e.target.value)}
+                    placeholder="Tell us about yourself, your research interests, and background..."
+                    className="min-h-[100px] text-sm"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {researcher.bio}
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -274,13 +556,56 @@ export default function ResearcherProfilePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {researcher.skills.map((skill, index) => (
-                    <Badge key={index} variant="secondary" className="text-xs">
-                      {skill}
-                    </Badge>
-                  ))}
-                </div>
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {(editData.skills || []).map((skill, index) => (
+                        <Badge key={index} variant="secondary" className="text-xs flex items-center gap-1">
+                          {skill}
+                          <button
+                            onClick={() => removeArrayItem('skills', index)}
+                            className="ml-1 hover:text-destructive"
+                          >
+                            <XMarkIcon className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Add a skill..."
+                        className="text-sm"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            addArrayItem('skills', e.currentTarget.value)
+                            e.currentTarget.value = ''
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          const input = e.currentTarget.previousElementSibling as HTMLInputElement
+                          if (input) {
+                            addArrayItem('skills', input.value)
+                            input.value = ''
+                          }
+                        }}
+                      >
+                        <PlusIcon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {researcher.skills.map((skill, index) => (
+                      <Badge key={index} variant="secondary" className="text-xs">
+                        {skill}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -293,13 +618,56 @@ export default function ResearcherProfilePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {researcher.interests.map((interest, index) => (
-                    <Badge key={index} variant="outline" className="text-xs">
-                      {interest}
-                    </Badge>
-                  ))}
-                </div>
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {(editData.interests || []).map((interest, index) => (
+                        <Badge key={index} variant="outline" className="text-xs flex items-center gap-1">
+                          {interest}
+                          <button
+                            onClick={() => removeArrayItem('interests', index)}
+                            className="ml-1 hover:text-destructive"
+                          >
+                            <XMarkIcon className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Add a research interest..."
+                        className="text-sm"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            addArrayItem('interests', e.currentTarget.value)
+                            e.currentTarget.value = ''
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          const input = e.currentTarget.previousElementSibling as HTMLInputElement
+                          if (input) {
+                            addArrayItem('interests', input.value)
+                            input.value = ''
+                          }
+                        }}
+                      >
+                        <PlusIcon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {researcher.interests.map((interest, index) => (
+                      <Badge key={index} variant="outline" className="text-xs">
+                        {interest}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 

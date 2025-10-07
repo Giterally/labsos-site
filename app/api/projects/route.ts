@@ -164,14 +164,18 @@ export async function POST(request: Request) {
     }
 
     // Add the creator as a team member with "Lead Researcher" role
+    // Use upsert to avoid duplicate key constraint violations
     const { error: memberError } = await supabase
       .from('project_members')
-      .insert([{
+      .upsert([{
         project_id: project.id,
         user_id: user.id,
         role: 'Lead Researcher',
-        initials: user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'
-      }])
+        initials: user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U',
+        left_at: null // Ensure they're active
+      }], {
+        onConflict: 'project_id,user_id'
+      })
 
     if (memberError) {
       console.warn('Failed to add creator as team member:', memberError)

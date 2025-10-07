@@ -88,21 +88,16 @@ export async function GET(
       )
     }
 
-    // Get all team members for this project
+    // Get all team members for this project with profile data
     const { data: teamMembers, error } = await supabase
       .from('project_members')
       .select(`
         id,
+        user_id,
         role,
         initials,
         joined_at,
-        left_at,
-        profiles!project_members_user_id_fkey (
-          id,
-          full_name,
-          email,
-          lab_name
-        )
+        left_at
       `)
       .eq('project_id', actualProjectId)
       .is('left_at', null)
@@ -112,14 +107,31 @@ export async function GET(
       throw new Error(`Failed to fetch team members: ${error.message}`)
     }
 
+    // Get profile data for all team members
+    const userIds = (teamMembers || []).map(member => member.user_id)
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, lab_name')
+      .in('id', userIds)
+
+    if (profilesError) {
+      console.error('Error fetching profiles:', profilesError)
+    }
+
+    // Create a map of user_id to profile data
+    const profileMap = new Map()
+    ;(profiles || []).forEach(profile => {
+      profileMap.set(profile.id, profile)
+    })
+
     // Transform the data
     const transformedMembers = (teamMembers || []).map(member => {
-      const profile = Array.isArray(member.profiles) ? member.profiles[0] : member.profiles
+      const profile = profileMap.get(member.user_id)
       return {
         id: member.id,
-        user_id: profile?.id,
-        name: profile?.full_name || 'Unknown',
-        email: profile?.email || 'Unknown',
+        user_id: member.user_id,
+        name: profile?.full_name || 'Unknown User',
+        email: profile?.email || 'Unknown Email',
         lab_name: profile?.lab_name || 'Unknown Lab',
         role: member.role,
         initials: member.initials || (profile?.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
@@ -165,7 +177,7 @@ export async function POST(
 
     const { projectId } = await params
     const body = await request.json()
-    const { user_id } = body
+    const { user_id, role = 'Team Member' } = body
 
     if (!user_id) {
       return NextResponse.json(
@@ -257,7 +269,7 @@ export async function POST(
         .from('project_members')
         .update({
           left_at: null,
-          role: 'Team Member',
+          role: role,
           initials: targetUserProfile.full_name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'
         })
         .eq('id', existingInactiveMember.id)
@@ -273,7 +285,7 @@ export async function POST(
         .insert([{
           project_id: actualProjectId,
           user_id: user_id,
-          role: 'Team Member',
+          role: role,
           initials: targetUserProfile.full_name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U'
         }])
         .select()

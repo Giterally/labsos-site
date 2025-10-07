@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -38,6 +39,7 @@ interface ManageTeamFormProps {
 }
 
 export default function ManageTeamForm({ projectId, onTeamUpdated }: ManageTeamFormProps) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -249,7 +251,7 @@ export default function ManageTeamForm({ projectId, onTeamUpdated }: ManageTeamF
                 </div>
               ) : (
                 teamMembers.map((member) => (
-                  <Card key={member.id} className="p-3">
+                  <Card key={member.id} className="p-3 cursor-pointer hover:bg-accent transition-colors" onClick={() => router.push(`/researcher/${member.user_id}`)}>
                     <div className="flex items-center space-x-3">
                       <Avatar className="h-10 w-10">
                         <AvatarFallback className="text-sm">
@@ -257,7 +259,7 @@ export default function ManageTeamForm({ projectId, onTeamUpdated }: ManageTeamF
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1">
-                        <div className="font-medium">{member.name}</div>
+                        <div className="font-medium hover:text-primary transition-colors">{member.name}</div>
                         <div className="text-sm text-muted-foreground">
                           {member.email} • {member.lab_name}
                         </div>

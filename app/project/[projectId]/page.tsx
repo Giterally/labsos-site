@@ -772,8 +772,8 @@ export default function SimpleProjectPage() {
                     </div>
                   ) : (
                     teamMembers.map((member) => {
-                      const profileName = member.profile?.full_name || 'Unknown User'
-                      const profileId = member.profile?.id || member.user_id
+                      const profileName = member.name || 'Unknown User'
+                      const profileId = member.user_id
                       
                       return (
                         <div key={member.id} className="flex items-center justify-between group">

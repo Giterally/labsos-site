@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CheckIcon, ChevronDownIcon, UserPlusIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import { supabase } from "@/lib/supabase-client"
 
@@ -21,6 +22,14 @@ interface AddTeamMemberFormProps {
   onMemberAdded: () => void
 }
 
+const ROLE_OPTIONS = [
+  { value: 'Lead Researcher', label: 'Lead Researcher' },
+  { value: 'PhD Student', label: 'PhD Student' },
+  { value: 'Postdoc', label: 'Postdoc' },
+  { value: 'Collaborator', label: 'Collaborator' },
+  { value: 'Team Member', label: 'Team Member' }
+]
+
 export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamMemberFormProps) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -28,6 +37,7 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
   const [searchTerm, setSearchTerm] = useState("")
   const [searchResults, setSearchResults] = useState<User[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [selectedRole, setSelectedRole] = useState('Team Member')
 
   // Debounced search function
   const debouncedSearch = useCallback(
@@ -96,7 +106,7 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ user_id: user.id }),
+        body: JSON.stringify({ user_id: user.id, role: selectedRole }),
       })
 
       if (!response.ok) {
@@ -110,6 +120,7 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
       // Success! Reset form and close
       setSearchTerm("")
       setSearchResults([])
+      setSelectedRole('Team Member')
       setOpen(false)
       onMemberAdded()
     } catch (err: any) {
@@ -130,6 +141,7 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
     if (!open) {
       setSearchTerm("")
       setSearchResults([])
+      setSelectedRole('Team Member')
       setError(null)
     } else {
       // Clear error when popover opens
@@ -164,6 +176,23 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
                 className="pl-10 h-10"
                 autoFocus
               />
+            </div>
+
+            {/* Role Selection */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Role</label>
+              <Select value={selectedRole} onValueChange={setSelectedRole}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_OPTIONS.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {role.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Search Results */}
