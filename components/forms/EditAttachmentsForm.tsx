@@ -179,7 +179,7 @@ export default function EditAttachmentsForm({ node, open, onOpenChange, onAttach
                   type="button" 
                   onClick={addAttachment} 
                   size="sm"
-                  disabled={!newAttachment.name || !newAttachment.url || (urlPreview && !urlPreview.isValid)}
+                  disabled={!newAttachment.name || !newAttachment.url || (urlPreview && urlPreview.isValid === false)}
                 >
                   <PlusIcon className="h-4 w-4" />
                 </Button>

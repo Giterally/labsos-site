@@ -9,6 +9,7 @@ import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon } from "@heroicons/react
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import ManageTeamForm from "@/components/forms/ManageTeamForm"
+import AddTeamMemberForm from "@/components/forms/AddTeamMemberForm"
 
 interface ExperimentTree {
   id: string
@@ -77,6 +78,7 @@ interface ProjectInfo {
   name: string
   description: string | null
   status: string
+  created_by: string
   created_at: string
   updated_at: string
 }
@@ -125,22 +127,42 @@ export default function SimpleProjectPage() {
   // Team member state
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [teamMembersLoading, setTeamMembersLoading] = useState(false)
-  const [showAddMemberForm, setShowAddMemberForm] = useState(false)
 
   // Function to refresh team members
   const refreshTeamMembers = async () => {
+    // Prevent multiple simultaneous calls
+    if (teamMembersLoading) {
+      return
+    }
+    
     try {
       setTeamMembersLoading(true)
-      const response = await fetch(`/api/projects/${projectId}/team`)
+      
+      // Get the current session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session?.access_token) {
+        console.error('Session error:', sessionError)
+        setTeamMembers([])
+        return
+      }
+      
+      const response = await fetch(`/api/projects/${projectId}/team`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      })
       
       if (!response.ok) {
-        throw new Error('Failed to fetch team members')
+        console.error('Team API error:', response.status)
+        setTeamMembers([])
+        return
       }
       
       const data = await response.json()
       setTeamMembers(data.members || [])
     } catch (err) {
       console.error('Error fetching team members:', err)
+      setTeamMembers([])
     } finally {
       setTeamMembersLoading(false)
     }
@@ -148,6 +170,9 @@ export default function SimpleProjectPage() {
   
   // Project info state
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
+  
+  // Current user state
+  const [currentUser, setCurrentUser] = useState<any>(null)
 
   // Fetch project information
   useEffect(() => {
@@ -167,6 +192,20 @@ export default function SimpleProjectPage() {
     }
 
     fetchProjectInfo()
+  }, [projectId])
+
+  // Get current user
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUser(user)
+    }
+    getCurrentUser()
+  }, [])
+
+  // Fetch team members when component mounts
+  useEffect(() => {
+    refreshTeamMembers()
   }, [projectId])
 
   // Fetch experiment trees for this project
@@ -278,25 +317,7 @@ export default function SimpleProjectPage() {
 
   // Fetch team members for this project
   useEffect(() => {
-    const fetchTeamMembers = async () => {
-      try {
-        setTeamMembersLoading(true)
-        const response = await fetch(`/api/projects/${projectId}/team`)
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch team members')
-        }
-        
-        const data = await response.json()
-        setTeamMembers(data.members || [])
-      } catch (err) {
-        console.error('Error fetching team members:', err)
-      } finally {
-        setTeamMembersLoading(false)
-      }
-    }
-
-    fetchTeamMembers()
+    refreshTeamMembers()
   }, [projectId])
 
   // Create new experiment tree
@@ -605,43 +626,35 @@ export default function SimpleProjectPage() {
   // Team member management functions
   const handleMemberAdded = () => {
     // Refresh team members list
-    const fetchTeamMembers = async () => {
-      try {
-        setTeamMembersLoading(true)
-        const response = await fetch(`/api/projects/${projectId}/team`)
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch team members')
-        }
-        
-        const data = await response.json()
-        setTeamMembers(data.members || [])
-      } catch (err) {
-        console.error('Error fetching team members:', err)
-      } finally {
-        setTeamMembersLoading(false)
-      }
-    }
-
-    fetchTeamMembers()
+    refreshTeamMembers()
   }
 
   const removeTeamMember = async (memberId: string, memberName: string) => {
-    if (!confirm(`Are you sure you want to remove "${memberName}" from the team?`)) {
+    if (!confirm(`Are you sure you want to remove "${memberName}" from the team?\n\nThis action cannot be undone.`)) {
       return
     }
 
     try {
+      // Get the current session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session?.access_token) {
+        throw new Error('Authentication required')
+      }
+
       const response = await fetch(`/api/projects/${projectId}/team/${memberId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        }
       })
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to remove team member')
+        throw new Error(errorData.message || errorData.error || 'Failed to remove team member')
       }
 
-      setTeamMembers(prev => prev.filter(member => member.id !== memberId))
+      // Refresh team members from the database
+      refreshTeamMembers()
     } catch (err) {
       console.error('Error removing team member:', err)
       alert('Failed to remove team member: ' + (err instanceof Error ? err.message : 'Unknown error'))
@@ -737,15 +750,12 @@ export default function SimpleProjectPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Team Members</CardTitle>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowAddMemberForm(true)}
-                    className="flex items-center space-x-1"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                    <span>Add</span>
-                  </Button>
+                  {currentUser && teamMembers.some(member => member.user_id === currentUser.id) && (
+                    <AddTeamMemberForm
+                      projectId={projectId}
+                      onMemberAdded={refreshTeamMembers}
+                    />
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -781,17 +791,19 @@ export default function SimpleProjectPage() {
                               <p className="text-xs text-muted-foreground">{member.role}</p>
                             </div>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              removeTeamMember(member.id, profileName)
-                            }}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </Button>
+                          {currentUser && teamMembers.some(m => m.user_id === currentUser.id) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                removeTeamMember(member.id, profileName)
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       )
                     })
@@ -1152,26 +1164,6 @@ export default function SimpleProjectPage() {
         </div>
       )}
 
-      {/* Add Team Member Modal */}
-      {showAddMemberForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <ManageTeamForm
-            projectId={projectId}
-            members={teamMembers.map(member => ({
-              id: member.id,
-              name: member.profile?.full_name || 'Unknown',
-              email: member.profile?.email || 'unknown@example.com',
-              role: member.role,
-              avatar_url: undefined
-            }))}
-            onTeamUpdated={(updatedMembers) => {
-              // Refresh the team members from the database
-              refreshTeamMembers()
-              setShowAddMemberForm(false)
-            }}
-          />
-        </div>
-      )}
     </div>
   )
 }

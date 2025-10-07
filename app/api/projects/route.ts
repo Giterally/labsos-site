@@ -30,39 +30,89 @@ export async function GET(request: Request) {
       )
     }
 
-    // Get user's projects
-    const { data: projects, error } = await supabase
+    // Get user's projects (both owned and team member projects)
+    // First get owned projects
+    const { data: ownedProjects, error: ownedError } = await supabase
       .from('projects')
       .select('*')
       .eq('created_by', user.id)
       .order('created_at', { ascending: false })
 
-    if (error) {
-      throw new Error(`Failed to fetch projects: ${error.message}`)
+    if (ownedError) {
+      throw new Error(`Failed to fetch owned projects: ${ownedError.message}`)
     }
 
-    // Transform projects to include empty related data
-    const transformedProjects = (projects || []).map(project => ({
-      ...project,
-      members: [],
-      past_members: [],
-      related_projects: [],
-      experiment_trees: [],
-      software: [],
-      datasets: [],
-      outputs: [],
-      stats: {
-        total_trees: 0,
-        active_trees: 0,
-        completed_trees: 0,
-        total_nodes: 0,
-        total_software: 0,
-        total_datasets: 0,
-        total_outputs: 0,
-        total_publications: 0,
-        total_citations: 0
+    // Then get projects where user is a team member
+    const { data: memberProjects, error: memberError } = await supabase
+      .from('project_members')
+      .select(`
+        project_id,
+        role,
+        joined_at,
+        projects!project_members_project_id_fkey (*)
+      `)
+      .eq('user_id', user.id)
+      .is('left_at', null)
+
+    if (memberError) {
+      throw new Error(`Failed to fetch member projects: ${memberError.message}`)
+    }
+
+    // Combine and deduplicate projects
+    const allProjects = [...(ownedProjects || [])]
+    const memberProjectIds = new Set((ownedProjects || []).map(p => p.id))
+    
+    ;(memberProjects || []).forEach(member => {
+      const project = Array.isArray(member.projects) ? member.projects[0] : member.projects
+      if (project && !memberProjectIds.has(project.id)) {
+        allProjects.push(project)
       }
-    }))
+    })
+
+    const projects = allProjects
+
+    // Transform projects to include empty related data and user role
+    const transformedProjects = (projects || []).map(project => {
+      const isOwner = project.created_by === user.id
+      
+      // Find user's role in member projects
+      let userRole = 'Team Member'
+      if (isOwner) {
+        userRole = 'Lead Researcher'
+      } else {
+        const memberProject = memberProjects?.find(mp => {
+          const proj = Array.isArray(mp.projects) ? mp.projects[0] : mp.projects
+          return proj?.id === project.id
+        })
+        if (memberProject) {
+          userRole = memberProject.role
+        }
+      }
+      
+      return {
+        ...project,
+        user_role: userRole,
+        is_owner: isOwner,
+        members: [],
+        past_members: [],
+        related_projects: [],
+        experiment_trees: [],
+        software: [],
+        datasets: [],
+        outputs: [],
+        stats: {
+          total_trees: 0,
+          active_trees: 0,
+          completed_trees: 0,
+          total_nodes: 0,
+          total_software: 0,
+          total_datasets: 0,
+          total_outputs: 0,
+          total_publications: 0,
+          total_citations: 0
+        }
+      }
+    })
 
     return NextResponse.json({ projects: transformedProjects })
   } catch (error: any) {

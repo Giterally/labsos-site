@@ -6,14 +6,34 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { projectId: string; memberId: string } }
+  { params }: { params: Promise<{ projectId: string; memberId: string }> }
 ) {
   try {
-    const { projectId, memberId } = params
+    const { projectId, memberId } = await params
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { message: 'No authorization header' },
+        { status: 401 }
+      )
+    }
+
+    // Extract the token
+    const token = authHeader.replace('Bearer ', '')
+    
+    // Create authenticated client
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    
+    // Verify the token and get user
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !authUser) {
+      return NextResponse.json(
+        { message: 'Invalid token' },
+        { status: 401 }
+      )
+    }
 
     // Check if projectId is a UUID or slug
     let actualProjectId = projectId
@@ -31,8 +51,24 @@ export async function DELETE(
       actualProjectId = project.id
     }
 
+    // Check if the requesting user is a team member with admin access
+    const { data: memberCheck, error: memberError } = await supabase
+      .from('project_members')
+      .select('id, role')
+      .eq('project_id', actualProjectId)
+      .eq('user_id', authUser.id)
+      .is('left_at', null)
+      .single()
+
+    if (memberError || !memberCheck) {
+      return NextResponse.json(
+        { message: 'You must be a team member to remove other members' },
+        { status: 403 }
+      )
+    }
+
     // Remove the team member by setting left_at timestamp
-    const { error: memberError } = await supabase
+    const { error: removeError } = await supabase
       .from('project_members')
       .update({
         left_at: new Date().toISOString()
@@ -40,11 +76,11 @@ export async function DELETE(
       .eq('id', memberId)
       .eq('project_id', actualProjectId)
 
-    if (memberError) {
-      console.error('Error removing team member:', memberError)
+    if (removeError) {
+      console.error('Error removing team member:', removeError)
       return NextResponse.json({ 
         error: 'Failed to remove team member',
-        details: memberError.message 
+        details: removeError.message 
       }, { status: 500 })
     }
 

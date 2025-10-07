@@ -25,12 +25,13 @@ import {
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
+import CreateProjectForm from "@/components/forms/CreateProjectForm"
+import ManageTeamForm from "@/components/forms/ManageTeamForm"
 
 export default function ProjectsPage() {
   const [user, setUser] = useState<any>(null)
   const [projects, setProjects] = useState<any[]>([])
   const [projectsLoading, setProjectsLoading] = useState(true)
-  const [showNewProject, setShowNewProject] = useState(false)
   const [selectedProject, setSelectedProject] = useState<any>(null)
   const router = useRouter()
 
@@ -46,67 +47,69 @@ export default function ProjectsPage() {
         return
       }
 
-      // Fetch all projects (RLS allows this for authenticated users)
-      const { data: allProjects, error } = await supabase
-        .from('projects')
-        .select(`
-          id, 
-          name, 
-          description, 
-          slug, 
-          created_at,
-          created_by
-        `)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching projects:', error)
+      // Get session for API call
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        console.error('Error getting session:', sessionError)
         setProjects([])
         return
       }
 
-      // Get user's project memberships
-      const { data: memberships, error: membershipError } = await supabase
-        .from('project_members')
-        .select('project_id')
-        .eq('user_id', authUser.id)
-        .is('left_at', null)
+      // Fetch user's projects using the API
+      const response = await fetch('/api/projects', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      })
 
-      if (membershipError) {
-        console.error('Error fetching memberships:', membershipError)
-        setProjects([])
-        return
+      let apiProjects = []
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('API Error:', errorData)
+        
+        // Fallback: try direct Supabase query
+        const { data: fallbackProjects, error: fallbackError } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('created_by', authUser.id)
+          .order('created_at', { ascending: false })
+
+        if (fallbackError) {
+          console.error('Fallback query error:', fallbackError)
+          throw new Error('Failed to fetch projects')
+        }
+
+        apiProjects = fallbackProjects || []
+      } else {
+        const { projects } = await response.json()
+        apiProjects = projects || []
       }
-
-      // Filter projects to only show those the user owns or is a member of
-      const userProjectIds = new Set([
-        ...allProjects.filter(p => p.created_by === authUser.id).map(p => p.id),
-        ...(memberships || []).map(m => m.project_id)
-      ])
-
-      const projectsData = allProjects.filter(project => userProjectIds.has(project.id))
 
       // Transform the data to match the expected format
-      const transformedProjects = projectsData.map(project => {
+      const transformedProjects = (apiProjects || []).map((project: any) => {
         return {
           id: project.slug || project.id, // Use slug if available, fallback to UUID
           name: project.name,
           description: project.description || 'No description available',
-          status: "Active", // Default status
+          status: project.status || "Active",
           language: "Python", // Default language
           lastUpdated: "Recently", // Default last updated
-          color: project.created_by === authUser.id ? "bg-blue-500" : "bg-green-500", // Blue for owned, green for member
+          color: (project.is_owner || project.created_by === authUser.id) ? "bg-blue-500" : "bg-green-500", // Blue for owned, green for member
           collaborators: [], // Will be populated later if needed
           tags: ["Project", "Research"], // Default tags
           repository: null, // Default repository
           createdDate: new Date(project.created_at).toISOString().split('T')[0], // Format date
-          isOwner: project.created_by === authUser.id
+          isOwner: project.is_owner || project.created_by === authUser.id,
+          userRole: project.user_role || (project.created_by === authUser.id ? 'Lead Researcher' : 'Team Member'),
+          visibility: project.visibility || 'private'
         }
       })
       setProjects(transformedProjects)
     } catch (err) {
       console.error('Error in fetchProjects:', err)
+      // Set a default empty state with error info
       setProjects([])
+      // You could also set an error state here if needed
     } finally {
       setProjectsLoading(false)
     }
@@ -176,10 +179,7 @@ export default function ProjectsPage() {
                 <h1 className="text-3xl font-bold text-foreground mb-2">Projects</h1>
                 <p className="text-muted-foreground">Manage your research projects and collaborations</p>
               </div>
-              <Button onClick={() => setShowNewProject(true)}>
-                <PlusIcon className="h-4 w-4 mr-2" />
-                New Project
-              </Button>
+              <CreateProjectForm onProjectCreated={fetchProjects} />
             </div>
 
             {/* Project Grid */}
@@ -208,10 +208,7 @@ export default function ProjectsPage() {
                   <FolderIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-muted-foreground mb-2">No projects yet</h3>
                   <p className="text-muted-foreground mb-4">Create your first project to get started</p>
-                  <Button onClick={() => setShowNewProject(true)}>
-                    <PlusIcon className="h-4 w-4 mr-2" />
-                    Create Project
-                  </Button>
+                  <CreateProjectForm onProjectCreated={fetchProjects} />
                 </div>
               ) : (
                 projects.map((project) => (
@@ -243,7 +240,22 @@ export default function ProjectsPage() {
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{project.language}</Badge>
                         <Badge variant="outline">{project.status}</Badge>
+                        <Badge variant={project.visibility === 'public' ? 'default' : 'secondary'}>
+                          {project.visibility === 'public' ? 'Public' : 'Private'}
+                        </Badge>
                       </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-muted-foreground">
+                        {project.isOwner ? 'Lead Researcher' : project.userRole}
+                      </div>
+                      {project.isOwner && (
+                        <ManageTeamForm 
+                          projectId={project.id} 
+                          onTeamUpdated={fetchProjects}
+                        />
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between">
@@ -443,71 +455,6 @@ export default function ProjectsPage() {
         )}
       </div>
 
-      {/* New Project Modal */}
-      {showNewProject && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-2xl">Create New Project</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setShowNewProject(false)}>
-                  ✕
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <form className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="project-name">Project Name *</Label>
-                  <Input id="project-name" placeholder="e.g., RNA-seq Analysis Pipeline" required />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="project-description">Description</Label>
-                  <Textarea
-                    id="project-description"
-                    placeholder="Brief description of your research project..."
-                    rows={3}
-                  />
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="project-language">Primary Language</Label>
-                    <Input id="project-language" placeholder="Python, R, MATLAB..." />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="project-status">Status</Label>
-                    <Input id="project-status" placeholder="Planning, Active, Review..." />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="project-tags">Tags</Label>
-                  <Input id="project-tags" placeholder="RNA-seq, Bioinformatics, Pipeline (comma separated)" />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="project-repository">Repository URL (optional)</Label>
-                  <Input id="project-repository" placeholder="https://github.com/lab/project-name" />
-                </div>
-
-                <Separator />
-
-                <div className="flex gap-4">
-                  <Button type="submit" className="flex-1">
-                    Create Project
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => setShowNewProject(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   )
 }

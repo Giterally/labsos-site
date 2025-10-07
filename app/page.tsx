@@ -155,7 +155,7 @@ export default function KnowledgeCaptureLanding() {
               FAQ
             </a>
             <a href="#labs" className="text-muted-foreground hover:text-foreground transition-colors">
-              Research Labs
+              Research Projects
             </a>
             <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">
               Contact
@@ -249,18 +249,18 @@ export default function KnowledgeCaptureLanding() {
         </div>
       </section>
 
-      {/* Research Labs Discovery */}
+      {/* Research Projects Discovery */}
       <section id="labs" className="py-16 px-4 bg-muted/10">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Research Labs</h2>
-            <p className="text-lg text-muted-foreground">See who's already organizing their research with Knowledge Capture</p>
+            <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Research Projects</h2>
+            <p className="text-lg text-muted-foreground">Explore public research projects and see how researchers are organizing their work</p>
           </div>
 
           <div className="max-w-2xl mx-auto mb-8">
             <div className="relative">
               <MagnifyingGlassIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input placeholder="Search labs, universities, or research areas..." className="pl-12 h-12 text-base" />
+              <Input placeholder="Search projects, universities, or research areas..." className="pl-12 h-12 text-base" />
             </div>
           </div>
 
@@ -379,7 +379,7 @@ export default function KnowledgeCaptureLanding() {
                 size="lg" 
                 className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold px-12 py-6 text-lg shadow-xl hover:shadow-2xl transition-all duration-300 border-0"
               >
-                🔬 View All Research Labs
+                🔬 View All Research Projects
               </Button>
             </Link>
           </div>
@@ -556,7 +556,7 @@ export default function KnowledgeCaptureLanding() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><a href="#features" className="hover:text-foreground transition-colors">Features</a></li>
                 <li><a href="#faq" className="hover:text-foreground transition-colors">FAQ</a></li>
-                <li><a href="#labs" className="hover:text-foreground transition-colors">Research Labs</a></li>
+                <li><a href="#labs" className="hover:text-foreground transition-colors">Research Projects</a></li>
               </ul>
             </div>
             <div className="space-y-4">

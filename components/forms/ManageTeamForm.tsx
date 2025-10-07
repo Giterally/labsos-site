@@ -1,199 +1,290 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { UserGroupIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/outline"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { PlusIcon, UserGroupIcon, MagnifyingGlassIcon, CheckIcon, ChevronDownIcon } from "@heroicons/react/24/outline"
+import { supabase } from "@/lib/supabase-client"
+
+interface TeamMember {
+  id: string
+  user_id: string
+  name: string
+  email: string
+  lab_name: string
+  role: string
+  initials: string
+  joined_at: string
+}
+
+interface User {
+  id: string
+  name: string
+  email: string
+  lab_name: string
+  initials: string
+}
 
 interface ManageTeamFormProps {
   projectId: string
-  members: Array<{
-    id: string
-    name: string
-    email: string
-    role: string
-    avatar_url?: string
-  }>
-  onTeamUpdated: (updatedMembers: any[]) => void
+  onTeamUpdated?: () => void
 }
 
-export default function ManageTeamForm({ projectId, members, onTeamUpdated }: ManageTeamFormProps) {
+export default function ManageTeamForm({ projectId, onTeamUpdated }: ManageTeamFormProps) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [newMember, setNewMember] = useState({
-    name: '',
-    email: '',
-    role: 'contributor'
-  })
+  const [error, setError] = useState<string | null>(null)
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [searchResults, setSearchResults] = useState<User[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
 
-  const handleAddMember = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+  useEffect(() => {
+    if (open) {
+      fetchTeamMembers()
+    }
+  }, [open, projectId])
 
+  const fetchTeamMembers = async () => {
     try {
-      // In a real implementation, you would call an API to add the member
-      const newMemberData = {
-        id: Date.now().toString(),
-        ...newMember,
-        avatar_url: null
+      setLoading(true)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        throw new Error('Not authenticated')
       }
-      
-      onTeamUpdated([...members, newMemberData])
-      setNewMember({ name: '', email: '', role: 'contributor' })
-      setShowAddForm(false)
-    } catch (error) {
-      console.error('Error adding member:', error)
+
+      const response = await fetch(`/api/projects/${projectId}/team`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to fetch team members')
+      }
+
+      const { members } = await response.json()
+      setTeamMembers(members || [])
+    } catch (err: any) {
+      setError(err.message || "Failed to fetch team members")
     } finally {
       setLoading(false)
     }
   }
 
-  const handleRemoveMember = async (memberId: string) => {
+  const searchUsers = async (search: string) => {
+    if (!search.trim()) {
+      setSearchResults([])
+      return
+    }
+
     try {
-      // In a real implementation, you would call an API to remove the member
-      onTeamUpdated(members.filter(member => member.id !== memberId))
-    } catch (error) {
-      console.error('Error removing member:', error)
+      setSearchLoading(true)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch(`/api/users/search?search=${encodeURIComponent(search)}&limit=10&projectId=${encodeURIComponent(projectId)}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to search users')
+      }
+
+      const { users } = await response.json()
+      setSearchResults(users || [])
+    } catch (err: any) {
+      console.error('Error searching users:', err)
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
     }
   }
 
-  const getRoleColor = (role: string) => {
-    switch (role) {
-      case 'owner': return 'bg-red-100 text-red-800'
-      case 'maintainer': return 'bg-blue-100 text-blue-800'
-      case 'contributor': return 'bg-green-100 text-green-800'
-      default: return 'bg-gray-100 text-gray-800'
+  const addTeamMember = async (user: User) => {
+    try {
+      setLoading(true)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch(`/api/projects/${projectId}/team`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ user_id: user.id }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to add team member')
+      }
+
+      const { member } = await response.json()
+      setTeamMembers(prev => [...prev, member])
+      setSearchTerm("")
+      setSearchResults([])
+      setSearchOpen(false)
+      
+      if (onTeamUpdated) {
+        onTeamUpdated()
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to add team member")
+    } finally {
+      setLoading(false)
     }
+  }
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value)
+    searchUsers(value)
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button variant="outline">
           <UserGroupIcon className="h-4 w-4 mr-2" />
           Manage Team
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Manage Team</DialogTitle>
+          <DialogTitle>Manage Team Members</DialogTitle>
           <DialogDescription>
-            Add or remove team members and manage their roles.
+            Add team members to give them full edit access to this project.
           </DialogDescription>
         </DialogHeader>
-        
-        <div className="space-y-4">
-          {/* Add Member Form */}
-          {showAddForm && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Add Team Member</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleAddMember} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Name</Label>
-                      <Input
-                        id="name"
-                        value={newMember.name}
-                        onChange={(e) => setNewMember({ ...newMember, name: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={newMember.email}
-                        onChange={(e) => setNewMember({ ...newMember, email: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="role">Role</Label>
-                    <Select value={newMember.role} onValueChange={(value) => setNewMember({ ...newMember, role: value })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="contributor">Contributor</SelectItem>
-                        <SelectItem value="maintainer">Maintainer</SelectItem>
-                        <SelectItem value="owner">Owner</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div className="flex justify-end space-x-2">
-                    <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={loading}>
-                      {loading ? 'Adding...' : 'Add Member'}
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          )}
 
-          {/* Add Member Button */}
-          {!showAddForm && (
-            <Button onClick={() => setShowAddForm(true)} className="w-full">
-              <PlusIcon className="h-4 w-4 mr-2" />
-              Add Team Member
-            </Button>
-          )}
+        <div className="space-y-6">
+          {/* Add Team Member */}
+          <div className="space-y-2">
+            <Label>Add Team Member</Label>
+            <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={searchOpen}
+                  className="w-full justify-between"
+                >
+                  {searchTerm ? `Searching for "${searchTerm}"...` : "Search for users..."}
+                  <ChevronDownIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full p-0">
+                <Command>
+                  <CommandInput
+                    placeholder="Search by name, email, or lab..."
+                    value={searchTerm}
+                    onValueChange={handleSearchChange}
+                  />
+                  <CommandList>
+                    {searchLoading ? (
+                      <CommandEmpty>Searching...</CommandEmpty>
+                    ) : searchResults.length === 0 ? (
+                      <CommandEmpty>
+                        {searchTerm ? "No users found" : "Start typing to search for users"}
+                      </CommandEmpty>
+                    ) : (
+                      <CommandGroup>
+                        {searchResults.map((user) => (
+                          <CommandItem
+                            key={user.id}
+                            value={user.id}
+                            onSelect={() => addTeamMember(user)}
+                            className="flex items-center space-x-3 p-3"
+                          >
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="text-xs">
+                                {user.initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <div className="font-medium">{user.name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {user.email} • {user.lab_name}
+                              </div>
+                            </div>
+                            <CheckIcon className="h-4 w-4" />
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
 
-          {/* Members List */}
-          <div className="space-y-3">
-            <h3 className="text-lg font-semibold">Current Team Members</h3>
-            {members.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">No team members yet</p>
-            ) : (
-              members.map((member) => (
-                <Card key={member.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>
-                            {member.name.split(' ').map(n => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">{member.name}</p>
-                          <p className="text-sm text-muted-foreground">{member.email}</p>
+          {/* Current Team Members */}
+          <div className="space-y-2">
+            <Label>Current Team Members ({teamMembers.length})</Label>
+            <div className="space-y-3 max-h-60 overflow-y-auto">
+              {loading ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  Loading team members...
+                </div>
+              ) : teamMembers.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  No team members yet
+                </div>
+              ) : (
+                teamMembers.map((member) => (
+                  <Card key={member.id} className="p-3">
+                    <div className="flex items-center space-x-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback className="text-sm">
+                          {member.initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="font-medium">{member.name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {member.email} • {member.lab_name}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Joined {new Date(member.joined_at).toLocaleDateString()}
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <Badge className={getRoleColor(member.role)}>
-                          {member.role}
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveMember(member.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <Badge variant="secondary">
+                        {member.role}
+                      </Badge>
                     </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Close
+            </Button>
           </div>
         </div>
       </DialogContent>
