@@ -3,6 +3,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import Toast from "@/components/Toast"
 import AppHeader from "@/components/AppHeader"
+import FeedbackButton from "@/components/FeedbackButton"
 import { ThemeProvider } from "@/components/theme-provider"
 import { UserProvider } from "@/lib/user-context"
 
@@ -30,6 +31,7 @@ export default function RootLayout({
           <UserProvider>
             <AppHeader />
             {children}
+            <FeedbackButton />
             <Toast />
           </UserProvider>
         </ThemeProvider>

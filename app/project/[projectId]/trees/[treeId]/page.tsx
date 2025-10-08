@@ -294,7 +294,11 @@ export default function SimpleExperimentTreePage() {
 
   // Block reordering
   const handleBlockReorder = async (draggedBlockId: string, targetBlockId: string) => {
-    const currentOrder = [...allBlockTypes]
+    // Use the actual state values instead of computed allBlockTypes to avoid circular dependency
+    const regularBlockTypes = Object.keys(groupedNodes).filter(type => !type.startsWith('custom_') && !customBlocks.some(block => block.id === type))
+    const customBlockTypes = blockOrder.filter(id => customBlocks.some(block => block.id === id))
+    const currentOrder = [...regularBlockTypes, ...customBlockTypes]
+    
     const draggedIndex = currentOrder.indexOf(draggedBlockId)
     const targetIndex = currentOrder.indexOf(targetBlockId)
     
@@ -421,7 +425,7 @@ export default function SimpleExperimentTreePage() {
     // Combine regular and custom blocks in the correct order
     // Regular blocks come first, then custom blocks in their saved order
     return [...regularBlockTypes, ...customBlockTypes]
-  }, [groupedNodes, customBlocks, blockOrder])
+  }, [experimentNodes, customBlocks, blockOrder])
   
 
   // Fetch project information
