@@ -7,7 +7,7 @@ export interface User {
   lab_name: string | null
   avatar_url: string | null
   institution?: string
-  field_of_study?: string
+  department?: string
   profile_picture_url?: string
 }
 
@@ -63,21 +63,14 @@ export async function signOut() {
 }
 
 // Get current user
-export async function getCurrentUser(): Promise<User | null> {
+export async function getCurrentUser(forceRefresh = false): Promise<User | null> {
   const { data: { user }, error } = await supabase.auth.getUser()
   
   if (error || !user) {
     return null
   }
 
-  // Get profile data from user_profiles table (the new structure)
-  const { data: userProfile } = await supabase
-    .from('user_profiles')
-    .select('*')
-    .eq('user_id', user.id)
-    .single()
-
-  // Fallback to profiles table if user_profiles doesn't exist
+  // Get profile data from profiles table (single source of truth)
   const { data: profile } = await supabase
     .from('profiles')
     .select('*')
@@ -87,12 +80,12 @@ export async function getCurrentUser(): Promise<User | null> {
   return {
     id: user.id,
     email: user.email || '',
-    full_name: userProfile?.full_name || profile?.full_name || user.user_metadata?.name || null,
+    full_name: profile?.full_name || user.user_metadata?.name || null,
     lab_name: profile?.lab_name || null,
     avatar_url: profile?.avatar_url || null,
-    institution: userProfile?.institution || null,
-    field_of_study: userProfile?.field_of_study || null,
-    profile_picture_url: userProfile?.profile_picture_url || null
+    institution: profile?.institution || null,
+    department: profile?.department || null,
+    profile_picture_url: profile?.profile_picture_url || null
   }
 }
 
@@ -101,6 +94,16 @@ export async function updateProfile(updates: {
   full_name?: string
   lab_name?: string
   avatar_url?: string
+  bio?: string
+  institution?: string
+  department?: string
+  location?: string
+  website?: string
+  linkedin?: string
+  orcid?: string
+  skills?: string[]
+  interests?: string[]
+  profile_picture_url?: string
 }) {
   const { data: { user } } = await supabase.auth.getUser()
   
@@ -108,19 +111,7 @@ export async function updateProfile(updates: {
     throw new Error('User not authenticated')
   }
 
-  // Try to update user_profiles table first
-  const { data: userProfile, error: userProfileError } = await supabase
-    .from('user_profiles')
-    .update(updates)
-    .eq('user_id', user.id)
-    .select()
-    .single()
-
-  if (!userProfileError) {
-    return userProfile
-  }
-
-  // Fallback to profiles table
+  // Update profiles table (single source of truth)
   const { data, error } = await supabase
     .from('profiles')
     .update(updates)

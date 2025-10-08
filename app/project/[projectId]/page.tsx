@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
+import { useUser } from "@/lib/user-context"
 import ManageTeamForm from "@/components/forms/ManageTeamForm"
 import AddTeamMemberForm from "@/components/forms/AddTeamMemberForm"
 import EditProjectForm from "@/components/forms/EditProjectForm"
@@ -88,6 +89,7 @@ export default function SimpleProjectPage() {
   const router = useRouter()
   const params = useParams()
   const projectId = params.projectId as string
+  const { user: currentUser, refreshUser } = useUser()
   
   const [experimentTrees, setExperimentTrees] = useState<ExperimentTree[]>([])
   const [loading, setLoading] = useState(true)
@@ -150,7 +152,7 @@ export default function SimpleProjectPage() {
     try {
       setTeamMembersLoading(true)
       
-      // Get the current session for authentication (optional)
+      // Get the current session for authentication
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
       
       // Prepare headers (include auth if available)
@@ -175,6 +177,9 @@ export default function SimpleProjectPage() {
       setTeamMembers(data.members || [])
       setIsProjectOwner(data.isOwner || false)
       setIsProjectMember(data.isTeamMember || false)
+      
+      // Refresh user context to ensure any cached user data is up to date
+      await refreshUser()
     } catch (err) {
       console.error('Error fetching team members:', err)
       setTeamMembers([])
@@ -187,9 +192,6 @@ export default function SimpleProjectPage() {
   
   // Project info state
   const [projectInfo, setProjectInfo] = useState<ProjectInfo | null>(null)
-  
-  // Current user state
-  const [currentUser, setCurrentUser] = useState<any>(null)
 
   // Fetch project information
   useEffect(() => {
@@ -211,14 +213,6 @@ export default function SimpleProjectPage() {
     fetchProjectInfo()
   }, [projectId])
 
-  // Get current user
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setCurrentUser(user)
-    }
-    getCurrentUser()
-  }, [])
 
   // Fetch team members when component mounts
   useEffect(() => {
@@ -772,6 +766,9 @@ export default function SimpleProjectPage() {
 
       // Refresh team members from the database
       refreshTeamMembers()
+      
+      // Refresh user context to update any cached user data
+      await refreshUser()
     } catch (err) {
       console.error('Error removing team member:', err)
       alert('Failed to remove team member: ' + (err instanceof Error ? err.message : 'Unknown error'))

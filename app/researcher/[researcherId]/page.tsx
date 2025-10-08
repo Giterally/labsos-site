@@ -34,6 +34,7 @@ import { useRouter, useParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { getCurrentUser } from "@/lib/auth-service"
+import { useUser } from "@/lib/user-context"
 
 interface ResearcherProfile {
   id: string
@@ -100,40 +101,28 @@ export default function ResearcherProfilePage() {
   const router = useRouter()
   const params = useParams()
   const researcherId = params.researcherId as string
+  const { user: currentUser, refreshUser } = useUser()
 
   const [researcher, setResearcher] = useState<ResearcherProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authLoading, setAuthLoading] = useState(true)
-  const [currentUser, setCurrentUser] = useState<any>(null)
   const [isOwnProfile, setIsOwnProfile] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editData, setEditData] = useState<Partial<ResearcherProfile>>({})
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const user = await getCurrentUser()
-        setCurrentUser(user)
-        setIsAuthenticated(!!user)
-        
-        // Check if this is the user's own profile
-        if (user && researcherId) {
-          setIsOwnProfile(user.id === researcherId)
-        }
-      } catch (error) {
-        setIsAuthenticated(false)
-        setCurrentUser(null)
-        setIsOwnProfile(false)
-      } finally {
-        setAuthLoading(false)
-      }
+    // Check if this is the user's own profile
+    if (currentUser && researcherId) {
+      setIsOwnProfile(currentUser.id === researcherId)
+    } else {
+      setIsOwnProfile(false)
     }
-
-    checkAuth()
-  }, [researcherId])
+    setIsAuthenticated(!!currentUser)
+    setAuthLoading(false)
+  }, [currentUser, researcherId])
 
   useEffect(() => {
     const fetchResearcher = async () => {
@@ -238,11 +227,26 @@ export default function ResearcherProfilePage() {
       const result = await response.json()
       console.log('Profile saved successfully:', result)
       
-      // Update local state with the saved data
-      setResearcher({
+      // Wait a brief moment for database to fully commit
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Update local state with the saved data and recalculate avatar
+      const updatedResearcher = {
         ...researcher,
         ...editData,
-      })
+        avatar: editData.name ? editData.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : researcher.avatar
+      }
+      setResearcher(updatedResearcher)
+      
+      // Refresh user context to update header avatar
+      await refreshUser()
+      
+      // Refresh researcher data to ensure other users see updated profile
+      const refreshResponse = await fetch(`/api/researcher/${researcherId}`)
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json()
+        setResearcher(refreshData.researcher)
+      }
       
       setIsEditing(false)
     } catch (error) {

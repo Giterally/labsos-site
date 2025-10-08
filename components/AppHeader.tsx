@@ -1,6 +1,5 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -21,7 +20,8 @@ import {
   FolderIcon,
   BeakerIcon,
 } from "@heroicons/react/24/outline"
-import { getCurrentUser, signOut, onAuthStateChange, User } from "@/lib/auth-service"
+import { signOut } from "@/lib/auth-service"
+import { useUser } from "@/lib/user-context"
 
 interface AppHeaderProps {
   currentPage?: string
@@ -29,27 +29,7 @@ interface AppHeaderProps {
 
 export default function AppHeader({ currentPage }: AppHeaderProps) {
   const router = useRouter()
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    // Get initial user
-    getCurrentUser().then((user) => {
-      setUser(user)
-      setLoading(false)
-    }).catch(() => {
-      setLoading(false)
-    })
-
-    // Set up auth state listener
-    const { data: { subscription } } = onAuthStateChange((user) => {
-      setUser(user)
-    })
-
-    return () => {
-      subscription?.unsubscribe()
-    }
-  }, [])
+  const { user, loading } = useUser()
 
   const handleSignOut = async () => {
     try {

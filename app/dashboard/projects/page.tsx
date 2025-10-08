@@ -125,9 +125,9 @@ export default function ProjectsPage() {
       }
 
       const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('full_name, email, institution, field_of_study')
-        .eq('user_id', authUser.id)
+        .from('profiles')
+        .select('full_name, email, institution, department')
+        .eq('id', authUser.id)
         .single()
 
       if (profileError) {
@@ -137,7 +137,7 @@ export default function ProjectsPage() {
           full_name: authUser.user_metadata?.full_name || authUser.email || 'User',
           email: authUser.email || '',
           institution: authUser.user_metadata?.institution || 'N/A',
-          field_of_study: authUser.user_metadata?.field_of_study || 'N/A',
+          department: authUser.user_metadata?.department || 'N/A',
         })
       } else {
         setUser(profile)

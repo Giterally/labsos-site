@@ -26,49 +26,38 @@ export default function AuthCallbackPage() {
         }
 
         if (data.session?.user) {
-          // Check if email is verified
-          if (data.session.user.email_confirmed_at) {
-            // Email is verified, create profile if we have pending data
-            const pendingProfileData = localStorage.getItem('pendingProfileData')
-            if (pendingProfileData) {
-              try {
-                const profileData = JSON.parse(pendingProfileData)
-                
-                // Create profile in user_profiles table
-                const { error: profileError } = await supabase
-                  .from('user_profiles')
-                  .insert({
-                    user_id: data.session.user.id,
-                    full_name: profileData.full_name,
-                    email: data.session.user.email,
-                    institution: profileData.institution,
-                    field_of_study: profileData.field_of_study,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                  })
+            // Check if email is verified
+            if (data.session.user.email_confirmed_at) {
+              // Email is verified, create profile if we have pending data
+              const pendingProfileData = localStorage.getItem('pendingProfileData')
+              if (pendingProfileData) {
+                try {
+                  const profileData = JSON.parse(pendingProfileData)
+                  
+                  // Create profile in profiles table (single source of truth)
+                  const { error: profileError } = await supabase
+                    .from('profiles')
+                    .insert({
+                      id: data.session.user.id,
+                      email: data.session.user.email,
+                      full_name: profileData.full_name,
+                      lab_name: profileData.institution,
+                      institution: profileData.institution,
+                      department: profileData.field_of_study,
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString()
+                    })
 
-                if (profileError) {
-                  console.error('Profile creation error:', profileError)
+                  if (profileError) {
+                    console.error('Profile creation error:', profileError)
+                  }
+
+                  // Clear pending profile data
+                  localStorage.removeItem('pendingProfileData')
+                } catch (error) {
+                  console.error('Error creating profile:', error)
                 }
-
-                // Also create basic profile in profiles table for compatibility
-                await supabase
-                  .from('profiles')
-                  .insert({
-                    id: data.session.user.id,
-                    email: data.session.user.email,
-                    full_name: profileData.full_name,
-                    lab_name: profileData.institution,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                  })
-
-                // Clear pending profile data
-                localStorage.removeItem('pendingProfileData')
-              } catch (error) {
-                console.error('Error creating profile:', error)
               }
-            }
 
             setStatus('success')
             setMessage('Email verified successfully! Redirecting to dashboard...')
