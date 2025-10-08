@@ -6,8 +6,6 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   FolderIcon,
   LinkIcon,
@@ -29,24 +27,9 @@ import Link from "next/link"
 import { getCurrentUser } from "@/lib/auth-service"
 
 export default function KnowledgeCaptureLanding() {
-  const [showContactForm, setShowContactForm] = useState(false)
   const [openFAQ, setOpenFAQ] = useState<number | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [formData, setFormData] = useState({
-    name: '',
-    title: '',
-    email: '',
-    university: '',
-    department: '',
-    researchTopic: '',
-    labSize: '',
-    grantFunder: '',
-    currentTools: '',
-    demoFocus: ''
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitMessage, setSubmitMessage] = useState('')
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -67,63 +50,14 @@ export default function KnowledgeCaptureLanding() {
     setOpenFAQ(openFAQ === index ? null : index)
   }
 
-  const handleSeeInAction = () => {
+  const handleGetStarted = () => {
     if (isAuthenticated) {
-      window.location.href = "/dashboard"
+      window.location.href = "/dashboard/projects"
     } else {
       window.location.href = "/login"
     }
   }
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-    setSubmitMessage('')
-
-    // Debug: Log what we're sending
-    console.log('Submitting form data:', formData)
-
-    try {
-      const response = await fetch('/api/send-demo-request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      })
-
-      const result = await response.json()
-
-      if (response.ok) {
-        setSubmitMessage('Demo request sent successfully! We\'ll be in touch soon.')
-        setFormData({
-          name: '',
-          title: '',
-          email: '',
-          university: '',
-          department: '',
-          researchTopic: '',
-          labSize: '',
-          grantFunder: '',
-          currentTools: '',
-          demoFocus: ''
-        })
-        setTimeout(() => {
-          setShowContactForm(false)
-          setSubmitMessage('')
-        }, 3000)
-      } else {
-        const errorData = await response.json()
-        console.error('API Error:', errorData)
-        setSubmitMessage(`Failed to send request: ${errorData.error || 'Unknown error'}`)
-      }
-    } catch (error) {
-      console.error('Error:', error)
-      setSubmitMessage('Failed to send request. Please try again.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   // Show loading state while checking authentication (with timeout fallback)
   if (loading) {
@@ -191,11 +125,8 @@ export default function KnowledgeCaptureLanding() {
                 </p>
               </div>
               <div className="flex space-x-4">
-                <Button size="lg" className="text-lg px-8 py-6" onClick={() => setShowContactForm(true)}>
-                  Book a Free Demo
-                </Button>
-                <Button size="lg" variant="outline" className="text-lg px-8 py-6" onClick={handleSeeInAction}>
-                  See It In Action
+                <Button size="lg" className="text-lg px-8 py-6" onClick={handleGetStarted}>
+                  Get Started
                 </Button>
               </div>
             </div>
@@ -497,8 +428,8 @@ export default function KnowledgeCaptureLanding() {
           <p className="text-lg text-muted-foreground mb-8">
             Join the growing community of researchers who are preserving and organising their knowledge.
           </p>
-          <Button size="lg" className="text-lg px-8 py-6" onClick={() => setShowContactForm(true)}>
-            Book a Free Demo
+          <Button size="lg" className="text-lg px-8 py-6" onClick={handleGetStarted}>
+            Get Started
           </Button>
         </div>
       </section>
@@ -554,148 +485,6 @@ export default function KnowledgeCaptureLanding() {
         </div>
       </footer>
 
-      {/* Contact Form Modal */}
-      {showContactForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Book a Free Demo</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setShowContactForm(false)}>
-                  ×
-                </Button>
-              </div>
-              <CardDescription>
-                Tell us about your research and we'll show you how Knowledge Capture can help.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleFormSubmit} className="space-y-6">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Name *</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Title *</Label>
-                    <Input
-                      id="title"
-                      value={formData.title}
-                      onChange={(e) => setFormData({...formData, title: e.target.value})}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    required
-                  />
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="university">University/Institution *</Label>
-                    <Input
-                      id="university"
-                      value={formData.university}
-                      onChange={(e) => setFormData({...formData, university: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="department">Department *</Label>
-                    <Input
-                      id="department"
-                      value={formData.department}
-                      onChange={(e) => setFormData({...formData, department: e.target.value})}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="researchTopic">Research Topic/Area *</Label>
-                  <Input
-                    id="researchTopic"
-                    value={formData.researchTopic}
-                    onChange={(e) => setFormData({...formData, researchTopic: e.target.value})}
-                    required
-                  />
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="labSize">Lab Size</Label>
-                    <Input
-                      id="labSize"
-                      value={formData.labSize}
-                      onChange={(e) => setFormData({...formData, labSize: e.target.value})}
-                      placeholder="e.g., 5-10 people"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="grantFunder">Grant Funder</Label>
-                    <Input
-                      id="grantFunder"
-                      value={formData.grantFunder}
-                      onChange={(e) => setFormData({...formData, grantFunder: e.target.value})}
-                      placeholder="e.g., NSF, NIH, Wellcome Trust"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="currentTools">Current Tools/Systems</Label>
-                  <Textarea
-                    id="currentTools"
-                    value={formData.currentTools}
-                    onChange={(e) => setFormData({...formData, currentTools: e.target.value})}
-                    placeholder="What tools do you currently use for lab management, data storage, etc.?"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="demoFocus">Demo Focus Areas</Label>
-                  <Textarea
-                    id="demoFocus"
-                    value={formData.demoFocus}
-                    onChange={(e) => setFormData({...formData, demoFocus: e.target.value})}
-                    placeholder="What aspects of Knowledge Capture are you most interested in seeing?"
-                    rows={3}
-                  />
-                </div>
-
-                {submitMessage && (
-                  <div className={`p-4 rounded-md ${submitMessage.includes('successfully') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-                    {submitMessage}
-                  </div>
-                )}
-
-                <div className="flex space-x-4">
-                  <Button type="submit" disabled={isSubmitting} className="flex-1">
-                    {isSubmitting ? 'Sending...' : 'Send Demo Request'}
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => setShowContactForm(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   )
 }
