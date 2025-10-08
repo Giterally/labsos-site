@@ -25,7 +25,8 @@ export default function CreateProjectForm({ onProjectCreated }: CreateProjectFor
     description: "",
     institution: "",
     department: "",
-    status: "active" as "draft" | "active" | "completed" | "archived"
+    status: "active" as "draft" | "active" | "completed" | "archived",
+    visibility: "private" as "public" | "private"
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -129,19 +130,34 @@ export default function CreateProjectForm({ onProjectCreated }: CreateProjectFor
             />
           </div>
           
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
-            <Select value={formData.status} onValueChange={(value: any) => setFormData({ ...formData, status: value })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={formData.status} onValueChange={(value: any) => setFormData({ ...formData, status: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="visibility">Visibility</Label>
+              <Select value={formData.visibility} onValueChange={(value: any) => setFormData({ ...formData, visibility: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">Public</SelectItem>
+                  <SelectItem value="private">Private</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {error && (

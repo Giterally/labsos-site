@@ -117,9 +117,45 @@ export async function PUT(
         { status: 401 }
       )
     }
+    
 
     const body = await request.json()
-    const { name, description, institution, department, status } = body
+    const { name, description, institution, department, status, visibility } = body
+
+    // Check if user is creator or team member
+    const { data: projectCheck } = await supabase
+      .from('projects')
+      .select('created_by')
+      .eq('id', projectId)
+      .single()
+
+    if (!projectCheck) {
+      return NextResponse.json(
+        { message: 'Project not found' },
+        { status: 404 }
+      )
+    }
+
+    // Check if user is creator
+    const isCreator = projectCheck.created_by === user.id
+    
+    // Check if user is a team member
+    const { data: teamMemberCheck } = await supabase
+      .from('project_members')
+      .select('user_id')
+      .eq('project_id', projectId)
+      .eq('user_id', user.id)
+      .is('left_at', null)
+      .single()
+    
+    const isTeamMember = !!teamMemberCheck
+    
+    if (!isCreator && !isTeamMember) {
+      return NextResponse.json(
+        { message: 'You do not have permission to update this project' },
+        { status: 403 }
+      )
+    }
 
     // Update the project
     const { data: updatedProject, error } = await supabase
@@ -130,17 +166,17 @@ export async function PUT(
         institution,
         department,
         status,
+        visibility,
         updated_at: new Date().toISOString()
       })
       .eq('id', projectId)
-      .eq('created_by', user.id)
       .select()
       .single()
 
     if (error) {
       if (error.code === 'PGRST116') {
         return NextResponse.json(
-          { message: 'Project not found' },
+          { message: 'Project not found or you are not the creator' },
           { status: 404 }
         )
       }

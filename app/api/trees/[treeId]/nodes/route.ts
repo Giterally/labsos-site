@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: { treeId: string } }
 ) {
   try {
-    const { treeId } = params
+    const { treeId } = await params
 
     // For now, use the anon client without authentication
     // TODO: Implement proper project ownership and member system
@@ -86,7 +86,7 @@ export async function POST(
   { params }: { params: { treeId: string } }
 ) {
   try {
-    const { treeId } = params
+    const { treeId } = await params
     const body = await request.json()
     const { name, description, node_type, position, content } = body
 

@@ -10,6 +10,7 @@ import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import ManageTeamForm from "@/components/forms/ManageTeamForm"
 import AddTeamMemberForm from "@/components/forms/AddTeamMemberForm"
+import EditProjectForm from "@/components/forms/EditProjectForm"
 
 interface ExperimentTree {
   id: string
@@ -124,9 +125,20 @@ export default function SimpleProjectPage() {
   const [editingOutput, setEditingOutput] = useState<Output | null>(null)
   const [editingOutputState, setEditingOutputState] = useState(false)
   
+  // Edit project state
+  const [showEditProjectForm, setShowEditProjectForm] = useState(false)
+  
+  // Handle project updates
+  const handleProjectUpdated = (updatedProject: any) => {
+    setProjectInfo(updatedProject)
+    setShowEditProjectForm(false)
+  }
+  
   // Team member state
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [teamMembersLoading, setTeamMembersLoading] = useState(false)
+  const [isProjectOwner, setIsProjectOwner] = useState(false)
+  const [isProjectMember, setIsProjectMember] = useState(false)
 
   // Function to refresh team members
   const refreshTeamMembers = async () => {
@@ -134,35 +146,40 @@ export default function SimpleProjectPage() {
     if (teamMembersLoading) {
       return
     }
-    
+
     try {
       setTeamMembersLoading(true)
       
-      // Get the current session for authentication
+      // Get the current session for authentication (optional)
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError || !session?.access_token) {
-        console.error('Session error:', sessionError)
-        setTeamMembers([])
-        return
+      
+      // Prepare headers (include auth if available)
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
       }
       
       const response = await fetch(`/api/projects/${projectId}/team`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+        headers,
       })
       
       if (!response.ok) {
         console.error('Team API error:', response.status)
         setTeamMembers([])
+        setIsProjectOwner(false)
+        setIsProjectMember(false)
         return
       }
       
       const data = await response.json()
       setTeamMembers(data.members || [])
+      setIsProjectOwner(data.isOwner || false)
+      setIsProjectMember(data.isTeamMember || false)
     } catch (err) {
       console.error('Error fetching team members:', err)
       setTeamMembers([])
+      setIsProjectOwner(false)
+      setIsProjectMember(false)
     } finally {
       setTeamMembersLoading(false)
     }
@@ -623,6 +640,106 @@ export default function SimpleProjectPage() {
     }
   }
 
+  // Output management functions
+  const createOutput = async (type: string, title: string, description: string, authors: string[], status: string, date: string | null, url: string | null, doi: string | null, journal: string | null) => {
+    try {
+      setCreatingOutput(true)
+      
+      const response = await fetch(`/api/projects/${projectId}/outputs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type,
+          title,
+          description,
+          authors,
+          status,
+          date,
+          url,
+          doi,
+          journal
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to create output')
+      }
+
+      const data = await response.json()
+      setOutputs(prev => [...prev, data.output])
+      setShowOutputForm(false)
+    } catch (err) {
+      console.error('Error creating output:', err)
+      alert('Failed to create output: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setCreatingOutput(false)
+    }
+  }
+
+  const editOutput = async (outputId: string, type: string, title: string, description: string, authors: string[], status: string, date: string | null, url: string | null, doi: string | null, journal: string | null) => {
+    try {
+      setEditingOutputState(true)
+      
+      const response = await fetch(`/api/outputs/${outputId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type,
+          title,
+          description,
+          authors,
+          status,
+          date,
+          url,
+          doi,
+          journal
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to update output')
+      }
+
+      const data = await response.json()
+      setOutputs(prev => prev.map(o => o.id === outputId ? data.output : o))
+      setShowEditOutputForm(false)
+      setEditingOutput(null)
+    } catch (err) {
+      console.error('Error updating output:', err)
+      alert('Failed to update output: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setEditingOutputState(false)
+    }
+  }
+
+  const deleteOutput = async (outputId: string, outputTitle: string) => {
+    if (!confirm(`Are you sure you want to delete "${outputTitle}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/outputs/${outputId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete output')
+      }
+
+      setOutputs(prev => prev.filter(o => o.id !== outputId))
+    } catch (err) {
+      console.error('Error deleting output:', err)
+      alert('Failed to delete output: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    }
+  }
+
   // Team member management functions
   const handleMemberAdded = () => {
     // Refresh team members list
@@ -685,7 +802,20 @@ export default function SimpleProjectPage() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <CardTitle className="text-3xl mb-2">{projectInfo.name}</CardTitle>
+                    <div className="flex items-center gap-3 mb-2">
+                      <CardTitle className="text-3xl">{projectInfo.name}</CardTitle>
+                      {(isProjectOwner || isProjectMember) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowEditProjectForm(true)}
+                          className="flex items-center gap-2"
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                          Edit Project
+                        </Button>
+                      )}
+                    </div>
                     {projectInfo.description && (
                       <CardDescription className="text-lg mb-4">
                         {projectInfo.description}
@@ -750,7 +880,7 @@ export default function SimpleProjectPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Team Members</CardTitle>
-                  {currentUser && teamMembers.some(member => member.user_id === currentUser.id) && (
+                  {(isProjectOwner || isProjectMember) && (
                     <AddTeamMemberForm
                       projectId={projectId}
                       onMemberAdded={refreshTeamMembers}
@@ -791,7 +921,7 @@ export default function SimpleProjectPage() {
                               <p className="text-xs text-muted-foreground">{member.role}</p>
                             </div>
                           </div>
-                          {currentUser && teamMembers.some(m => m.user_id === currentUser.id) && (
+                          {(isProjectOwner || isProjectMember) && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -833,13 +963,15 @@ export default function SimpleProjectPage() {
                           Manage your experimental workflows and protocols
                         </CardDescription>
                       </div>
-                      <Button
-                        onClick={() => setShowCreateForm(true)}
-                        className="flex items-center space-x-2"
-                      >
-                        <PlusIcon className="h-4 w-4" />
-                        <span>New Tree</span>
-                      </Button>
+                      {(isProjectOwner || isProjectMember) && (
+                        <Button
+                          onClick={() => setShowCreateForm(true)}
+                          className="flex items-center space-x-2"
+                        >
+                          <PlusIcon className="h-4 w-4" />
+                          <span>New Tree</span>
+                        </Button>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -882,33 +1014,35 @@ export default function SimpleProjectPage() {
                                  </Badge>
                                </div>
                              </div>
-                             <div className="flex items-center justify-end mt-3 pt-3 border-t space-x-2">
-                               <Button
-                                 variant="outline"
-                                 size="sm"
-                                 onClick={(e: React.MouseEvent) => {
-                                   e.stopPropagation()
-                                   setEditingTree(tree)
-                                   setShowEditForm(true)
-                                 }}
-                                 className="flex items-center space-x-1"
-                               >
-                                 <PencilIcon className="h-4 w-4" />
-                                 <span>Edit</span>
-                               </Button>
-                               <Button
-                                 variant="outline"
-                                 size="sm"
-                                 onClick={(e: React.MouseEvent) => {
-                                   e.stopPropagation()
-                                   deleteExperimentTree(tree.id, tree.name)
-                                 }}
-                                 className="flex items-center space-x-1 text-destructive hover:text-destructive"
-                               >
-                                 <TrashIcon className="h-4 w-4" />
-                                 <span>Delete</span>
-                               </Button>
-                             </div>
+                             {(isProjectOwner || isProjectMember) && (
+                               <div className="flex items-center justify-end mt-3 pt-3 border-t space-x-2">
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                   onClick={(e: React.MouseEvent) => {
+                                     e.stopPropagation()
+                                     setEditingTree(tree)
+                                     setShowEditForm(true)
+                                   }}
+                                   className="flex items-center space-x-1"
+                                 >
+                                   <PencilIcon className="h-4 w-4" />
+                                   <span>Edit</span>
+                                 </Button>
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                   onClick={(e: React.MouseEvent) => {
+                                     e.stopPropagation()
+                                     deleteExperimentTree(tree.id, tree.name)
+                                   }}
+                                   className="flex items-center space-x-1 text-destructive hover:text-destructive"
+                                 >
+                                   <TrashIcon className="h-4 w-4" />
+                                   <span>Delete</span>
+                                 </Button>
+                               </div>
+                             )}
                            </div>
                          ))
                        )}
@@ -927,13 +1061,15 @@ export default function SimpleProjectPage() {
                           Manage software, libraries, and tools used in your project
                         </CardDescription>
                       </div>
-                      <Button
-                        onClick={() => setShowSoftwareForm(true)}
-                        className="flex items-center space-x-2"
-                      >
-                        <PlusIcon className="h-4 w-4" />
-                        <span>Add Software</span>
-                      </Button>
+                      {(isProjectOwner || isProjectMember) && (
+                        <Button
+                          onClick={() => setShowSoftwareForm(true)}
+                          className="flex items-center space-x-2"
+                        >
+                          <PlusIcon className="h-4 w-4" />
+                          <span>Add Software</span>
+                        </Button>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -978,29 +1114,31 @@ export default function SimpleProjectPage() {
                                   )}
                                 </div>
                               </div>
-                              <div className="flex items-center space-x-2 ml-4">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    setEditingSoftware(item)
-                                    setShowEditSoftwareForm(true)
-                                  }}
-                                  className="flex items-center space-x-1"
-                                >
-                                  <PencilIcon className="h-4 w-4" />
-                                  <span>Edit</span>
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => deleteSoftware(item.id, item.name)}
-                                  className="flex items-center space-x-1 text-destructive hover:text-destructive"
-                                >
-                                  <TrashIcon className="h-4 w-4" />
-                                  <span>Delete</span>
-                                </Button>
-                              </div>
+                              {(isProjectOwner || isProjectMember) && (
+                                <div className="flex items-center space-x-2 ml-4">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingSoftware(item)
+                                      setShowEditSoftwareForm(true)
+                                    }}
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <PencilIcon className="h-4 w-4" />
+                                    <span>Edit</span>
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => deleteSoftware(item.id, item.name)}
+                                    className="flex items-center space-x-1 text-destructive hover:text-destructive"
+                                  >
+                                    <TrashIcon className="h-4 w-4" />
+                                    <span>Delete</span>
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))
@@ -1013,25 +1151,100 @@ export default function SimpleProjectPage() {
               <TabsContent value="datasets" className="space-y-6">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Datasets</CardTitle>
-                    <CardDescription>
-                      Organize and track your research datasets
-                    </CardDescription>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>Datasets</CardTitle>
+                        <CardDescription>
+                          Organize and track your research datasets
+                        </CardDescription>
+                      </div>
+                      {(isProjectOwner || isProjectMember) && (
+                        <Button
+                          onClick={() => setShowDatasetForm(true)}
+                          className="flex items-center space-x-2"
+                        >
+                          <PlusIcon className="h-4 w-4" />
+                          <span>Add Dataset</span>
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      <div className="border rounded-lg p-4">
-                        <h3 className="font-semibold">Sample_001_R1.fastq</h3>
-                        <p className="text-sm text-muted-foreground">Raw Data - 2.4 GB</p>
-                      </div>
-                      <div className="border rounded-lg p-4">
-                        <h3 className="font-semibold">Sample_001_R2.fastq</h3>
-                        <p className="text-sm text-muted-foreground">Raw Data - 2.4 GB</p>
-                      </div>
-                      <div className="border rounded-lg p-4">
-                        <h3 className="font-semibold">processed_counts.csv</h3>
-                        <p className="text-sm text-muted-foreground">Processed Data - 15 MB</p>
-                      </div>
+                      {datasetsLoading ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                          <p>Loading datasets...</p>
+                        </div>
+                      ) : datasets.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <p>No datasets added yet.</p>
+                          <p className="text-sm">Add datasets used in your project.</p>
+                        </div>
+                      ) : (
+                        datasets.map((dataset) => (
+                          <div 
+                            key={dataset.id}
+                            className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h3 className="font-semibold">{dataset.name}</h3>
+                                <p className="text-sm text-muted-foreground">
+                                  {dataset.type} - {dataset.format}
+                                </p>
+                                {dataset.description && (
+                                  <p className="text-sm text-muted-foreground mt-1">{dataset.description}</p>
+                                )}
+                                <div className="flex items-center space-x-4 mt-2">
+                                  <Badge variant="outline">{dataset.type}</Badge>
+                                  <Badge variant="outline">{dataset.access_level}</Badge>
+                                  {dataset.file_size && (
+                                    <span className="text-sm text-muted-foreground">
+                                      {dataset.file_size} {dataset.size_unit}
+                                    </span>
+                                  )}
+                                  {dataset.repository_url && (
+                                    <a 
+                                      href={dataset.repository_url} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-sm text-blue-600 hover:underline"
+                                    >
+                                      Repository
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                              {(isProjectOwner || isProjectMember) && (
+                                <div className="flex items-center space-x-2 ml-4">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingDataset(dataset)
+                                      setShowEditDatasetForm(true)
+                                    }}
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <PencilIcon className="h-4 w-4" />
+                                    <span>Edit</span>
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => deleteDataset(dataset.id, dataset.name)}
+                                    className="flex items-center space-x-1 text-destructive hover:text-destructive"
+                                  >
+                                    <TrashIcon className="h-4 w-4" />
+                                    <span>Delete</span>
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1040,25 +1253,117 @@ export default function SimpleProjectPage() {
               <TabsContent value="outputs" className="space-y-6">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Outputs</CardTitle>
-                    <CardDescription>
-                      Manage research outputs like publications, reports, and results
-                    </CardDescription>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>Outputs</CardTitle>
+                        <CardDescription>
+                          Manage research outputs like publications, reports, and results
+                        </CardDescription>
+                      </div>
+                      {(isProjectOwner || isProjectMember) && (
+                        <Button
+                          onClick={() => setShowOutputForm(true)}
+                          className="flex items-center space-x-2"
+                        >
+                          <PlusIcon className="h-4 w-4" />
+                          <span>Add Output</span>
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      <div className="border rounded-lg p-4">
-                        <h3 className="font-semibold">Quality Control Report</h3>
-                        <p className="text-sm text-muted-foreground">Report - Published</p>
-                      </div>
-                      <div className="border rounded-lg p-4">
-                        <h3 className="font-semibold">Differential Expression Results</h3>
-                        <p className="text-sm text-muted-foreground">Results - Draft</p>
-                      </div>
-                      <div className="border rounded-lg p-4">
-                        <h3 className="font-semibold">RNA-seq Analysis Paper</h3>
-                        <p className="text-sm text-muted-foreground">Publication - In Review</p>
-                      </div>
+                      {outputsLoading ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                          <p>Loading outputs...</p>
+                        </div>
+                      ) : outputs.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <p>No outputs added yet.</p>
+                          <p className="text-sm">Add research outputs like publications, reports, and results.</p>
+                        </div>
+                      ) : (
+                        outputs.map((output) => (
+                          <div 
+                            key={output.id}
+                            className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h3 className="font-semibold">{output.title}</h3>
+                                <p className="text-sm text-muted-foreground">
+                                  {output.type} - {output.status}
+                                </p>
+                                {output.description && (
+                                  <p className="text-sm text-muted-foreground mt-1">{output.description}</p>
+                                )}
+                                <div className="flex items-center space-x-4 mt-2">
+                                  <Badge variant="outline">{output.type}</Badge>
+                                  <Badge variant="outline" className={
+                                    output.status === 'published' ? 'bg-green-100 text-green-800' :
+                                    output.status === 'in_review' ? 'bg-orange-100 text-orange-800' :
+                                    output.status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                                    'bg-blue-100 text-blue-800'
+                                  }>
+                                    {output.status}
+                                  </Badge>
+                                  {output.authors.length > 0 && (
+                                    <span className="text-sm text-muted-foreground">
+                                      {output.authors.join(', ')}
+                                    </span>
+                                  )}
+                                  {output.doi && (
+                                    <a 
+                                      href={`https://doi.org/${output.doi}`} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-sm text-blue-600 hover:underline"
+                                    >
+                                      DOI
+                                    </a>
+                                  )}
+                                  {output.url && (
+                                    <a 
+                                      href={output.url} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="text-sm text-blue-600 hover:underline"
+                                    >
+                                      Link
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                              {(isProjectOwner || isProjectMember) && (
+                                <div className="flex items-center space-x-2 ml-4">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingOutput(output)
+                                      setShowEditOutputForm(true)
+                                    }}
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <PencilIcon className="h-4 w-4" />
+                                    <span>Edit</span>
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => deleteOutput(output.id, output.title)}
+                                    className="flex items-center space-x-1 text-destructive hover:text-destructive"
+                                  >
+                                    <TrashIcon className="h-4 w-4" />
+                                    <span>Delete</span>
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1164,6 +1469,115 @@ export default function SimpleProjectPage() {
         </div>
       )}
 
+      {/* Add Dataset Modal */}
+      {showDatasetForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <CardTitle>Add Dataset</CardTitle>
+              <CardDescription>
+                Add datasets used in your project
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DatasetForm
+                onSubmit={(name, type, description, format, file_size, size_unit, access_level, repository_url) => {
+                  createDataset(name, type, description, format, file_size, size_unit, access_level, repository_url)
+                }}
+                onCancel={() => setShowDatasetForm(false)}
+                loading={creatingDataset}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Dataset Modal */}
+      {showEditDatasetForm && editingDataset && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <CardTitle>Edit Dataset</CardTitle>
+              <CardDescription>
+                Update dataset details
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DatasetForm
+                dataset={editingDataset}
+                onSubmit={(datasetId, name, type, description, format, file_size, size_unit, access_level, repository_url) => {
+                  editDataset(datasetId, name, type, description, format, file_size, size_unit, access_level, repository_url)
+                }}
+                onCancel={() => {
+                  setShowEditDatasetForm(false)
+                  setEditingDataset(null)
+                }}
+                loading={editingDatasetState}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Add Output Modal */}
+      {showOutputForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <CardTitle>Add Output</CardTitle>
+              <CardDescription>
+                Add research outputs like publications, reports, and results
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OutputForm
+                onSubmit={(type, title, description, authors, status, date, url, doi, journal) => {
+                  createOutput(type, title, description, authors, status, date, url, doi, journal)
+                }}
+                onCancel={() => setShowOutputForm(false)}
+                loading={creatingOutput}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Output Modal */}
+      {showEditOutputForm && editingOutput && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <CardTitle>Edit Output</CardTitle>
+              <CardDescription>
+                Update output details
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OutputForm
+                output={editingOutput}
+                onSubmit={(outputId, type, title, description, authors, status, date, url, doi, journal) => {
+                  editOutput(outputId, type, title, description, authors, status, date, url, doi, journal)
+                }}
+                onCancel={() => {
+                  setShowEditOutputForm(false)
+                  setEditingOutput(null)
+                }}
+                loading={editingOutputState}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit Project Modal */}
+      {showEditProjectForm && projectInfo && (
+        <EditProjectForm
+          project={projectInfo}
+          onProjectUpdated={handleProjectUpdated}
+          isOpen={showEditProjectForm}
+          onClose={() => setShowEditProjectForm(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1509,6 +1923,369 @@ function SoftwareForm({
       <div className="flex space-x-3 pt-4">
         <Button type="submit" disabled={loading || !name.trim()} className="flex-1">
           {loading ? (software ? 'Updating...' : 'Creating...') : (software ? 'Update Software' : 'Add Software')}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Dataset Form Component
+function DatasetForm({ 
+  dataset,
+  onSubmit, 
+  onCancel, 
+  loading 
+}: { 
+  dataset?: Dataset
+  onSubmit: (datasetIdOrName: string, name: string, type: string, description: string, format: string, file_size: number | null, size_unit: string, access_level: string, repository_url: string | null) => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  const [name, setName] = useState(dataset?.name || '')
+  const [type, setType] = useState(dataset?.type || 'raw_data')
+  const [description, setDescription] = useState(dataset?.description || '')
+  const [format, setFormat] = useState(dataset?.format || '')
+  const [file_size, setFileSize] = useState(dataset?.file_size || null)
+  const [size_unit, setSizeUnit] = useState(dataset?.size_unit || 'MB')
+  const [access_level, setAccessLevel] = useState(dataset?.access_level || 'public')
+  const [repository_url, setRepositoryUrl] = useState(dataset?.repository_url || '')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (name.trim()) {
+      if (dataset) {
+        // Editing existing dataset - pass datasetId as first param, then name from form
+        onSubmit(
+          dataset.id,
+          name.trim(),
+          type,
+          description.trim(),
+          format.trim(),
+          file_size,
+          size_unit,
+          access_level,
+          repository_url.trim() || null
+        )
+      } else {
+        // Creating new dataset
+        onSubmit(
+          name.trim(),
+          name.trim(),
+          type,
+          description.trim(),
+          format.trim(),
+          file_size,
+          size_unit,
+          access_level,
+          repository_url.trim() || null
+        )
+      }
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Name *</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., Sample_001_R1.fastq"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+            required
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Type</label>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="raw_data">Raw Data</option>
+            <option value="processed_data">Processed Data</option>
+            <option value="reference_data">Reference Data</option>
+            <option value="metadata">Metadata</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Format</label>
+          <input
+            type="text"
+            value={format}
+            onChange={(e) => setFormat(e.target.value)}
+            placeholder="e.g., FASTQ, CSV, JSON"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Access Level</label>
+          <select
+            value={access_level}
+            onChange={(e) => setAccessLevel(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="public">Public</option>
+            <option value="restricted">Restricted</option>
+            <option value="private">Private</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Describe this dataset..."
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={3}
+        />
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">File Size</label>
+          <input
+            type="number"
+            value={file_size || ''}
+            onChange={(e) => setFileSize(e.target.value ? parseFloat(e.target.value) : null)}
+            placeholder="0.00"
+            step="0.01"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Size Unit</label>
+          <select
+            value={size_unit}
+            onChange={(e) => setSizeUnit(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="B">Bytes</option>
+            <option value="KB">KB</option>
+            <option value="MB">MB</option>
+            <option value="GB">GB</option>
+            <option value="TB">TB</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Repository URL</label>
+        <input
+          type="url"
+          value={repository_url}
+          onChange={(e) => setRepositoryUrl(e.target.value)}
+          placeholder="https://github.com/..."
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={loading || !name.trim()} className="flex-1">
+          {loading ? (dataset ? 'Updating...' : 'Creating...') : (dataset ? 'Update Dataset' : 'Add Dataset')}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Output Form Component
+function OutputForm({ 
+  output,
+  onSubmit, 
+  onCancel, 
+  loading 
+}: { 
+  output?: Output
+  onSubmit: (outputIdOrType: string, type: string, title: string, description: string, authors: string[], status: string, date: string | null, url: string | null, doi: string | null, journal: string | null) => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  const [type, setType] = useState(output?.type || 'publication')
+  const [title, setTitle] = useState(output?.title || '')
+  const [description, setDescription] = useState(output?.description || '')
+  const [authors, setAuthors] = useState(output?.authors || [])
+  const [authorsInput, setAuthorsInput] = useState(output?.authors.join(', ') || '')
+  const [status, setStatus] = useState(output?.status || 'draft')
+  const [date, setDate] = useState(output?.date || '')
+  const [url, setUrl] = useState(output?.url || '')
+  const [doi, setDoi] = useState(output?.doi || '')
+  const [journal, setJournal] = useState(output?.journal || '')
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (title.trim()) {
+      const authorsList = authorsInput.split(',').map(author => author.trim()).filter(author => author)
+      
+      if (output) {
+        // Editing existing output - pass outputId as first param, then type from form
+        onSubmit(
+          output.id,
+          type,
+          title.trim(),
+          description.trim(),
+          authorsList,
+          status,
+          date || null,
+          url.trim() || null,
+          doi.trim() || null,
+          journal.trim() || null
+        )
+      } else {
+        // Creating new output
+        onSubmit(
+          type,
+          type,
+          title.trim(),
+          description.trim(),
+          authorsList,
+          status,
+          date || null,
+          url.trim() || null,
+          doi.trim() || null,
+          journal.trim() || null
+        )
+      }
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Title *</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g., RNA-seq Analysis Results"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+            required
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Type</label>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="publication">Publication</option>
+            <option value="report">Report</option>
+            <option value="presentation">Presentation</option>
+            <option value="dataset">Dataset</option>
+            <option value="software">Software</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Describe this output..."
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          rows={3}
+        />
+      </div>
+      
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Authors</label>
+        <input
+          type="text"
+          value={authorsInput}
+          onChange={(e) => setAuthorsInput(e.target.value)}
+          placeholder="e.g., John Doe, Jane Smith"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+        <p className="text-xs text-muted-foreground">Separate multiple authors with commas</p>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Status</label>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="draft">Draft</option>
+            <option value="in_review">In Review</option>
+            <option value="published">Published</option>
+            <option value="accepted">Accepted</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+        
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">URL</label>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <label className="text-sm font-medium">DOI</label>
+          <input
+            type="text"
+            value={doi}
+            onChange={(e) => setDoi(e.target.value)}
+            placeholder="10.1000/182"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Journal/Publisher</label>
+        <input
+          type="text"
+          value={journal}
+          onChange={(e) => setJournal(e.target.value)}
+          placeholder="e.g., Nature, PLoS ONE"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={loading || !title.trim()} className="flex-1">
+          {loading ? (output ? 'Updating...' : 'Creating...') : (output ? 'Update Output' : 'Add Output')}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
           Cancel

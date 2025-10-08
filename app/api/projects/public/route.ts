@@ -14,7 +14,8 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '20')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Build the query for public projects
+    // Build the query for discoverable projects (both public and private)
+    // Private projects will appear in search but won't be clickable
     let query = supabase
       .from('projects')
       .select(`
@@ -33,7 +34,6 @@ export async function GET(request: Request) {
           lab_name
         )
       `)
-      .eq('visibility', 'public')
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 

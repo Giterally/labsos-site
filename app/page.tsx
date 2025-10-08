@@ -48,21 +48,20 @@ export default function KnowledgeCaptureLanding() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitMessage, setSubmitMessage] = useState('')
 
-  // Authentication check disabled for now to fix loading issue
-  // useEffect(() => {
-  //   const checkAuth = async () => {
-  //     try {
-  //       const user = await getCurrentUser()
-  //       setIsAuthenticated(!!user)
-  //     } catch (error) {
-  //       console.error('Auth check error:', error)
-  //       setIsAuthenticated(false)
-  //     } finally {
-  //       setLoading(false)
-  //     }
-  //   }
-  //   checkAuth()
-  // }, [])
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const user = await getCurrentUser()
+        setIsAuthenticated(!!user)
+      } catch (error) {
+        console.error('Auth check error:', error)
+        setIsAuthenticated(false)
+      } finally {
+        setLoading(false)
+      }
+    }
+    checkAuth()
+  }, [])
 
   const toggleFAQ = (index: number) => {
     setOpenFAQ(openFAQ === index ? null : index)
@@ -144,8 +143,13 @@ export default function KnowledgeCaptureLanding() {
       <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <BeakerIcon className="h-8 w-8 text-primary" />
-            <span className="text-2xl font-bold text-foreground">Knowledge Capture</span>
+            <svg className={isAuthenticated ? "h-12 w-12" : "h-8 w-8"} fill="none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.5 16C11.5 16 11 18 11 20V22H13V20C13 18 12.5 16 12.5 16" fill="#1B5E20" stroke="#1B5E20" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2C8 6 6 10 6 14C6 16 8 16 10 14C10 12 11 10 12 8C13 10 14 12 14 14C16 16 18 16 18 14C18 10 16 6 12 2Z" fill="#1B5E20" stroke="#1B5E20" />
+              <path strokeLinecap="round" strokeWidth={1.5} d="M10 22C9 21 8 20 7 19" fill="#1B5E20" stroke="#1B5E20" />
+              <path strokeLinecap="round" strokeWidth={1.5} d="M14 22C15 21 16 20 17 19" fill="#1B5E20" stroke="#1B5E20" />
+            </svg>
+            <span className={isAuthenticated ? "text-3xl font-bold text-foreground" : "text-2xl font-bold text-foreground"}>Olvaro</span>
           </div>
           <nav className="hidden md:flex items-center space-x-6">
             <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
@@ -377,7 +381,7 @@ export default function KnowledgeCaptureLanding() {
             <Link href="/labs">
               <Button 
                 size="lg" 
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold px-12 py-6 text-lg shadow-xl hover:shadow-2xl transition-all duration-300 border-0"
+                className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-bold px-12 py-6 text-lg shadow-xl hover:shadow-2xl transition-all duration-300 border-0"
               >
                 🔬 View All Research Projects
               </Button>
@@ -544,8 +548,13 @@ export default function KnowledgeCaptureLanding() {
           <div className="grid md:grid-cols-4 gap-8">
             <div className="space-y-4">
               <div className="flex items-center space-x-2">
-                <BeakerIcon className="h-6 w-6 text-primary" />
-                <span className="text-lg font-semibold text-foreground">Knowledge Capture</span>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.5 16C11.5 16 11 18 11 20V22H13V20C13 18 12.5 16 12.5 16" fill="#1B5E20" stroke="#1B5E20" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2C8 6 6 10 6 14C6 16 8 16 10 14C10 12 11 10 12 8C13 10 14 12 14 14C16 16 18 16 18 14C18 10 16 6 12 2Z" fill="#1B5E20" stroke="#1B5E20" />
+                  <path strokeLinecap="round" strokeWidth={1.5} d="M10 22C9 21 8 20 7 19" fill="#1B5E20" stroke="#1B5E20" />
+                  <path strokeLinecap="round" strokeWidth={1.5} d="M14 22C15 21 16 20 17 19" fill="#1B5E20" stroke="#1B5E20" />
+                </svg>
+                <span className="text-lg font-semibold text-foreground">Olvaro</span>
               </div>
               <p className="text-sm text-muted-foreground">
                 Transforming research workflows into organized, searchable knowledge.
@@ -578,7 +587,7 @@ export default function KnowledgeCaptureLanding() {
           </div>
           <div className="border-t border-border mt-8 pt-8 text-center">
             <p className="text-sm text-muted-foreground">
-              © 2024 Knowledge Capture. All rights reserved.
+              © 2024 Olvaro. All rights reserved.
             </p>
           </div>
         </div>

@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: { treeId: string } }
 ) {
   try {
-    const { treeId } = params
+    const { treeId } = await params
 
     // For now, use the anon client without authentication
     // TODO: Implement proper project ownership and member system
@@ -43,7 +43,7 @@ export async function PUT(
   { params }: { params: { treeId: string } }
 ) {
   try {
-    const { treeId } = params
+    const { treeId } = await params
     const body = await request.json()
     const { name, description, category } = body
 
@@ -89,7 +89,7 @@ export async function DELETE(
   { params }: { params: { treeId: string } }
 ) {
   try {
-    const { treeId } = params
+    const { treeId } = await params
 
     // For now, use the anon client without authentication
     // TODO: Implement proper project ownership and member system

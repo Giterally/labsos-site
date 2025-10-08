@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       subject: `New Demo Request from ${name} at ${university}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">New LabsOS Demo Request</h2>
+          <h2 style="color: #2563eb;">New Olvaro Demo Request</h2>
           
           <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3 style="color: #1e293b; margin-top: 0;">Contact Information</h3>
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
           <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
             <p style="color: #64748b; font-size: 14px;">
-              This demo request was submitted from the LabsOS landing page.
+              This demo request was submitted from the Olvaro landing page.
             </p>
           </div>
         </div>

@@ -12,27 +12,6 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
-
     const { projectId } = await params
 
     // Check if projectId is a UUID or slug
@@ -51,10 +30,10 @@ export async function GET(
       actualProjectId = projectBySlug.id
     }
 
-    // Check if user has access to this project (either as owner or team member)
+    // Check if project exists and get its visibility
     const { data: project, error: projectError } = await supabase
       .from('projects')
-      .select('created_by')
+      .select('created_by, visibility')
       .eq('id', actualProjectId)
       .single()
 
@@ -65,23 +44,40 @@ export async function GET(
       )
     }
 
-    // Check if user is project owner or team member
-    const isOwner = project.created_by === user.id
+    // Get the authorization header (optional for public projects)
+    const authHeader = request.headers.get('authorization')
+    let user = null
+    let isOwner = false
     let isTeamMember = false
 
-    if (!isOwner) {
-      const { data: membership, error: membershipError } = await supabase
-        .from('project_members')
-        .select('*')
-        .eq('project_id', actualProjectId)
-        .eq('user_id', user.id)
-        .is('left_at', null)
-        .single()
+    if (authHeader) {
+      // Extract the token
+      const token = authHeader.replace('Bearer ', '')
+      
+      // Verify the token and get user
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token)
+      if (!authError && authUser) {
+        user = authUser
+        
+        // Check if user is project owner or team member
+        isOwner = project.created_by === user.id
 
-      isTeamMember = !membershipError && !!membership
+        if (!isOwner) {
+          const { data: membership, error: membershipError } = await supabase
+            .from('project_members')
+            .select('*')
+            .eq('project_id', actualProjectId)
+            .eq('user_id', user.id)
+            .is('left_at', null)
+            .single()
+
+          isTeamMember = !membershipError && !!membership
+        }
+      }
     }
 
-    if (!isOwner && !isTeamMember) {
+    // For private projects, require authentication and membership
+    if (project.visibility === 'private' && (!user || (!isOwner && !isTeamMember))) {
       return NextResponse.json(
         { message: 'Access denied' },
         { status: 403 }
@@ -139,7 +135,12 @@ export async function GET(
       }
     })
 
-    return NextResponse.json({ members: transformedMembers })
+    return NextResponse.json({ 
+      members: transformedMembers,
+      isOwner,
+      isTeamMember,
+      isAuthenticated: !!user
+    })
   } catch (error: any) {
     console.error('Error fetching team members:', error)
     return NextResponse.json(
