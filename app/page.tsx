@@ -184,10 +184,10 @@ export default function KnowledgeCaptureLanding() {
             <div className="space-y-8">
               <div className="space-y-4">
                 <h1 className="text-5xl font-bold tracking-tight text-foreground">
-                  Capture & Organize Your Research Knowledge
+                  Capture & Organize Your Research Knowledge With Olvaro
                 </h1>
                 <p className="text-xl text-muted-foreground leading-relaxed">
-                  Transform scattered experiments into organized knowledge trees. Preserve tacit knowledge, streamline handovers, and make your research reproducible.
+                  Transform scattered experiments and pieces of information into organized knowledge trees. Preserve tacit knowledge, streamline handovers, and make your research reproducible.
                 </p>
               </div>
               <div className="flex space-x-4">
@@ -200,52 +200,13 @@ export default function KnowledgeCaptureLanding() {
               </div>
             </div>
             <div className="relative">
-              <Card className="shadow-2xl">
+              <Card className="shadow-2xl border-2 border-gray-200 overflow-hidden">
                 <CardContent className="p-0">
-                  <div className="bg-gradient-to-br from-primary/10 to-primary/5 p-8 rounded-lg">
-                    <div className="space-y-4">
-                      <div className="flex items-center space-x-2">
-                        <BeakerIcon className="h-6 w-6 text-primary" />
-                        <span className="font-semibold">Protein Expression Protocol</span>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center space-x-2 text-sm">
-                          <PlayIcon className="h-4 w-4 text-green-600" />
-                          <span>1. Plasmid Preparation</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm">
-                          <PlayIcon className="h-4 w-4 text-green-600" />
-                          <span>2. Cell Culture Setup</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm">
-                          <PlayIcon className="h-4 w-4 text-blue-600" />
-                          <span>3. Protein Expression</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm">
-                          <PlayIcon className="h-4 w-4 text-blue-600" />
-                          <span>4. Cell Lysis</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm">
-                          <PlayIcon className="h-4 w-4 text-orange-600" />
-                          <span>5. Protein Analysis</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                        <div className="flex items-center space-x-1">
-                          <VideoCameraIcon className="h-3 w-3" />
-                          <span>3 videos</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <CodeBracketIcon className="h-3 w-3" />
-                          <span>2 repos</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <CircleStackIcon className="h-3 w-3" />
-                          <span>1 dataset</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <img 
+                    src="/rna-seq-pipeline-demo.png" 
+                    alt="RNA-seq Analysis Pipeline - Knowledge Capture Interface"
+                    className="w-full h-auto"
+                  />
                 </CardContent>
               </Card>
             </div>
@@ -257,8 +218,8 @@ export default function KnowledgeCaptureLanding() {
       <section id="labs" className="py-16 px-4 bg-muted/10">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Research Projects</h2>
-            <p className="text-lg text-muted-foreground">Explore public research projects and see how researchers are organizing their work</p>
+            <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Researchers and Research Projects</h2>
+            <p className="text-lg text-muted-foreground">Explore public research projects and see how researchers are organising their work</p>
           </div>
 
           <div className="max-w-2xl mx-auto mb-8">
@@ -396,10 +357,10 @@ export default function KnowledgeCaptureLanding() {
           <h2 className="text-3xl font-bold mb-12 text-foreground">The Research Knowledge Crisis</h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              "Code scattered across laptops & Dropbox",
-              "Documentation missing or unreadable",
-              "Videos lost in forgotten folders",
-              "Knowledge walks out the door",
+              "Code and Files scattered across Dropbox, Sharepoint, etc.",
+              "Documentation missing or not presented in context",
+              "Videos and details lost in forgotten folders",
+              "Knowledge walks out the door and work is duplicated",
             ].map((problem, index) => (
               <Card key={index} className="p-6 text-center">
                 <CardContent>
@@ -424,19 +385,19 @@ export default function KnowledgeCaptureLanding() {
               {
                 icon: <FolderIcon className="h-8 w-8 text-primary" />,
                 title: "Ordered Experiment Trees",
-                description: "Organize your research as sequential workflows. Each node represents a step, protocol, or result.",
-                features: ["Visual experiment flow", "Step-by-step navigation", "Nested sub-procedures"]
+                description: "Organise your research as sequential workflows. Build sequential blocks consisting of sequential nodes with attached data.",
+                features: ["Visual experiment flow", "Nested sub-procedures", "Drag and drop reordering"]
               },
               {
                 icon: <VideoCameraIcon className="h-8 w-8 text-primary" />,
                 title: "Video + Transcripts",
-                description: "Capture tacit knowledge with videos and searchable transcripts. Never lose the 'how' again.",
-                features: ["Auto-generated transcripts", "Chapter markers", "Searchable content"]
+                description: "Capture tacit knowledge and instructional details with videos and searchable transcripts. Never lose the 'how' again.",
+                features: ["Auto-generated transcripts", "Embedded video", "Searchable content"]
               },
               {
                 icon: <CodeBracketIcon className="h-8 w-8 text-primary" />,
                 title: "Code Integration",
-                description: "Link GitHub repos, track code quality, and maintain analysis pipelines in context.",
+                description: "Link GitHub repos, track code quality changes, and maintain analysis pipelines in context.",
                 features: ["GitHub integration", "Code quality checks", "Analysis pipelines"]
               },
               {
@@ -448,13 +409,13 @@ export default function KnowledgeCaptureLanding() {
               {
                 icon: <ShareIcon className="h-8 w-8 text-primary" />,
                 title: "Handover Packages",
-                description: "Generate comprehensive handover documents with all context, files, and knowledge.",
-                features: ["Automated reports", "Complete context", "Easy sharing"]
+                description: "Generate comprehensive handover documents with all context, files, and knowledge in the same place.",
+                features: ["Specialised reports", "Complete context", "Easy sharing"]
               },
               {
                 icon: <MagnifyingGlassIcon className="h-8 w-8 text-primary" />,
                 title: "Smart Search",
-                description: "Find anything instantly with full-text search across videos, code, data, and documentation.",
+                description: "Find anything in an experiment tree with full-text search across videos, documentation and more.",
                 features: ["Cross-content search", "Semantic understanding", "Quick discovery"]
               }
             ].map((feature, index) => (
@@ -485,30 +446,30 @@ export default function KnowledgeCaptureLanding() {
         <div className="container mx-auto max-w-4xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4 text-foreground">Frequently Asked Questions</h2>
-            <p className="text-lg text-muted-foreground">Everything you need to know about Knowledge Capture</p>
+            <p className="text-lg text-muted-foreground">Everything you need to know about Olvaro</p>
           </div>
 
           <div className="space-y-4">
             {[
               {
                 question: "How is this different from existing lab management tools?",
-                answer: "Knowledge Capture focuses specifically on preserving and organizing the tacit knowledge that gets lost in research. Unlike generic project management tools, it's designed for the unique needs of experimental workflows, with features like video transcripts, code integration, and automated handover packages."
+                answer: "Olvaro focuses specifically on preserving and organising the knowledge that gets lost in research. Unlike generic project management tools, it's designed for the unique needs of experimental workflows, with features like video transcripts, code integration and handover packages."
               },
               {
                 question: "Do I need to migrate all my existing data?",
-                answer: "No! Knowledge Capture works as a lightweight wrapper around your existing tools. You can link to files in Dropbox, GitHub repos, and other storage without moving anything. It's designed to index and organize what you already have."
-              },
-              {
-                question: "How does the video transcription work?",
-                answer: "We integrate with Whisper AI to automatically generate searchable transcripts from your lab videos. The system can also create chapter markers and extract key information, making your video content as searchable as text documents."
+                answer: "No! Olvaro works as a lightweight wrapper around your existing tools. You can link to files in Dropbox, GitHub repos, and other storage without moving anything. It's designed to index and organize what you already have."
               },
               {
                 question: "Can I control who sees my research?",
-                answer: "Absolutely. Knowledge Capture includes flexible access controls. You can set permissions at the project level, share specific experiment trees with collaborators, or keep everything private to your lab."
+                answer: "Absolutely. Olvaro includes flexible access controls. You can set your project to public or private and decide wether you want to show your projects on your profile."
               },
               {
                 question: "What happens to my data if I stop using the service?",
-                answer: "Your data always remains yours. You can export everything at any time, including the organized structure, metadata, and all linked files. We believe in data portability and won't lock you into our platform."
+                answer: "Your data always remains yours. You can export everything at any time. We believe in data portability and won't lock you into our platform."
+              },
+              {
+                question: "What new features are coming soon?",
+                answer: "Features coming soon include a full suite of access controls, including ability to share and delegate access for specific team members to specific trees in a project. Also, augmented AI search to find information in experiment trees, build entirely new trees from inputting all forms of data for a project, and planning a new project or workflow using past open-source projects."
               }
             ].map((faq, index) => (
               <Card key={index} className="cursor-pointer" onClick={() => toggleFAQ(index)}>
@@ -534,7 +495,7 @@ export default function KnowledgeCaptureLanding() {
         <div className="container mx-auto max-w-4xl text-center">
           <h2 className="text-3xl font-bold mb-4 text-foreground">Ready to Transform Your Research?</h2>
           <p className="text-lg text-muted-foreground mb-8">
-            Join the growing community of researchers who are preserving and organizing their knowledge.
+            Join the growing community of researchers who are preserving and organising their knowledge.
           </p>
           <Button size="lg" className="text-lg px-8 py-6" onClick={() => setShowContactForm(true)}>
             Book a Free Demo
@@ -557,7 +518,7 @@ export default function KnowledgeCaptureLanding() {
                 <span className="text-lg font-semibold text-foreground">Olvaro</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Transforming research workflows into organized, searchable knowledge.
+                Transforming research workflows into organised, searchable knowledge.
               </p>
             </div>
             <div className="space-y-4">
