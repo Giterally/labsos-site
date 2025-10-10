@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, ChevronRightIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
+import SearchTool from "@/components/SearchTool"
 
 interface ExperimentNode {
   id: string
@@ -1050,8 +1051,8 @@ export default function SimpleExperimentTreePage() {
     <div className="min-h-screen bg-background">
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8 pt-20">
-        {/* Back Button */}
-        <div className="mb-6">
+        {/* Header with Back Button and Search */}
+        <div className="mb-6 flex items-center justify-between">
           <Button
             variant="ghost"
             size="sm"
@@ -1061,6 +1062,36 @@ export default function SimpleExperimentTreePage() {
             <ArrowLeftIcon className="h-4 w-4" />
             <span>Back to {projectInfo?.name || 'Project'}</span>
           </Button>
+          
+            {/* Search Tool */}
+            <SearchTool 
+              treeId={treeId} 
+              onNodeSelect={(nodeId, sectionId) => {
+                setSelectedNodeId(nodeId)
+                // Scroll to the selected node if it's visible
+                setTimeout(() => {
+                  const element = document.getElementById(`node-${nodeId}`)
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    
+                    // If there's a specific section, try to scroll to it
+                    if (sectionId) {
+                      setTimeout(() => {
+                        const sectionElement = document.getElementById(sectionId)
+                        if (sectionElement) {
+                          sectionElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          // Highlight the section briefly
+                          sectionElement.classList.add('bg-yellow-100', 'transition-colors', 'duration-1000')
+                          setTimeout(() => {
+                            sectionElement.classList.remove('bg-yellow-100')
+                          }, 2000)
+                        }
+                      }, 500)
+                    }
+                  }
+                }, 100)
+              }}
+            />
         </div>
 
         {/* Tree Information Header */}
@@ -1234,6 +1265,7 @@ export default function SimpleExperimentTreePage() {
                                 
                                 return (
                                   <div 
+                                    id={`node-${node.id}`}
                                     key={node.id}
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, 'node', node.id, nodeType)}
