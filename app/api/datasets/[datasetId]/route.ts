@@ -6,10 +6,10 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { datasetId: string } }
+  { params }: { params: Promise<{ datasetId: string }> }
 ) {
   try {
-    const { datasetId } = params
+    const { datasetId } = await params
     const body = await request.json()
     const { 
       name, 
@@ -31,17 +31,29 @@ export async function PUT(
     // TODO: Implement proper project ownership and member system
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+    // Validate access_level
+    const validAccessLevels = ['public', 'restricted', 'private']
+    const finalAccessLevel = validAccessLevels.includes(access_level) ? access_level : 'public'
+    
+    // Validate size_unit
+    const validSizeUnits = ['B', 'KB', 'MB', 'GB', 'TB']
+    const finalSizeUnit = validSizeUnits.includes(size_unit) ? size_unit : 'bytes'
+    
+    // Validate dataset type
+    const validDatasetTypes = ['raw_data', 'processed_data', 'training_data', 'validation_data']
+    const finalDatasetType = validDatasetTypes.includes(type) ? type : 'raw_data'
+
     // Update the dataset entry
     const { data, error: datasetError } = await supabase
       .from('datasets')
       .update({
         name: name.trim(),
-        type: type || 'raw_data',
+        type: finalDatasetType,
         description: description?.trim() || null,
         format: format?.trim() || null,
         file_size: file_size || null,
-        size_unit: size_unit || 'bytes',
-        access_level: access_level || 'private',
+        size_unit: finalSizeUnit,
+        access_level: finalAccessLevel,
         repository_url: repository_url?.trim() || null,
         updated_at: new Date().toISOString()
       })
@@ -66,10 +78,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { datasetId: string } }
+  { params }: { params: Promise<{ datasetId: string }> }
 ) {
   try {
-    const { datasetId } = params
+    const { datasetId } = await params
 
     // For now, use the anon client without authentication
     // TODO: Implement proper project ownership and member system

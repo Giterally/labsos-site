@@ -6,10 +6,10 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { outputId: string } }
+  { params }: { params: Promise<{ outputId: string }> }
 ) {
   try {
-    const { outputId } = params
+    const { outputId } = await params
     const body = await request.json()
     const { 
       type, 
@@ -32,6 +32,20 @@ export async function PUT(
     // TODO: Implement proper project ownership and member system
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+    // Validate and prepare data
+    const validStatuses = ['published', 'submitted', 'in_preparation', 'draft']
+    const finalStatus = validStatuses.includes(status) ? status : 'draft'
+    
+    // Parse date properly - if it's a string that looks like a date, use it, otherwise null
+    let finalDate = null
+    if (date && typeof date === 'string' && date.trim()) {
+      // Check if it's a valid date string
+      const parsedDate = new Date(date)
+      if (!isNaN(parsedDate.getTime())) {
+        finalDate = parsedDate.toISOString()
+      }
+    }
+
     // Update the output entry
     const { data, error: outputError } = await supabase
       .from('outputs')
@@ -40,8 +54,8 @@ export async function PUT(
         title: title.trim(),
         description: description?.trim() || null,
         authors: authors || [],
-        status: status || 'draft',
-        date: date || null,
+        status: finalStatus,
+        date: finalDate,
         url: url?.trim() || null,
         doi: doi?.trim() || null,
         journal: journal?.trim() || null,
@@ -68,10 +82,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { outputId: string } }
+  { params }: { params: Promise<{ outputId: string }> }
 ) {
   try {
-    const { outputId } = params
+    const { outputId } = await params
 
     // For now, use the anon client without authentication
     // TODO: Implement proper project ownership and member system

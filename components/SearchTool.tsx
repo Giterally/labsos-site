@@ -295,10 +295,10 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
                   variant="outline"
                   size="sm"
                   onClick={() => setIsOpen(true)}
-                  className="h-9 px-3 flex items-center space-x-2 bg-white border-gray-300 hover:bg-gray-50 shadow-sm hover:shadow-md transition-all duration-200 hover:border-blue-300"
+                  className="h-9 px-3 flex items-center space-x-2 bg-blue-50 border-blue-300 hover:bg-blue-100 shadow-sm hover:shadow-md transition-all duration-200 hover:border-blue-400 text-blue-700"
                 >
-                  <MagnifyingGlassIcon className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-500 hidden sm:inline">Search...</span>
+                  <MagnifyingGlassIcon className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm text-blue-700 hidden sm:inline">Search...</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>

@@ -65,10 +65,10 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId } = params
+    const { projectId } = await params
     const body = await request.json()
     const { 
       name, 
@@ -106,17 +106,40 @@ export async function POST(
       actualProjectId = project.id
     }
 
+    // Validate access_level
+    const validAccessLevels = ['public', 'restricted', 'private']
+    const finalAccessLevel = validAccessLevels.includes(access_level) ? access_level : 'public'
+    
+    // Validate size_unit
+    const validSizeUnits = ['B', 'KB', 'MB', 'GB', 'TB']
+    const finalSizeUnit = validSizeUnits.includes(size_unit) ? size_unit : 'bytes'
+    
+    // Validate dataset type
+    const validDatasetTypes = ['raw_data', 'processed_data', 'training_data', 'validation_data']
+    const finalDatasetType = validDatasetTypes.includes(type) ? type : 'raw_data'
+    
+    console.log('Creating dataset with data:', {
+      name: name.trim(),
+      type: finalDatasetType,
+      description: description?.trim() || null,
+      format: format?.trim() || null,
+      file_size: file_size || null,
+      size_unit: finalSizeUnit,
+      access_level: finalAccessLevel,
+      repository_url: repository_url?.trim() || null
+    })
+
     // Create the dataset entry
     const { data: dataset, error: datasetError } = await supabase
       .from('datasets')
       .insert({
         name: name.trim(),
-        type: type || 'raw_data',
+        type: finalDatasetType,
         description: description?.trim() || null,
         format: format?.trim() || null,
         file_size: file_size || null,
-        size_unit: size_unit || 'bytes',
-        access_level: access_level || 'private',
+        size_unit: finalSizeUnit,
+        access_level: finalAccessLevel,
         repository_url: repository_url?.trim() || null,
         created_by: null // No authentication for now
       })

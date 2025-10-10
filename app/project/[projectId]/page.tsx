@@ -2007,9 +2007,8 @@ function DatasetForm({
           >
             <option value="raw_data">Raw Data</option>
             <option value="processed_data">Processed Data</option>
-            <option value="reference_data">Reference Data</option>
-            <option value="metadata">Metadata</option>
-            <option value="other">Other</option>
+            <option value="training_data">Training Data</option>
+            <option value="validation_data">Validation Data</option>
           </select>
         </div>
       </div>
@@ -2190,7 +2189,7 @@ function OutputForm({
             <option value="presentation">Presentation</option>
             <option value="dataset">Dataset</option>
             <option value="software">Software</option>
-            <option value="other">Other</option>
+            <option value="patent">Patent</option>
           </select>
         </div>
       </div>

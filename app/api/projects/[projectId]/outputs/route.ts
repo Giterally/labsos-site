@@ -66,10 +66,10 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId } = params
+    const { projectId } = await params
     const body = await request.json()
     const { 
       type, 
@@ -108,6 +108,32 @@ export async function POST(
       actualProjectId = project.id
     }
 
+    // Validate and prepare data
+    const validStatuses = ['published', 'submitted', 'in_preparation', 'draft']
+    const finalStatus = validStatuses.includes(status) ? status : 'draft'
+    
+    // Parse date properly - if it's a string that looks like a date, use it, otherwise null
+    let finalDate = null
+    if (date && typeof date === 'string' && date.trim()) {
+      // Check if it's a valid date string
+      const parsedDate = new Date(date)
+      if (!isNaN(parsedDate.getTime())) {
+        finalDate = parsedDate.toISOString()
+      }
+    }
+    
+    console.log('Creating output with data:', {
+      type: type || 'publication',
+      title: title.trim(),
+      description: description?.trim() || null,
+      authors: authors || [],
+      status: finalStatus,
+      date: finalDate,
+      url: url?.trim() || null,
+      doi: doi?.trim() || null,
+      journal: journal?.trim() || null
+    })
+
     // Create the output entry
     const { data: output, error: outputError } = await supabase
       .from('outputs')
@@ -116,8 +142,8 @@ export async function POST(
         title: title.trim(),
         description: description?.trim() || null,
         authors: authors || [],
-        status: status || 'draft',
-        date: date || null,
+        status: finalStatus,
+        date: finalDate,
         url: url?.trim() || null,
         doi: doi?.trim() || null,
         journal: journal?.trim() || null,

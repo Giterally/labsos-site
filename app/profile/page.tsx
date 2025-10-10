@@ -19,8 +19,8 @@ export default function ProfilePage() {
           return
         }
 
-        // Redirect to the user's researcher profile page
-        router.push(`/researcher/${user.id}`)
+        // Redirect to the user's researcher profile page (replace to avoid back button issues)
+        router.replace(`/researcher/${user.id}`)
       } catch (error) {
         console.error('Error redirecting to profile:', error)
         router.push('/login')
