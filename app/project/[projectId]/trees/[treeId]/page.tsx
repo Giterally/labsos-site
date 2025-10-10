@@ -420,13 +420,30 @@ export default function SimpleExperimentTreePage() {
 
   // Get all block types in the desired order
   const allBlockTypes = useMemo(() => {
-    const regularBlockTypes = Object.keys(groupedNodes).filter(type => !type.startsWith('custom_') && !customBlocks.some(block => block.id === type))
+    // Get all regular block types (those with nodes and not custom blocks)
+    const regularBlockTypes = Object.keys(groupedNodes).filter(type => 
+      !type.startsWith('custom_') && 
+      !customBlocks.some(block => block.id === type) &&
+      groupedNodes[type].length > 0
+    )
+    
+    // Get all custom block types in their saved order
+    // Include all custom blocks, even if they have no nodes yet
     const customBlockTypes = blockOrder.filter(id => customBlocks.some(block => block.id === id))
+    
+    // Debug logging
+    console.log('Debug allBlockTypes:', {
+      customBlocks: customBlocks,
+      blockOrder: blockOrder,
+      customBlockTypes: customBlockTypes,
+      regularBlockTypes: regularBlockTypes,
+      groupedNodes: Object.keys(groupedNodes)
+    })
     
     // Combine regular and custom blocks in the correct order
     // Regular blocks come first, then custom blocks in their saved order
     return [...regularBlockTypes, ...customBlockTypes]
-  }, [experimentNodes, customBlocks, blockOrder])
+  }, [groupedNodes, customBlocks, blockOrder])
   
 
   // Fetch project information
@@ -1152,10 +1169,10 @@ export default function SimpleExperimentTreePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {experimentNodes.length === 0 ? (
+                  {allBlockTypes.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <p>No experiment steps yet.</p>
-                      <p className="text-sm">Click "Add" to create your first step.</p>
+                      <p className="text-sm">Click "Add Block" to create your first step.</p>
                     </div>
                   ) : (
                     allBlockTypes.map((nodeType) => {
