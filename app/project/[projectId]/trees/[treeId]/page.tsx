@@ -1085,6 +1085,29 @@ export default function SimpleExperimentTreePage() {
               treeId={treeId} 
               onNodeSelect={(nodeId, sectionId) => {
                 setSelectedNodeId(nodeId)
+                
+                // If there's a specific section, switch to that tab
+                if (sectionId) {
+                  // Map section IDs to tab values
+                  const sectionToTabMap: Record<string, string> = {
+                    'content': 'content',
+                    'attachments': 'attachments', 
+                    'links': 'links',
+                    'metadata': 'metadata'
+                  }
+                  
+                  const tabValue = sectionToTabMap[sectionId]
+                  if (tabValue) {
+                    // Find the tab trigger and click it
+                    setTimeout(() => {
+                      const tabTrigger = document.querySelector(`[data-state="inactive"][value="${tabValue}"]`) as HTMLElement
+                      if (tabTrigger) {
+                        tabTrigger.click()
+                      }
+                    }, 200)
+                  }
+                }
+                
                 // Scroll to the selected node if it's visible
                 setTimeout(() => {
                   const element = document.getElementById(`node-${nodeId}`)
@@ -1429,7 +1452,7 @@ export default function SimpleExperimentTreePage() {
                     </TabsList>
 
                     <TabsContent value="content">
-                      <div className="border rounded-lg p-4">
+                      <div id="content" className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
                           <h4 className="font-medium">Content</h4>
                           {!editingContent && (
@@ -1481,7 +1504,7 @@ export default function SimpleExperimentTreePage() {
                     </TabsContent>
 
                     <TabsContent value="attachments">
-                      <div className="border rounded-lg p-4">
+                      <div id="attachments" className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
                           <h4 className="font-medium">Attachments</h4>
                           <Button
@@ -1604,7 +1627,7 @@ export default function SimpleExperimentTreePage() {
                     </TabsContent>
 
                     <TabsContent value="links">
-                      <div className="border rounded-lg p-4">
+                      <div id="links" className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
                           <h4 className="font-medium">Links</h4>
                           <Button

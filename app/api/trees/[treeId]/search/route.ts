@@ -285,7 +285,9 @@ export async function GET(
             blockName: blockName,
             path: [blockName, nodeTitle, 'Attachments'],
             matchType: 'attachment',
-            score: calculateScore(searchText, searchQuery, 'attachment')
+            score: calculateScore(searchText, searchQuery, 'attachment'),
+            sectionName: 'Attachments',
+            sectionId: 'attachments'
           })
         }
       })
@@ -309,7 +311,9 @@ export async function GET(
             blockName: blockName,
             path: [blockName, nodeTitle, 'Links'],
             matchType: 'link',
-            score: calculateScore(searchText, searchQuery, 'link')
+            score: calculateScore(searchText, searchQuery, 'link'),
+            sectionName: 'Links',
+            sectionId: 'links'
           })
         }
       })
