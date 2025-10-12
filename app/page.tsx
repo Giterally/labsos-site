@@ -25,13 +25,35 @@ import {
   CircleStackIcon,
   ShareIcon,
 } from "@heroicons/react/24/outline"
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useUser } from "@/lib/user-context"
 
-export default function KnowledgeCaptureLanding() {
+function ContactDialogHandler({ 
+  showContactDialog, 
+  setShowContactDialog 
+}: { 
+  showContactDialog: boolean
+  setShowContactDialog: (show: boolean) => void 
+}) {
   const searchParams = useSearchParams()
+
+  // Check for contact parameter and open dialog
+  useEffect(() => {
+    if (searchParams.get('contact') === 'true') {
+      setShowContactDialog(true)
+      // Clean up URL parameter
+      const url = new URL(window.location.href)
+      url.searchParams.delete('contact')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [searchParams, setShowContactDialog])
+
+  return null
+}
+
+export default function KnowledgeCaptureLanding() {
   const { user: currentUser, loading: userLoading } = useUser()
   const [openFAQ, setOpenFAQ] = useState<number | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -48,17 +70,6 @@ export default function KnowledgeCaptureLanding() {
       setIsAuthenticated(!!currentUser)
     }
   }, [currentUser, userLoading])
-
-  // Check for contact parameter and open dialog
-  useEffect(() => {
-    if (searchParams.get('contact') === 'true') {
-      setShowContactDialog(true)
-      // Clean up URL parameter
-      const url = new URL(window.location.href)
-      url.searchParams.delete('contact')
-      window.history.replaceState({}, '', url.toString())
-    }
-  }, [searchParams])
 
   const toggleFAQ = (index: number) => {
     setOpenFAQ(openFAQ === index ? null : index)
@@ -120,6 +131,12 @@ export default function KnowledgeCaptureLanding() {
 
   return (
     <div className="min-h-screen bg-background">
+      <Suspense fallback={null}>
+        <ContactDialogHandler 
+          showContactDialog={showContactDialog} 
+          setShowContactDialog={setShowContactDialog} 
+        />
+      </Suspense>
       {/* Header */}
       <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
