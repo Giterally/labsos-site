@@ -89,7 +89,7 @@ export default function SimpleProjectPage() {
   const router = useRouter()
   const params = useParams()
   const projectId = params.projectId as string
-  const { user: currentUser, refreshUser } = useUser()
+  const { user: currentUser, loading: userLoading, refreshUser } = useUser()
   
   const [experimentTrees, setExperimentTrees] = useState<ExperimentTree[]>([])
   const [loading, setLoading] = useState(true)
@@ -197,10 +197,24 @@ export default function SimpleProjectPage() {
   useEffect(() => {
     const fetchProjectInfo = async () => {
       try {
-        const response = await fetch(`/api/projects/${projectId}`)
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/projects/${projectId}`, {
+          headers
+        })
         
         if (!response.ok) {
-          throw new Error('Failed to fetch project information')
+          const errorData = await response.json().catch(() => ({}))
+          const errorMessage = errorData.message || errorData.error || 'Failed to fetch project information'
+          console.error('API Error:', response.status, errorMessage, errorData)
+          throw new Error(errorMessage)
         }
         
         const data = await response.json()
@@ -210,8 +224,10 @@ export default function SimpleProjectPage() {
       }
     }
 
-    fetchProjectInfo()
-  }, [projectId])
+    if (!userLoading) {
+      fetchProjectInfo()
+    }
+  }, [projectId, currentUser, userLoading])
 
 
   // Fetch team members when component mounts
@@ -226,9 +242,18 @@ export default function SimpleProjectPage() {
         setLoading(true)
         setError(null) // Clear any previous errors
         
-        // For now, no authentication required
-        // TODO: Implement proper project ownership and member system
-        const response = await fetch(`/api/projects/${projectId}/trees`)
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/projects/${projectId}/trees`, {
+          headers
+        })
         
         if (!response.ok) {
           if (response.status === 401) {
@@ -254,15 +279,29 @@ export default function SimpleProjectPage() {
       }
     }
 
-    fetchExperimentTrees()
-  }, [projectId])
+    if (!userLoading) {
+      fetchExperimentTrees()
+    }
+  }, [projectId, currentUser, userLoading])
 
   // Fetch software for this project
   useEffect(() => {
     const fetchSoftware = async () => {
       try {
         setSoftwareLoading(true)
-        const response = await fetch(`/api/projects/${projectId}/software`)
+        
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/projects/${projectId}/software`, {
+          headers
+        })
         
         if (!response.ok) {
           throw new Error('Failed to fetch software')
@@ -277,15 +316,29 @@ export default function SimpleProjectPage() {
       }
     }
 
-    fetchSoftware()
-  }, [projectId])
+    if (!userLoading) {
+      fetchSoftware()
+    }
+  }, [projectId, currentUser, userLoading])
 
   // Fetch datasets for this project
   useEffect(() => {
     const fetchDatasets = async () => {
       try {
         setDatasetsLoading(true)
-        const response = await fetch(`/api/projects/${projectId}/datasets`)
+        
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/projects/${projectId}/datasets`, {
+          headers
+        })
         
         if (!response.ok) {
           throw new Error('Failed to fetch datasets')
@@ -300,15 +353,29 @@ export default function SimpleProjectPage() {
       }
     }
 
-    fetchDatasets()
-  }, [projectId])
+    if (!userLoading) {
+      fetchDatasets()
+    }
+  }, [projectId, currentUser, userLoading])
 
   // Fetch outputs for this project
   useEffect(() => {
     const fetchOutputs = async () => {
       try {
         setOutputsLoading(true)
-        const response = await fetch(`/api/projects/${projectId}/outputs`)
+        
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/projects/${projectId}/outputs`, {
+          headers
+        })
         
         if (!response.ok) {
           throw new Error('Failed to fetch outputs')
@@ -323,8 +390,10 @@ export default function SimpleProjectPage() {
       }
     }
 
-    fetchOutputs()
-  }, [projectId])
+    if (!userLoading) {
+      fetchOutputs()
+    }
+  }, [projectId, currentUser, userLoading])
 
   // Fetch team members for this project
   useEffect(() => {

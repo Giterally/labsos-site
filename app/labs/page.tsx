@@ -1,19 +1,24 @@
 "use client"
 
+import { useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   FolderIcon,
   UserGroupIcon,
   MagnifyingGlassIcon,
   BeakerIcon,
+  LockClosedIcon,
 } from "@heroicons/react/24/outline"
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth-service"
+import { supabase } from "@/lib/supabase-client"
 
 interface PublicProject {
   id: string
@@ -29,6 +34,7 @@ interface PublicProject {
   member_count: number
   tree_count: number
   avatar: string
+  canAccess: boolean
 }
 
 interface PublicResearcher {
@@ -51,6 +57,7 @@ interface PublicResearcher {
 }
 
 export default function PublicProjectsPage() {
+  const router = useRouter()
   const [projects, setProjects] = useState<PublicProject[]>([])
   const [researchers, setResearchers] = useState<PublicResearcher[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,16 +67,100 @@ export default function PublicProjectsPage() {
   const [activeTab, setActiveTab] = useState<'projects' | 'researchers'>('projects')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authLoading, setAuthLoading] = useState(true)
+  
+  // Filter state (temporary UI state)
+  const [filters, setFilters] = useState({
+    minMembers: 0,
+    maxMembers: 999,
+    status: '',
+    visibility: '',
+    institution: '',
+    department: '',
+    dateFrom: '',
+    dateTo: ''
+  })
+  
+  // Active filters state (applied filters that trigger API calls)
+  const [activeFilters, setActiveFilters] = useState({
+    minMembers: 0,
+    maxMembers: 999,
+    status: '',
+    visibility: '',
+    institution: '',
+    department: '',
+    dateFrom: '',
+    dateTo: ''
+  })
+
+  const fetchPublicProjects = useCallback(async () => {
+    try {
+      // Get session for API call if user is authenticated
+      let headers: HeadersInit = {}
+      if (isAuthenticated) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+          console.log('Discover Research - Sending auth header for projects fetch')
+        } else {
+          console.log('Discover Research - No session token available')
+        }
+      } else {
+        console.log('Discover Research - User not authenticated, fetching public projects only')
+      }
+
+      // Build query string with active filters and search
+      const queryParams = new URLSearchParams()
+      if (searchTerm.trim()) queryParams.set('search', searchTerm.trim())
+      if (activeFilters.minMembers > 0) queryParams.set('minMembers', activeFilters.minMembers.toString())
+      if (activeFilters.maxMembers < 999) queryParams.set('maxMembers', activeFilters.maxMembers.toString())
+      if (activeFilters.status) queryParams.set('status', activeFilters.status)
+      if (activeFilters.visibility) queryParams.set('visibility', activeFilters.visibility)
+      if (activeFilters.institution) queryParams.set('institution', activeFilters.institution)
+      if (activeFilters.department) queryParams.set('department', activeFilters.department)
+      if (activeFilters.dateFrom) queryParams.set('dateFrom', activeFilters.dateFrom)
+      if (activeFilters.dateTo) queryParams.set('dateTo', activeFilters.dateTo)
+
+      const response = await fetch(`/api/projects/public?${queryParams.toString()}`, {
+        headers
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch public projects')
+      }
+
+      const data = await response.json()
+      setProjects(data.projects || [])
+    } catch (error) {
+      console.error('Error fetching public projects:', error)
+      setProjects([])
+    }
+  }, [isAuthenticated, activeFilters, searchTerm])
+
+  // Refetch projects when authentication state changes
+  useEffect(() => {
+    if (!authLoading) {
+      fetchPublicProjects()
+    }
+  }, [isAuthenticated, authLoading])
+
+  // Refetch projects when active filters or search term change
+  useEffect(() => {
+    if (!authLoading) {
+      console.log('Filters changed, refetching projects with:', { activeFilters, searchTerm })
+      fetchPublicProjects()
+    }
+  }, [activeFilters, searchTerm, authLoading, fetchPublicProjects])
 
   useEffect(() => {
     fetchPublicProjects()
     fetchPublicResearchers()
     checkAuth()
-  }, [])
+  }, [fetchPublicProjects])
 
   const checkAuth = async () => {
     try {
       const user = await getCurrentUser()
+      console.log('Discover Research - Auth check result:', user ? 'authenticated' : 'not authenticated', user?.id)
       setIsAuthenticated(!!user)
     } catch (error) {
       console.error('Auth check error:', error)
@@ -80,21 +171,9 @@ export default function PublicProjectsPage() {
   }
 
   useEffect(() => {
-    // Filter projects based on search term
-    if (!searchTerm.trim()) {
-      setFilteredProjects(projects)
-    } else {
-      const filtered = projects.filter(project =>
-        project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        project.institution.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        project.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        project.lead_researcher.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        project.lab_name.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-      setFilteredProjects(filtered)
-    }
-  }, [searchTerm, projects])
+    // Since we're now doing server-side filtering, just set the projects directly
+    setFilteredProjects(projects)
+  }, [projects])
 
   useEffect(() => {
     // Filter researchers based on search term
@@ -114,21 +193,6 @@ export default function PublicProjectsPage() {
     }
   }, [searchTerm, researchers])
 
-  const fetchPublicProjects = async () => {
-    try {
-      const response = await fetch('/api/projects/public')
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch public projects')
-      }
-
-      const data = await response.json()
-      setProjects(data.projects || [])
-    } catch (error) {
-      console.error('Error fetching public projects:', error)
-      setProjects([])
-    }
-  }
 
   const fetchPublicResearchers = async () => {
     try {
@@ -243,6 +307,159 @@ export default function PublicProjectsPage() {
                 </div>
                   </div>
 
+        {/* Filters - Only show for projects tab */}
+        {activeTab === 'projects' && (
+          <div className="max-w-4xl mx-auto mb-8">
+            <div className="bg-muted/50 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium">Filters</h3>
+                {JSON.stringify(filters) !== JSON.stringify(activeFilters) && (
+                  <Badge variant="outline" className="text-xs">
+                    Filters Pending
+                  </Badge>
+                )}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Team Size Filter */}
+                <div>
+                  <label className="text-xs text-muted-foreground">Team Size</label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Min"
+                      value={filters.minMembers}
+                      onChange={(e) => setFilters({...filters, minMembers: parseInt(e.target.value) || 0})}
+                      className="h-8 text-xs"
+                    />
+                    <Input
+                      type="number"
+                      placeholder="Max"
+                      value={filters.maxMembers}
+                      onChange={(e) => setFilters({...filters, maxMembers: parseInt(e.target.value) || 999})}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Status Filter */}
+                <div>
+                  <label className="text-xs text-muted-foreground">Status</label>
+                  <Select value={filters.status || "all"} onValueChange={(value) => setFilters({...filters, status: value === "all" ? "" : value})}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="archived">Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Visibility Filter */}
+                <div>
+                  <label className="text-xs text-muted-foreground">Visibility</label>
+                  <Select value={filters.visibility || "all"} onValueChange={(value) => setFilters({...filters, visibility: value === "all" ? "" : value})}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="All projects" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All projects</SelectItem>
+                      <SelectItem value="public">Public only</SelectItem>
+                      <SelectItem value="private">Private only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Institution Filter */}
+                <div>
+                  <label className="text-xs text-muted-foreground">Institution</label>
+                  <Input
+                    placeholder="Filter by institution"
+                    value={filters.institution}
+                    onChange={(e) => setFilters({...filters, institution: e.target.value})}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+              
+              {/* Second row of filters */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                {/* Department Filter */}
+                <div>
+                  <label className="text-xs text-muted-foreground">Department</label>
+                  <Input
+                    placeholder="Filter by department"
+                    value={filters.department}
+                    onChange={(e) => setFilters({...filters, department: e.target.value})}
+                    className="h-8 text-xs"
+                  />
+                </div>
+
+                {/* Date From Filter */}
+                <div>
+                  <label className="text-xs text-muted-foreground">Created From</label>
+                  <Input
+                    type="date"
+                    value={filters.dateFrom}
+                    onChange={(e) => setFilters({...filters, dateFrom: e.target.value})}
+                    className="h-8 text-xs"
+                  />
+                </div>
+
+                {/* Date To Filter */}
+                <div>
+                  <label className="text-xs text-muted-foreground">Created To</label>
+                  <Input
+                    type="date"
+                    value={filters.dateTo}
+                    onChange={(e) => setFilters({...filters, dateTo: e.target.value})}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+              
+              {/* Apply and Clear Filters Buttons */}
+              <div className="mt-3 flex justify-between">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    console.log('Apply Filters clicked, setting activeFilters to:', filters)
+                    setActiveFilters({...filters})
+                  }}
+                  className="h-8 text-xs"
+                >
+                  Apply Filters
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const resetFilters = {
+                      minMembers: 0,
+                      maxMembers: 999,
+                      status: '',
+                      visibility: '',
+                      institution: '',
+                      department: '',
+                      dateFrom: '',
+                      dateTo: ''
+                    }
+                    setFilters(resetFilters)
+                    setActiveFilters(resetFilters)
+                  }}
+                  className="h-8 text-xs"
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Content Grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {loading ? (
@@ -290,11 +507,11 @@ export default function PublicProjectsPage() {
                 <Card
                   key={project.id}
                   className={`hover:shadow-lg transition-shadow group ${
-                    project.visibility === 'public' ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'
+                    project.canAccess ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'
                   }`}
                   onClick={() => {
-                    if (project.visibility === 'public') {
-                      window.open(`/project/${project.id}`, '_blank')
+                    if (project.canAccess) {
+                      router.push(`/project/${project.id}`)
                     }
                   }}
                 >
@@ -308,6 +525,12 @@ export default function PublicProjectsPage() {
                         {project.visibility === 'private' && (
                           <Badge variant="secondary" className="text-xs">
                             Private
+                          </Badge>
+                        )}
+                        {!project.canAccess && (
+                          <Badge variant="destructive" className="text-xs flex items-center gap-1">
+                            <LockClosedIcon className="h-3 w-3" />
+                            Locked
                           </Badge>
                         )}
                       </div>

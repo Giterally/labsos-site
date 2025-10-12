@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkTreePermission } from '@/lib/permission-utils'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -11,8 +12,32 @@ export async function GET(
   try {
     const { treeId } = await params
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    let userId: string | undefined
+
+    if (authHeader) {
+      // Extract the token
+      const token = authHeader.replace('Bearer ', '')
+      
+      // Verify the token and get user
+      const supabase = createClient(supabaseUrl, supabaseAnonKey)
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (!authError && user) {
+        userId = user.id
+      }
+    }
+
+    // Check tree permissions
+    const permissions = await checkTreePermission(treeId, userId)
+    
+    if (!permissions.canView) {
+      return NextResponse.json(
+        { message: 'Access denied' },
+        { status: 403 }
+      )
+    }
+
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
     // Get nodes for the tree with their content, attachments, and links
@@ -122,9 +147,37 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { message: 'No authorization header' },
+        { status: 401 }
+      )
+    }
+
+    // Extract the token
+    const token = authHeader.replace('Bearer ', '')
+    
+    // Verify the token and get user
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json(
+        { message: 'Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Check tree permissions - only members can create nodes
+    const permissions = await checkTreePermission(treeId, user.id)
+    
+    if (!permissions.canEdit) {
+      return NextResponse.json(
+        { message: 'You do not have permission to create nodes in this experiment tree' },
+        { status: 403 }
+      )
+    }
 
     // Create the node
     const { data: newNode, error: nodeError } = await supabase

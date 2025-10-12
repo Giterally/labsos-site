@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkProjectPermission } from '@/lib/permission-utils'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -11,8 +12,32 @@ export async function GET(
   try {
     const { projectId } = await params
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    let userId: string | undefined
+
+    if (authHeader) {
+      // Extract the token
+      const token = authHeader.replace('Bearer ', '')
+      
+      // Verify the token and get user
+      const supabase = createClient(supabaseUrl, supabaseAnonKey)
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (!authError && user) {
+        userId = user.id
+      }
+    }
+
+    // Check project permissions
+    const permissions = await checkProjectPermission(projectId, userId)
+    
+    if (!permissions.canView) {
+      return NextResponse.json(
+        { message: 'Access denied' },
+        { status: 403 }
+      )
+    }
+
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
     // First, try to find the project by slug or UUID
@@ -77,9 +102,37 @@ export async function POST(
     const body = await request.json()
     const { name, description, category, status } = body
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { message: 'No authorization header' },
+        { status: 401 }
+      )
+    }
+
+    // Extract the token
+    const token = authHeader.replace('Bearer ', '')
+    
+    // Verify the token and get user
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json(
+        { message: 'Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Check project permissions - only members can create trees
+    const permissions = await checkProjectPermission(projectId, user.id)
+    
+    if (!permissions.canEdit) {
+      return NextResponse.json(
+        { message: 'You do not have permission to create experiment trees in this project' },
+        { status: 403 }
+      )
+    }
 
     // First, try to find the project by slug or UUID
     let actualProjectId = projectId

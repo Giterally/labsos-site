@@ -6,6 +6,9 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
   FolderIcon,
   LinkIcon,
@@ -24,27 +27,38 @@ import {
 } from "@heroicons/react/24/outline"
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { getCurrentUser } from "@/lib/auth-service"
+import { useSearchParams } from "next/navigation"
+import { useUser } from "@/lib/user-context"
 
 export default function KnowledgeCaptureLanding() {
+  const searchParams = useSearchParams()
+  const { user: currentUser, loading: userLoading } = useUser()
   const [openFAQ, setOpenFAQ] = useState<number | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [showContactDialog, setShowContactDialog] = useState(false)
+  const [contactForm, setContactForm] = useState({
+    name: '',
+    email: '',
+    message: ''
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const user = await getCurrentUser()
-        setIsAuthenticated(!!user)
-      } catch (error) {
-        console.error('Auth check error:', error)
-        setIsAuthenticated(false)
-      } finally {
-        setLoading(false)
-      }
+    if (!userLoading) {
+      setIsAuthenticated(!!currentUser)
     }
-    checkAuth()
-  }, [])
+  }, [currentUser, userLoading])
+
+  // Check for contact parameter and open dialog
+  useEffect(() => {
+    if (searchParams.get('contact') === 'true') {
+      setShowContactDialog(true)
+      // Clean up URL parameter
+      const url = new URL(window.location.href)
+      url.searchParams.delete('contact')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [searchParams])
 
   const toggleFAQ = (index: number) => {
     setOpenFAQ(openFAQ === index ? null : index)
@@ -58,9 +72,42 @@ export default function KnowledgeCaptureLanding() {
     }
   }
 
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
 
-  // Show loading state while checking authentication (with timeout fallback)
-  if (loading) {
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(contactForm),
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        // Show success message
+        alert('Message sent successfully! We\'ll get back to you soon.')
+        setContactForm({ name: '', email: '', message: '' })
+        setShowContactDialog(false)
+      } else {
+        console.error('Contact form error:', result)
+        const errorMessage = result.details || result.error || 'Failed to send message. Please try again.'
+        alert(`Error: ${errorMessage}`)
+      }
+    } catch (error) {
+      console.error('Network error:', error)
+      alert('Network error. Please check your connection and try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+
+  // Show loading state while checking authentication
+  if (userLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -99,7 +146,7 @@ export default function KnowledgeCaptureLanding() {
               Contact
             </a>
           </nav>
-          {!loading && !isAuthenticated && (
+          {!userLoading && !isAuthenticated && (
             <Button 
               size="lg" 
               className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold px-8 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
@@ -461,19 +508,23 @@ export default function KnowledgeCaptureLanding() {
               </ul>
             </div>
             <div className="space-y-4">
-              <h3 className="font-semibold text-foreground">Support</h3>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#contact" className="hover:text-foreground transition-colors">Contact</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Documentation</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Help Center</a></li>
-              </ul>
-            </div>
-            <div className="space-y-4">
               <h3 className="font-semibold text-foreground">Company</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><a href="#" className="hover:text-foreground transition-colors">About</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Privacy</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Terms</a></li>
+                <li><Link href="/privacy-terms" className="hover:text-foreground transition-colors">Privacy & Terms</Link></li>
+              </ul>
+            </div>
+            <div className="space-y-4">
+              <h3 className="font-semibold text-foreground">Support</h3>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>
+                  <button 
+                    onClick={() => setShowContactDialog(true)}
+                    className="hover:text-foreground transition-colors text-left"
+                  >
+                    Contact
+                  </button>
+                </li>
               </ul>
             </div>
           </div>
@@ -484,6 +535,60 @@ export default function KnowledgeCaptureLanding() {
           </div>
         </div>
       </footer>
+
+      {/* Contact Dialog */}
+      <Dialog open={showContactDialog} onOpenChange={setShowContactDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Contact Us</DialogTitle>
+            <DialogDescription>
+              Send us a message and we'll get back to you as soon as possible.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleContactSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name *</Label>
+              <Input
+                id="name"
+                value={contactForm.name}
+                onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+                required
+                placeholder="Your name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={contactForm.email}
+                onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                required
+                placeholder="your.email@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="message">Message *</Label>
+              <Textarea
+                id="message"
+                value={contactForm.message}
+                onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+                required
+                placeholder="How can we help you?"
+                rows={4}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowContactDialog(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Sending...' : 'Send Message'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
     </div>
   )

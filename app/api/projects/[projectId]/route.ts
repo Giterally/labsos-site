@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkProjectPermission } from '@/lib/permission-utils'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -13,24 +14,54 @@ export async function GET(
   try {
     const { projectId } = await params
     
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    let userId: string | undefined
 
-    // Check if projectId is a UUID or slug
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '')
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (!authError && user) {
+        userId = user.id
+      }
+    }
+
+    // Check if projectId is a UUID or slug/name
     let actualProjectId = projectId
     if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // It's a slug, get the actual UUID
-      const { data: projectBySlug, error: projectError } = await supabase
+      // It's a slug or name, try to find the project
+      // First try by slug
+      let { data: projectBySlug, error: projectError } = await supabase
         .from('projects')
         .select('id')
         .eq('slug', projectId)
         .single()
 
+      // If not found by slug, try by name
       if (projectError || !projectBySlug) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+        const { data: projectByName, error: nameError } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('name', projectId)
+          .single()
+
+        if (nameError || !projectByName) {
+          return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+        }
+        actualProjectId = projectByName.id
+      } else {
+        actualProjectId = projectBySlug.id
       }
-      actualProjectId = projectBySlug.id
+    }
+
+    // Check user permissions for this project
+    const permissions = await checkProjectPermission(actualProjectId, userId)
+    
+    if (!permissions.canView) {
+      return NextResponse.json(
+        { message: 'Access denied. This project is private.' },
+        { status: 403 }
+      )
     }
 
     // Get the specific project

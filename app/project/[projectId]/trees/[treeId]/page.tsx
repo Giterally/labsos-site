@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, ChevronRightIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
+import { useUser } from "@/lib/user-context"
 import SearchTool from "@/components/SearchTool"
 
 interface ExperimentNode {
@@ -48,11 +49,17 @@ export default function SimpleExperimentTreePage() {
   const params = useParams()
   const projectId = params.projectId as string
   const treeId = params.treeId as string
+  const { user: currentUser, loading: userLoading } = useUser()
   
   const [experimentNodes, setExperimentNodes] = useState<ExperimentNode[]>([])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Permission state
+  const [isProjectOwner, setIsProjectOwner] = useState(false)
+  const [isProjectMember, setIsProjectMember] = useState(false)
+  const [permissionsLoading, setPermissionsLoading] = useState(true)
   const [treeInfo, setTreeInfo] = useState<{name: string, description: string, status: string, category: string} | null>(null)
   const [projectInfo, setProjectInfo] = useState<{name: string, description: string} | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -444,15 +451,67 @@ export default function SimpleExperimentTreePage() {
     // Regular blocks come first, then custom blocks in their saved order
     return [...regularBlockTypes, ...customBlockTypes]
   }, [groupedNodes, customBlocks, blockOrder])
+
+  // Permission check for editing
+  const hasEditPermission = isProjectOwner || isProjectMember
   
+
+  // Check project permissions
+  useEffect(() => {
+    const checkPermissions = async () => {
+      if (!currentUser) {
+        setPermissionsLoading(false)
+        return
+      }
+
+      try {
+        setPermissionsLoading(true)
+        const response = await fetch(`/api/projects/${projectId}/team`, {
+          headers: {
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          setIsProjectOwner(data.isOwner || false)
+          setIsProjectMember(data.isTeamMember || false)
+        }
+      } catch (err) {
+        console.error('Error checking permissions:', err)
+      } finally {
+        setPermissionsLoading(false)
+      }
+    }
+
+    if (projectId && currentUser) {
+      checkPermissions()
+    } else {
+      setPermissionsLoading(false)
+    }
+  }, [projectId, currentUser])
 
   // Fetch project information
   useEffect(() => {
     const fetchProjectInfo = async () => {
       try {
-        const response = await fetch(`/api/projects/${projectId}`)
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/projects/${projectId}`, {
+          headers
+        })
         if (!response.ok) {
-          throw new Error('Failed to fetch project information')
+          const errorData = await response.json().catch(() => ({}))
+          const errorMessage = errorData.message || errorData.error || 'Failed to fetch project information'
+          console.error('API Error:', response.status, errorMessage, errorData)
+          throw new Error(errorMessage)
         }
         const data = await response.json()
         setProjectInfo({
@@ -465,16 +524,27 @@ export default function SimpleExperimentTreePage() {
       }
     }
 
-    if (projectId) {
+    if (projectId && !userLoading) {
       fetchProjectInfo()
     }
-  }, [projectId])
+  }, [projectId, currentUser, userLoading])
 
   // Fetch tree information
   useEffect(() => {
     const fetchTreeInfo = async () => {
       try {
-        const response = await fetch(`/api/trees/${treeId}`)
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/trees/${treeId}`, {
+          headers
+        })
         if (!response.ok) {
           throw new Error('Failed to fetch tree information')
         }
@@ -490,14 +560,27 @@ export default function SimpleExperimentTreePage() {
       }
     }
 
-    fetchTreeInfo()
-  }, [treeId])
+    if (!userLoading) {
+      fetchTreeInfo()
+    }
+  }, [treeId, currentUser, userLoading])
 
   // Fetch blocks and ordering
   useEffect(() => {
     const fetchBlocks = async () => {
       try {
-        const response = await fetch(`/api/trees/${treeId}/blocks`)
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/trees/${treeId}/blocks`, {
+          headers
+        })
         if (!response.ok) {
           throw new Error('Failed to fetch blocks')
         }
@@ -520,8 +603,10 @@ export default function SimpleExperimentTreePage() {
       }
     }
 
-    fetchBlocks()
-  }, [treeId])
+    if (!userLoading) {
+      fetchBlocks()
+    }
+  }, [treeId, currentUser, userLoading])
 
   // Fetch nodes from Supabase
   useEffect(() => {
@@ -529,9 +614,18 @@ export default function SimpleExperimentTreePage() {
       try {
         setLoading(true)
         
-        // For now, no authentication required
-        // TODO: Implement proper project ownership and member system
-        const response = await fetch(`/api/trees/${treeId}/nodes`)
+        // Get session for API call if user is authenticated
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/trees/${treeId}/nodes`, {
+          headers
+        })
         if (!response.ok) {
           throw new Error('Failed to fetch nodes')
         }
@@ -560,8 +654,10 @@ export default function SimpleExperimentTreePage() {
       }
     }
 
-    fetchNodes()
-  }, [treeId])
+    if (!userLoading) {
+      fetchNodes()
+    }
+  }, [treeId, currentUser, userLoading])
 
   // Create new node
   const createNode = async (name: string, description: string, nodeType: string) => {
@@ -1179,15 +1275,17 @@ export default function SimpleExperimentTreePage() {
                       Click on a step to view details
                     </CardDescription>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowAddBlockForm(true)}
-                    className="flex items-center space-x-1"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                    <span>Add Block</span>
-                  </Button>
+                  {hasEditPermission && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAddBlockForm(true)}
+                      className="flex items-center space-x-1"
+                    >
+                      <PlusIcon className="h-4 w-4" />
+                      <span>Add Block</span>
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -1251,46 +1349,48 @@ export default function SimpleExperimentTreePage() {
                               </div>
                               
                               {/* Block Management Menu */}
-                              <div className="flex items-center space-x-1 ml-3">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleAddNodeToBlock(nodeType)
-                                  }}
-                                  title={`Add ${getBlockTitle(nodeType).slice(0, -1)}`}
-                                >
-                                  <PlusIcon className="h-3 w-3" />
-                                </Button>
+                              {hasEditPermission && (
+                                <div className="flex items-center space-x-1 ml-3">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleAddNodeToBlock(nodeType)
+                                    }}
+                                    title={`Add ${getBlockTitle(nodeType).slice(0, -1)}`}
+                                  >
+                                    <PlusIcon className="h-3 w-3" />
+                                  </Button>
                                 
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-6 w-6 p-0"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <EllipsisVerticalIcon className="h-3 w-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => handleEditBlock(nodeType)}>
-                                      <PencilIcon className="h-4 w-4 mr-2" />
-                                      Edit Block
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem 
-                                      onClick={() => handleDeleteBlock(nodeType)}
-                                      className="text-destructive"
-                                    >
-                                      <TrashIcon className="h-4 w-4 mr-2" />
-                                      Delete Block
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <EllipsisVerticalIcon className="h-3 w-3" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => handleEditBlock(nodeType)}>
+                                        <PencilIcon className="h-4 w-4 mr-2" />
+                                        Edit Block
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem 
+                                        onClick={() => handleDeleteBlock(nodeType)}
+                                        className="text-destructive"
+                                      >
+                                        <TrashIcon className="h-4 w-4 mr-2" />
+                                        Delete Block
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              )}
                             </div>
                           </div>
                           
@@ -1335,32 +1435,34 @@ export default function SimpleExperimentTreePage() {
                                       </div>
                                       
                                       {/* Node Management Buttons */}
-                                      <div className="flex items-center space-x-1 ml-2">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            setShowEditForm(true)
-                                          }}
-                                          title="Edit Node"
-                                        >
-                                          <PencilIcon className="h-3 w-3" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            deleteNode(node.id)
-                                          }}
-                                          title="Delete Node"
-                                        >
-                                          <TrashIcon className="h-3 w-3" />
-                                        </Button>
-                                      </div>
+                                      {hasEditPermission && (
+                                        <div className="flex items-center space-x-1 ml-2">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 w-6 p-0"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setShowEditForm(true)
+                                            }}
+                                            title="Edit Node"
+                                          >
+                                            <PencilIcon className="h-3 w-3" />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              deleteNode(node.id)
+                                            }}
+                                            title="Delete Node"
+                                          >
+                                            <TrashIcon className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      )}
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-1">
                                       {node.status === 'completed' ? '(Completed)' : node.status === 'in-progress' ? '(In Progress)' : ''}
@@ -1420,26 +1522,28 @@ export default function SimpleExperimentTreePage() {
                         {selectedNode.description}
                       </CardDescription>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowEditForm(true)}
-                        className="flex items-center space-x-1"
-                      >
-                        <PencilIcon className="h-4 w-4" />
-                        <span>Edit</span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => deleteNode(selectedNode.id)}
-                        className="flex items-center space-x-1 text-destructive hover:text-destructive"
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                        <span>Delete</span>
-                      </Button>
-                    </div>
+                    {hasEditPermission && (
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowEditForm(true)}
+                          className="flex items-center space-x-1"
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                          <span>Edit</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => deleteNode(selectedNode.id)}
+                          className="flex items-center space-x-1 text-destructive hover:text-destructive"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                          <span>Delete</span>
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1455,7 +1559,7 @@ export default function SimpleExperimentTreePage() {
                       <div id="content" className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
                           <h4 className="font-medium">Content</h4>
-                          {!editingContent && (
+                          {!editingContent && hasEditPermission && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -1507,15 +1611,17 @@ export default function SimpleExperimentTreePage() {
                       <div id="attachments" className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
                           <h4 className="font-medium">Attachments</h4>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEditingAttachments(!editingAttachments)}
-                            className="flex items-center space-x-1"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                            <span>{editingAttachments ? 'Done' : 'Edit'}</span>
-                          </Button>
+                          {hasEditPermission && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditingAttachments(!editingAttachments)}
+                              className="flex items-center space-x-1"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                              <span>{editingAttachments ? 'Done' : 'Edit'}</span>
+                            </Button>
+                          )}
                         </div>
                         
                         <div className="space-y-4">
@@ -1630,15 +1736,17 @@ export default function SimpleExperimentTreePage() {
                       <div id="links" className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
                           <h4 className="font-medium">Links</h4>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setEditingLinks(!editingLinks)}
-                            className="flex items-center space-x-1"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                            <span>{editingLinks ? 'Done' : 'Edit'}</span>
-                          </Button>
+                          {hasEditPermission && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditingLinks(!editingLinks)}
+                              className="flex items-center space-x-1"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                              <span>{editingLinks ? 'Done' : 'Edit'}</span>
+                            </Button>
+                          )}
                         </div>
                         
                         <div className="space-y-4">
@@ -1730,7 +1838,7 @@ export default function SimpleExperimentTreePage() {
                       <div className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-4">
                           <h4 className="font-medium">Metadata</h4>
-                          {!editingMetadata && (
+                          {!editingMetadata && hasEditPermission && (
                             <Button
                               variant="outline"
                               size="sm"

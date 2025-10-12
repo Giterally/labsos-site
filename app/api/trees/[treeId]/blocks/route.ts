@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-client'
+import { checkTreePermission } from '@/lib/permission-utils'
 
 export async function GET(
   request: NextRequest,
@@ -7,6 +8,31 @@ export async function GET(
 ) {
   try {
     const { treeId } = await params
+
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    let userId: string | undefined
+
+    if (authHeader) {
+      // Extract the token
+      const token = authHeader.replace('Bearer ', '')
+      
+      // Verify the token and get user
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (!authError && user) {
+        userId = user.id
+      }
+    }
+
+    // Check tree permissions
+    const permissions = await checkTreePermission(treeId, userId)
+    
+    if (!permissions.canView) {
+      return NextResponse.json(
+        { message: 'Access denied' },
+        { status: 403 }
+      )
+    }
 
     // Fetch custom blocks
     const { data: customBlocks, error: blocksError } = await supabase
@@ -52,6 +78,37 @@ export async function POST(
 
     if (!name || !blockType) {
       return NextResponse.json({ error: 'Name and block type are required' }, { status: 400 })
+    }
+
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { message: 'No authorization header' },
+        { status: 401 }
+      )
+    }
+
+    // Extract the token
+    const token = authHeader.replace('Bearer ', '')
+    
+    // Verify the token and get user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json(
+        { message: 'Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Check tree permissions - only members can create blocks
+    const permissions = await checkTreePermission(treeId, user.id)
+    
+    if (!permissions.canEdit) {
+      return NextResponse.json(
+        { message: 'You do not have permission to create blocks in this experiment tree' },
+        { status: 403 }
+      )
     }
 
     // Get the next position

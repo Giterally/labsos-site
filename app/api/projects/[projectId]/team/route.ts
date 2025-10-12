@@ -14,20 +14,32 @@ export async function GET(
   try {
     const { projectId } = await params
 
-    // Check if projectId is a UUID or slug
+    // Check if projectId is a UUID or slug/name
     let actualProjectId = projectId
     if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // It's a slug, get the actual UUID
-      const { data: projectBySlug, error: slugError } = await supabase
+      // It's a slug or name, try to find the project
+      // First try by slug
+      let { data: projectBySlug, error: slugError } = await supabase
         .from('projects')
         .select('id')
         .eq('slug', projectId)
         .single()
 
+      // If not found by slug, try by name
       if (slugError || !projectBySlug) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+        const { data: projectByName, error: nameError } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('name', projectId)
+          .single()
+
+        if (nameError || !projectByName) {
+          return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+        }
+        actualProjectId = projectByName.id
+      } else {
+        actualProjectId = projectBySlug.id
       }
-      actualProjectId = projectBySlug.id
     }
 
     // Check if project exists and get its visibility
@@ -187,20 +199,32 @@ export async function POST(
       )
     }
 
-    // Check if projectId is a UUID or slug
+    // Check if projectId is a UUID or slug/name
     let actualProjectId = projectId
     if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // It's a slug, get the actual UUID
-      const { data: projectBySlug, error: slugError } = await supabase
+      // It's a slug or name, try to find the project
+      // First try by slug
+      let { data: projectBySlug, error: slugError } = await supabase
         .from('projects')
         .select('id')
         .eq('slug', projectId)
         .single()
 
+      // If not found by slug, try by name
       if (slugError || !projectBySlug) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+        const { data: projectByName, error: nameError } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('name', projectId)
+          .single()
+
+        if (nameError || !projectByName) {
+          return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+        }
+        actualProjectId = projectByName.id
+      } else {
+        actualProjectId = projectBySlug.id
       }
-      actualProjectId = projectBySlug.id
     }
 
     // Check if the requesting user is a team member with admin access

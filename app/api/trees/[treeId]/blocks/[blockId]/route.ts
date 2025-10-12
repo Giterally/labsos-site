@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-client'
+import { checkTreePermission } from '@/lib/permission-utils'
 
 export async function PUT(
   request: NextRequest,
@@ -11,6 +12,37 @@ export async function PUT(
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    }
+
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { message: 'No authorization header' },
+        { status: 401 }
+      )
+    }
+
+    // Extract the token
+    const token = authHeader.replace('Bearer ', '')
+    
+    // Verify the token and get user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json(
+        { message: 'Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Check tree permissions - only members can edit blocks
+    const permissions = await checkTreePermission(treeId, user.id)
+    
+    if (!permissions.canEdit) {
+      return NextResponse.json(
+        { message: 'You do not have permission to edit blocks in this experiment tree' },
+        { status: 403 }
+      )
     }
 
     // Update the custom block
@@ -40,6 +72,37 @@ export async function DELETE(
 ) {
   try {
     const { treeId, blockId } = await params
+
+    // Get the authorization header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { message: 'No authorization header' },
+        { status: 401 }
+      )
+    }
+
+    // Extract the token
+    const token = authHeader.replace('Bearer ', '')
+    
+    // Verify the token and get user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json(
+        { message: 'Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Check tree permissions - only members can delete blocks
+    const permissions = await checkTreePermission(treeId, user.id)
+    
+    if (!permissions.canEdit) {
+      return NextResponse.json(
+        { message: 'You do not have permission to delete blocks in this experiment tree' },
+        { status: 403 }
+      )
+    }
 
     // Delete from block order first
     const { error: orderError } = await supabase
