@@ -8,11 +8,8 @@ export async function PUT(
 ) {
   try {
     const { treeId, blockId } = await params
-    const { name } = await request.json()
-
-    if (!name) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
-    }
+    const body = await request.json()
+    const { name, position } = body
 
     // Get the authorization header
     const authHeader = request.headers.get('authorization')
@@ -45,18 +42,32 @@ export async function PUT(
       )
     }
 
-    // Update the custom block
+    // Update tree_block (unified system)
+    const updateData: any = { updated_at: new Date().toISOString() }
+    
+    if (name !== undefined) {
+      updateData.name = name
+    }
+    
+    if (position !== undefined) {
+      updateData.position = position
+    }
+
     const { data: updatedBlock, error: updateError } = await supabase
-      .from('custom_blocks')
-      .update({ name, updated_at: new Date().toISOString() })
+      .from('tree_blocks')
+      .update(updateData)
       .eq('id', blockId)
       .eq('tree_id', treeId)
       .select()
       .single()
 
     if (updateError) {
-      console.error('Error updating custom block:', updateError)
-      return NextResponse.json({ error: 'Failed to update custom block' }, { status: 500 })
+      console.error('Error updating tree block:', updateError)
+      return NextResponse.json({ error: 'Failed to update tree block' }, { status: 500 })
+    }
+
+    if (!updatedBlock) {
+      return NextResponse.json({ error: 'Block not found' }, { status: 404 })
     }
 
     return NextResponse.json({ block: updatedBlock })
@@ -104,27 +115,16 @@ export async function DELETE(
       )
     }
 
-    // Delete from block order first
-    const { error: orderError } = await supabase
-      .from('block_order')
-      .delete()
-      .eq('tree_id', treeId)
-      .eq('block_type', blockId)
-
-    if (orderError) {
-      console.error('Error deleting from block order:', orderError)
-    }
-
-    // Delete the custom block
+    // Delete the tree block (cascade will handle related nodes)
     const { error: deleteError } = await supabase
-      .from('custom_blocks')
+      .from('tree_blocks')
       .delete()
       .eq('id', blockId)
       .eq('tree_id', treeId)
 
     if (deleteError) {
-      console.error('Error deleting custom block:', deleteError)
-      return NextResponse.json({ error: 'Failed to delete custom block' }, { status: 500 })
+      console.error('Error deleting tree block:', deleteError)
+      return NextResponse.json({ error: 'Failed to delete tree block' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })

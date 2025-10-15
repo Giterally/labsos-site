@@ -10,6 +10,8 @@ export async function PUT(
     const { treeId } = await params
     const { blockOrder } = await request.json()
 
+    console.log('Block order update request:', { treeId, blockOrder })
+
     if (!Array.isArray(blockOrder)) {
       return NextResponse.json({ error: 'Block order must be an array' }, { status: 400 })
     }
@@ -45,31 +47,24 @@ export async function PUT(
       )
     }
 
-    // Delete existing block order
-    const { error: deleteError } = await supabase
-      .from('block_order')
-      .delete()
-      .eq('tree_id', treeId)
+    // Update block positions in tree_blocks table
+    if (blockOrder.length > 0) {
+      // Update positions for each block
+      const updatePromises = blockOrder.map((blockId, index) => 
+        supabase
+          .from('tree_blocks')
+          .update({ position: index })
+          .eq('id', blockId)
+          .eq('tree_id', treeId)
+      )
 
-    if (deleteError) {
-      console.error('Error deleting existing block order:', deleteError)
-      return NextResponse.json({ error: 'Failed to update block order' }, { status: 500 })
-    }
-
-    // Insert new block order
-    const orderData = blockOrder.map((blockType, index) => ({
-      tree_id: treeId,
-      block_type: blockType,
-      position: index
-    }))
-
-    const { error: insertError } = await supabase
-      .from('block_order')
-      .insert(orderData)
-
-    if (insertError) {
-      console.error('Error inserting new block order:', insertError)
-      return NextResponse.json({ error: 'Failed to update block order' }, { status: 500 })
+      const results = await Promise.all(updatePromises)
+      const failedUpdates = results.filter(result => result.error)
+      
+      if (failedUpdates.length > 0) {
+        console.error('Error updating block positions:', failedUpdates)
+        return NextResponse.json({ error: 'Failed to update block order' }, { status: 500 })
+      }
     }
 
     return NextResponse.json({ success: true })

@@ -1,0 +1,79 @@
+RNA-seq Analysis Results Summary
+
+Project: Differential Expression Analysis of Cancer vs Normal Tissues
+Date: 2024-01-15
+Analyst: Dr. Sarah Johnson
+
+EXPERIMENTAL DESIGN:
+- Sample Groups: Cancer (n=15), Normal (n=15)
+- Sequencing Platform: Illumina NovaSeq 6000
+- Read Length: 150bp paired-end
+- Average Reads per Sample: 50M
+
+QUALITY CONTROL METRICS:
+- Average Alignment Rate: 85.2%
+- Average Duplication Rate: 12.3%
+- Average GC Content: 48.7%
+- All samples passed quality thresholds
+
+DIFFERENTIAL EXPRESSION RESULTS:
+- Total Genes Analyzed: 20,547
+- Significantly Differentially Expressed: 1,247 genes
+- Upregulated in Cancer: 623 genes
+- Downregulated in Cancer: 624 genes
+- False Discovery Rate (FDR): < 0.05
+
+TOP UPREGULATED GENES:
+1. MYC (log2FC: 3.2, p-adj: 1.2e-15)
+2. CCND1 (log2FC: 2.8, p-adj: 3.4e-12)
+3. EGFR (log2FC: 2.5, p-adj: 7.8e-10)
+4. KRAS (log2FC: 2.3, p-adj: 2.1e-08)
+5. TP53 (log2FC: 2.1, p-adj: 5.6e-07)
+
+TOP DOWNREGULATED GENES:
+1. CDKN1A (log2FC: -2.9, p-adj: 4.3e-14)
+2. RB1 (log2FC: -2.6, p-adj: 8.9e-11)
+3. PTEN (log2FC: -2.4, p-adj: 1.7e-09)
+4. APC (log2FC: -2.2, p-adj: 3.2e-08)
+5. BRCA1 (log2FC: -2.0, p-adj: 6.8e-07)
+
+PATHWAY ANALYSIS:
+- Enriched Pathways (Cancer):
+  * Cell cycle regulation (p < 0.001)
+  * DNA repair mechanisms (p < 0.001)
+  * Apoptosis signaling (p < 0.001)
+  * Growth factor signaling (p < 0.001)
+
+- Enriched Pathways (Normal):
+  * Metabolic processes (p < 0.001)
+  * Immune response (p < 0.001)
+  * Tissue homeostasis (p < 0.001)
+
+VALIDATION:
+- qRT-PCR validation performed on top 10 genes
+- Correlation with RNA-seq: r = 0.89 (p < 0.001)
+- Technical replicates: CV < 15%
+
+CONCLUSIONS:
+1. Significant differences in gene expression between cancer and normal tissues
+2. Cell cycle and DNA repair pathways prominently dysregulated
+3. Results consistent with known cancer biology
+4. High confidence in differential expression calls
+
+NEXT STEPS:
+1. Functional validation of top candidate genes
+2. Integration with clinical outcome data
+3. Pathway-based drug target identification
+4. Biomarker development for diagnostic applications
+
+FILES GENERATED:
+- Count matrix: counts_matrix.txt
+- DESeq2 results: deseq2_results.csv
+- Volcano plot: volcano_plot.pdf
+- Heatmap: expression_heatmap.pdf
+- Pathway analysis: pathway_enrichment.xlsx
+
+CONTACT:
+Dr. Sarah Johnson
+sarah.johnson@university.edu
++1-555-0123

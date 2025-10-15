@@ -1,0 +1,255 @@
+RNA-SEQ DATA ANALYSIS WORKFLOW
+===============================
+
+PROTOCOL: Comprehensive RNA-seq Data Analysis Pipeline
+VERSION: 2.0
+DATE: February 5, 2024
+SOFTWARE: R/Bioconductor, DESeq2, edgeR, STAR, Salmon
+
+OVERVIEW:
+This protocol describes a comprehensive computational pipeline for analyzing RNA-seq data, from raw reads to biological interpretation, optimized for differential gene expression analysis.
+
+ANALYSIS WORKFLOW OVERVIEW:
+1. Quality Control and Preprocessing
+2. Read Alignment and Quantification
+3. Differential Expression Analysis
+4. Functional Enrichment Analysis
+5. Pathway Analysis
+6. Visualization and Interpretation
+
+COMPUTATIONAL REQUIREMENTS:
+- High-performance computing cluster
+- Minimum 32 GB RAM per job
+- 100 GB storage per sample
+- Linux operating system
+- R version 4.0 or higher
+- Python 3.8 or higher
+
+SOFTWARE DEPENDENCIES:
+- FastQC (quality control)
+- Trimmomatic (adapter trimming)
+- STAR (read alignment)
+- Salmon (transcript quantification)
+- DESeq2 (differential expression)
+- edgeR (alternative DE analysis)
+- clusterProfiler (functional enrichment)
+- KEGG (pathway analysis)
+- ggplot2 (visualization)
+
+STEP 1: QUALITY CONTROL AND PREPROCESSING
+
+FastQC Analysis:
+```bash
+# Run FastQC on all samples
+for sample in *.fastq.gz; do
+    fastqc $sample -o fastqc_output/
+done
+```
+
+Trimmomatic Adapter Trimming:
+```bash
+# Trim adapters and low-quality bases
+trimmomatic PE -threads 8 \
+    sample_R1.fastq.gz sample_R2.fastq.gz \
+    sample_R1_trimmed.fastq.gz sample_R1_unpaired.fastq.gz \
+    sample_R2_trimmed.fastq.gz sample_R2_unpaired.fastq.gz \
+    ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 \
+    LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+```
+
+Quality Control Metrics:
+- Per base sequence quality: Q30 > 80%
+- Per sequence quality scores: Mean > 30
+- Sequence length distribution: 150 bp
+- Adapter contamination: < 5%
+- Duplication levels: < 20%
+
+STEP 2: READ ALIGNMENT AND QUANTIFICATION
+
+STAR Alignment:
+```bash
+# Build genome index
+STAR --runMode genomeGenerate \
+    --genomeDir /path/to/genome_index \
+    --genomeFastaFiles /path/to/hg38.fa \
+    --sjdbGTFfile /path/to/hg38.gtf \
+    --sjdbOverhang 149
+
+# Align reads
+STAR --runMode alignReads \
+    --genomeDir /path/to/genome_index \
+    --readFilesIn sample_R1_trimmed.fastq.gz sample_R2_trimmed.fastq.gz \
+    --readFilesCommand zcat \
+    --outSAMtype BAM SortedByCoordinate \
+    --quantMode GeneCounts
+```
+
+Salmon Quantification:
+```bash
+# Build transcriptome index
+salmon index -t /path/to/transcriptome.fa -i salmon_index
+
+# Quantify transcripts
+salmon quant -i salmon_index \
+    -l A \
+    -1 sample_R1_trimmed.fastq.gz \
+    -2 sample_R2_trimmed.fastq.gz \
+    -p 8 \
+    --validateMappings \
+    -o salmon_output
+```
+
+Alignment Quality Metrics:
+- Alignment rate: > 85%
+- Unique alignment rate: > 70%
+- Duplicate rate: < 20%
+- Insert size: 200-300 bp
+- Splice junction detection: > 50%
+
+STEP 3: DIFFERENTIAL EXPRESSION ANALYSIS
+
+DESeq2 Analysis (R Script):
+```r
+# Load required libraries
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+
+# Read count data
+countData <- read.table("gene_counts.txt", header=TRUE, row.names=1)
+colData <- read.table("sample_info.txt", header=TRUE, row.names=1)
+
+# Create DESeq2 object
+dds <- DESeqDataSetFromMatrix(countData=countData,
+                             colData=colData,
+                             design=~condition)
+
+# Filter low count genes
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+# Run DESeq2 analysis
+dds <- DESeq(dds)
+res <- results(dds, contrast=c("condition", "cancer", "normal"))
+
+# Filter significant results
+res_sig <- res[which(res$padj < 0.05 & abs(res$log2FoldChange) > 1),]
+```
+
+Differential Expression Criteria:
+- Adjusted p-value (padj): < 0.05
+- Log2 fold change: |log2FC| > 1
+- Base mean: > 10
+- Independent filtering: Applied
+
+STEP 4: FUNCTIONAL ENRICHMENT ANALYSIS
+
+GO Enrichment Analysis:
+```r
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+# Convert gene IDs
+gene_list <- rownames(res_sig)
+gene_list_entrez <- bitr(gene_list, fromType="ENSEMBL", 
+                        toType="ENTREZID", OrgDb=org.Hs.eg.db)
+
+# GO enrichment
+go_enrich <- enrichGO(gene=gene_list_entrez$ENTREZID,
+                     OrgDb=org.Hs.eg.db,
+                     ont="BP",
+                     pAdjustMethod="BH",
+                     pvalueCutoff=0.05,
+                     qvalueCutoff=0.2)
+
+# KEGG pathway analysis
+kegg_enrich <- enrichKEGG(gene=gene_list_entrez$ENTREZID,
+                         organism="hsa",
+                         pvalueCutoff=0.05,
+                         qvalueCutoff=0.2)
+```
+
+STEP 5: PATHWAY ANALYSIS
+
+GSEA Analysis:
+```r
+library(fgsea)
+
+# Prepare ranked gene list
+gene_ranks <- res$log2FoldChange
+names(gene_ranks) <- rownames(res)
+
+# Load pathway database
+pathways <- gmtPathways("pathways.gmt")
+
+# Run GSEA
+fgsea_res <- fgsea(pathways=pathways,
+                  stats=gene_ranks,
+                  nperm=10000,
+                  minSize=15,
+                  maxSize=500)
+```
+
+STEP 6: VISUALIZATION AND INTERPRETATION
+
+Volcano Plot:
+```r
+# Create volcano plot
+volcano_data <- data.frame(
+    gene=rownames(res),
+    log2FC=res$log2FoldChange,
+    pvalue=-log10(res$padj)
+)
+
+ggplot(volcano_data, aes(x=log2FC, y=pvalue)) +
+    geom_point(aes(color=abs(log2FC) > 1 & pvalue > -log10(0.05))) +
+    scale_color_manual(values=c("gray", "red")) +
+    labs(title="Volcano Plot", x="Log2 Fold Change", y="-Log10 P-value")
+```
+
+Heatmap:
+```r
+# Create heatmap of top differentially expressed genes
+top_genes <- rownames(res_sig)[1:50]
+heatmap_data <- counts(dds, normalized=TRUE)[top_genes,]
+
+pheatmap(heatmap_data,
+         scale="row",
+         clustering_distance_rows="correlation",
+         clustering_distance_cols="correlation",
+         show_rownames=FALSE)
+```
+
+EXPECTED RESULTS:
+
+Differential Expression:
+- Number of DEGs: 1000-5000 genes
+- Upregulated in cancer: 500-2500 genes
+- Downregulated in cancer: 500-2500 genes
+- Top pathways: Cell cycle, DNA repair, Immune response
+
+Quality Metrics:
+- PCA separation: Clear clustering by condition
+- Sample correlation: > 0.8 within groups
+- Batch effect: Minimal or corrected
+- Replication: Good correlation between replicates
+
+FUNCTIONAL INSIGHTS:
+- Enriched GO terms: Cell proliferation, apoptosis, metabolism
+- KEGG pathways: Cancer-related pathways
+- GSEA results: Hallmark gene sets
+- Network analysis: Protein-protein interactions
+
+VALIDATION REQUIREMENTS:
+- qRT-PCR validation of top 10 DEGs
+- Western blot for protein validation
+- Functional assays for key pathways
+- Independent cohort validation
+
+DELIVERABLES:
+- Processed count matrices
+- Differential expression results
+- Functional enrichment results
+- Visualization plots
+- Analysis report
+- R scripts and documentation

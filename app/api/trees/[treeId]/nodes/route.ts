@@ -85,7 +85,7 @@ export async function GET(
       id: node.id,
       title: node.name,
       description: node.description,
-      type: node.node_type,
+      type: node.block_id || node.node_type, // Use block_id if available, fallback to node_type
       status: node.node_content?.[0]?.status || 'draft',
       position: node.position,
       content: node.node_content?.[0]?.content || '',
@@ -94,7 +94,7 @@ export async function GET(
       metadata: {
         created: node.created_at,
         updated: node.updated_at,
-        type: node.node_type,
+        type: node.node_type, // Keep original node_type in metadata
         position: node.position
       }
     }))
@@ -179,16 +179,27 @@ export async function POST(
       )
     }
 
-    // Create the node
+    // Create the node with unified system support
+    const nodeData: any = {
+      tree_id: treeId,
+      name: name.trim(),
+      description: description?.trim() || null,
+      position: position || 1
+    }
+
+    // Handle unified system: if node_type is a UUID (block ID), use it as block_id
+    if (node_type && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(node_type)) {
+      nodeData.block_id = node_type
+      nodeData.node_type = 'protocol' // Default node type
+    } else {
+      nodeData.node_type = node_type || 'protocol'
+      // For regular node types, we'll need to find the corresponding block
+      // This is a temporary solution until migration is run
+    }
+
     const { data: newNode, error: nodeError } = await supabase
       .from('tree_nodes')
-      .insert({
-        tree_id: treeId,
-        name: name.trim(),
-        description: description?.trim() || null,
-        node_type: node_type || 'protocol',
-        position: position || 1
-      })
+      .insert(nodeData)
       .select()
       .single()
 

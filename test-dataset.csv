@@ -1,0 +1,11 @@
+Sample_ID,Patient_Age,Gender,Diagnosis,Treatment_Response,Survival_Days
+P001,45,Female,Type_A,Complete,365
+P002,52,Male,Type_B,Partial,180
+P003,38,Female,Type_A,Complete,400
+P004,61,Male,Type_C,No_Response,90
+P005,29,Female,Type_B,Partial,250
+P006,55,Male,Type_A,Complete,320
+P007,42,Female,Type_C,No_Response,120
+P008,48,Male,Type_B,Partial,200
+P009,35,Female,Type_A,Complete,380
+P010,58,Male,Type_C,Partial,150

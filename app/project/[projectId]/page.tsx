@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon } from "@heroicons/react/24/outline"
+import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon, ArrowUpTrayIcon as UploadIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
@@ -444,11 +444,20 @@ export default function SimpleProjectPage() {
     try {
       setEditing(true)
       
+      // Get session for API call if user is authenticated
+      let headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      }
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+      
       const response = await fetch(`/api/trees/${treeId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           name,
           description,
@@ -485,10 +494,18 @@ export default function SimpleProjectPage() {
     }
 
     try {
-      // For now, no authentication required
-      // TODO: Implement proper project ownership and member system
+      // Get session for API call if user is authenticated
+      let headers: HeadersInit = {}
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+      
       const response = await fetch(`/api/trees/${treeId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers
       })
 
       if (!response.ok) {
@@ -1030,13 +1047,23 @@ export default function SimpleProjectPage() {
                         </CardDescription>
                       </div>
                       {(isProjectOwner || isProjectMember) && (
-                        <Button
-                          onClick={() => setShowCreateForm(true)}
-                          className="flex items-center space-x-2"
-                        >
-                          <PlusIcon className="h-4 w-4" />
-                          <span>New Tree</span>
-                        </Button>
+                        <div className="flex space-x-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => router.push(`/dashboard/projects/${projectId}/import`)}
+                            className="flex items-center space-x-2"
+                          >
+                            <UploadIcon className="h-4 w-4" />
+                            <span>Import Data</span>
+                          </Button>
+                          <Button
+                            onClick={() => setShowCreateForm(true)}
+                            className="flex items-center space-x-2"
+                          >
+                            <PlusIcon className="h-4 w-4" />
+                            <span>New Tree</span>
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </CardHeader>

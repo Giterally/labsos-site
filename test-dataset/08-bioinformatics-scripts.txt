@@ -1,0 +1,522 @@
+BIOINFORMATICS ANALYSIS SCRIPTS
+=================================
+
+PROTOCOL: R and Python Scripts for RNA-seq Data Analysis
+VERSION: 1.1
+DATE: February 15, 2024
+LANGUAGE: R, Python, Bash
+
+OVERVIEW:
+This document contains the complete set of bioinformatics scripts used for RNA-seq data analysis, from quality control to differential expression analysis and visualization.
+
+SCRIPT ORGANIZATION:
+1. Quality Control Scripts
+2. Alignment and Quantification Scripts
+3. Differential Expression Analysis Scripts
+4. Functional Enrichment Scripts
+5. Visualization Scripts
+6. Utility Functions
+
+REQUIRED PACKAGES:
+```r
+# R packages
+install.packages(c("DESeq2", "edgeR", "limma", "ggplot2", "pheatmap", 
+                   "VennDiagram", "clusterProfiler", "pathview", 
+                   "DOSE", "enrichplot", "ggrepel", "dplyr", "tidyr"))
+
+# Bioconductor packages
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(c("DESeq2", "edgeR", "limma", "clusterProfiler", 
+                       "org.Hs.eg.db", "KEGG.db", "GO.db", "pathview"))
+```
+
+SCRIPT 1: QUALITY CONTROL ANALYSIS
+===================================
+
+File: quality_control.R
+```r
+#!/usr/bin/env Rscript
+
+# RNA-seq Quality Control Analysis
+# Author: Dr. Sarah Chen
+# Date: February 15, 2024
+
+library(ggplot2)
+library(pheatmap)
+library(VennDiagram)
+
+# Function to read FastQC results
+read_fastqc <- function(fastqc_dir) {
+    fastqc_files <- list.files(fastqc_dir, pattern = "fastqc_data.txt", 
+                              full.names = TRUE, recursive = TRUE)
+    
+    qc_data <- list()
+    for (file in fastqc_files) {
+        sample_name <- basename(dirname(file))
+        qc_data[[sample_name]] <- read_fastqc_file(file)
+    }
+    return(qc_data)
+}
+
+# Function to read individual FastQC file
+read_fastqc_file <- function(file) {
+    lines <- readLines(file)
+    
+    # Extract key metrics
+    total_sequences <- as.numeric(gsub("Total Sequences\\t", "", 
+                                     lines[grep("Total Sequences", lines)]))
+    sequence_length <- gsub("Sequence length\\t", "", 
+                           lines[grep("Sequence length", lines)])
+    gc_content <- as.numeric(gsub("%GC\\t", "", 
+                                 lines[grep("%GC", lines)]))
+    
+    return(list(
+        total_sequences = total_sequences,
+        sequence_length = sequence_length,
+        gc_content = gc_content
+    ))
+}
+
+# Function to create quality control plots
+create_qc_plots <- function(qc_data, output_dir) {
+    # Create summary table
+    summary_table <- data.frame(
+        Sample = names(qc_data),
+        Total_Sequences = sapply(qc_data, function(x) x$total_sequences),
+        GC_Content = sapply(qc_data, function(x) x$gc_content)
+    )
+    
+    # Plot total sequences
+    p1 <- ggplot(summary_table, aes(x = Sample, y = Total_Sequences)) +
+        geom_bar(stat = "identity", fill = "steelblue") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        labs(title = "Total Sequences per Sample", 
+             x = "Sample", y = "Total Sequences")
+    
+    # Plot GC content
+    p2 <- ggplot(summary_table, aes(x = Sample, y = GC_Content)) +
+        geom_bar(stat = "identity", fill = "darkgreen") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        labs(title = "GC Content per Sample", 
+             x = "Sample", y = "GC Content (%)")
+    
+    # Save plots
+    ggsave(file.path(output_dir, "total_sequences.png"), p1, 
+           width = 10, height = 6, dpi = 300)
+    ggsave(file.path(output_dir, "gc_content.png"), p2, 
+           width = 10, height = 6, dpi = 300)
+    
+    return(summary_table)
+}
+
+# Main execution
+main <- function() {
+    # Set parameters
+    fastqc_dir <- "fastqc_output"
+    output_dir <- "qc_results"
+    
+    # Create output directory
+    if (!dir.exists(output_dir)) {
+        dir.create(output_dir, recursive = TRUE)
+    }
+    
+    # Read FastQC data
+    qc_data <- read_fastqc(fastqc_dir)
+    
+    # Create plots
+    summary_table <- create_qc_plots(qc_data, output_dir)
+    
+    # Save summary table
+    write.csv(summary_table, file.path(output_dir, "qc_summary.csv"), 
+              row.names = FALSE)
+    
+    cat("Quality control analysis completed.\n")
+    cat("Results saved to:", output_dir, "\n")
+}
+
+# Run main function
+if (!interactive()) {
+    main()
+}
+```
+
+SCRIPT 2: DIFFERENTIAL EXPRESSION ANALYSIS
+===========================================
+
+File: differential_expression.R
+```r
+#!/usr/bin/env Rscript
+
+# Differential Expression Analysis using DESeq2
+# Author: Dr. Sarah Chen
+# Date: February 15, 2024
+
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+library(dplyr)
+
+# Function to perform DESeq2 analysis
+run_deseq2 <- function(count_file, sample_info_file, output_dir) {
+    # Read count data
+    count_data <- read.table(count_file, header = TRUE, row.names = 1, 
+                           sep = "\t", check.names = FALSE)
+    
+    # Read sample information
+    sample_info <- read.table(sample_info_file, header = TRUE, row.names = 1, 
+                            sep = "\t", check.names = FALSE)
+    
+    # Create DESeq2 object
+    dds <- DESeqDataSetFromMatrix(countData = count_data,
+                                 colData = sample_info,
+                                 design = ~ condition)
+    
+    # Filter low count genes
+    keep <- rowSums(counts(dds)) >= 10
+    dds <- dds[keep,]
+    
+    # Run DESeq2
+    dds <- DESeq(dds)
+    
+    # Get results
+    res <- results(dds, contrast = c("condition", "cancer", "normal"))
+    
+    # Add gene symbols
+    res$gene_symbol <- rownames(res)
+    
+    # Filter significant results
+    res_sig <- res[which(res$padj < 0.05 & abs(res$log2FoldChange) > 1),]
+    
+    # Save results
+    write.csv(as.data.frame(res), 
+              file.path(output_dir, "deseq2_results.csv"))
+    write.csv(as.data.frame(res_sig), 
+              file.path(output_dir, "deseq2_significant.csv"))
+    
+    return(list(dds = dds, res = res, res_sig = res_sig))
+}
+
+# Function to create volcano plot
+create_volcano_plot <- function(res, output_dir) {
+    # Prepare data
+    volcano_data <- data.frame(
+        gene = rownames(res),
+        log2FC = res$log2FoldChange,
+        pvalue = -log10(res$padj),
+        significant = abs(res$log2FoldChange) > 1 & res$padj < 0.05
+    )
+    
+    # Create plot
+    p <- ggplot(volcano_data, aes(x = log2FC, y = pvalue)) +
+        geom_point(aes(color = significant), alpha = 0.6) +
+        scale_color_manual(values = c("gray", "red")) +
+        labs(title = "Volcano Plot - Cancer vs Normal",
+             x = "Log2 Fold Change",
+             y = "-Log10 Adjusted P-value") +
+        theme_minimal() +
+        geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+        geom_vline(xintercept = c(-1, 1), linetype = "dashed")
+    
+    # Save plot
+    ggsave(file.path(output_dir, "volcano_plot.png"), p, 
+           width = 10, height = 8, dpi = 300)
+    
+    return(p)
+}
+
+# Function to create heatmap
+create_heatmap <- function(dds, res_sig, output_dir) {
+    # Get top 50 genes
+    top_genes <- rownames(res_sig)[1:min(50, nrow(res_sig))]
+    
+    # Get normalized counts
+    vsd <- vst(dds, blind = FALSE)
+    heatmap_data <- assay(vsd)[top_genes,]
+    
+    # Create heatmap
+    png(file.path(output_dir, "heatmap.png"), width = 1000, height = 800)
+    pheatmap(heatmap_data,
+             scale = "row",
+             clustering_distance_rows = "correlation",
+             clustering_distance_cols = "correlation",
+             show_rownames = FALSE,
+             main = "Heatmap of Top Differentially Expressed Genes")
+    dev.off()
+}
+
+# Function to create MA plot
+create_ma_plot <- function(res, output_dir) {
+    # Prepare data
+    ma_data <- data.frame(
+        mean = res$baseMean,
+        log2FC = res$log2FoldChange,
+        significant = abs(res$log2FoldChange) > 1 & res$padj < 0.05
+    )
+    
+    # Create plot
+    p <- ggplot(ma_data, aes(x = mean, y = log2FC)) +
+        geom_point(aes(color = significant), alpha = 0.6) +
+        scale_color_manual(values = c("gray", "red")) +
+        scale_x_log10() +
+        labs(title = "MA Plot - Cancer vs Normal",
+             x = "Mean Expression",
+             y = "Log2 Fold Change") +
+        theme_minimal()
+    
+    # Save plot
+    ggsave(file.path(output_dir, "ma_plot.png"), p, 
+           width = 10, height = 8, dpi = 300)
+    
+    return(p)
+}
+
+# Main execution
+main <- function() {
+    # Set parameters
+    count_file <- "gene_counts.txt"
+    sample_info_file <- "sample_info.txt"
+    output_dir <- "deseq2_results"
+    
+    # Create output directory
+    if (!dir.exists(output_dir)) {
+        dir.create(output_dir, recursive = TRUE)
+    }
+    
+    # Run DESeq2 analysis
+    results <- run_deseq2(count_file, sample_info_file, output_dir)
+    
+    # Create visualizations
+    create_volcano_plot(results$res, output_dir)
+    create_heatmap(results$dds, results$res_sig, output_dir)
+    create_ma_plot(results$res, output_dir)
+    
+    cat("Differential expression analysis completed.\n")
+    cat("Results saved to:", output_dir, "\n")
+}
+
+# Run main function
+if (!interactive()) {
+    main()
+}
+```
+
+SCRIPT 3: FUNCTIONAL ENRICHMENT ANALYSIS
+=========================================
+
+File: functional_enrichment.R
+```r
+#!/usr/bin/env Rscript
+
+# Functional Enrichment Analysis
+# Author: Dr. Sarah Chen
+# Date: February 15, 2024
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(ggplot2)
+library(enrichplot)
+library(DOSE)
+
+# Function to perform GO enrichment
+run_go_enrichment <- function(gene_list, output_dir) {
+    # Convert gene IDs
+    gene_list_entrez <- bitr(gene_list, fromType = "ENSEMBL", 
+                            toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+    
+    # GO enrichment
+    go_bp <- enrichGO(gene = gene_list_entrez$ENTREZID,
+                     OrgDb = org.Hs.eg.db,
+                     ont = "BP",
+                     pAdjustMethod = "BH",
+                     pvalueCutoff = 0.05,
+                     qvalueCutoff = 0.2,
+                     readable = TRUE)
+    
+    go_mf <- enrichGO(gene = gene_list_entrez$ENTREZID,
+                     OrgDb = org.Hs.eg.db,
+                     ont = "MF",
+                     pAdjustMethod = "BH",
+                     pvalueCutoff = 0.05,
+                     qvalueCutoff = 0.2,
+                     readable = TRUE)
+    
+    go_cc <- enrichGO(gene = gene_list_entrez$ENTREZID,
+                     OrgDb = org.Hs.eg.db,
+                     ont = "CC",
+                     pAdjustMethod = "BH",
+                     pvalueCutoff = 0.05,
+                     qvalueCutoff = 0.2,
+                     readable = TRUE)
+    
+    # Save results
+    write.csv(go_bp@result, file.path(output_dir, "go_bp_enrichment.csv"))
+    write.csv(go_mf@result, file.path(output_dir, "go_mf_enrichment.csv"))
+    write.csv(go_cc@result, file.path(output_dir, "go_cc_enrichment.csv"))
+    
+    return(list(go_bp = go_bp, go_mf = go_mf, go_cc = go_cc))
+}
+
+# Function to perform KEGG enrichment
+run_kegg_enrichment <- function(gene_list, output_dir) {
+    # Convert gene IDs
+    gene_list_entrez <- bitr(gene_list, fromType = "ENSEMBL", 
+                            toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+    
+    # KEGG enrichment
+    kegg_enrich <- enrichKEGG(gene = gene_list_entrez$ENTREZID,
+                             organism = "hsa",
+                             pvalueCutoff = 0.05,
+                             qvalueCutoff = 0.2)
+    
+    # Save results
+    write.csv(kegg_enrich@result, file.path(output_dir, "kegg_enrichment.csv"))
+    
+    return(kegg_enrich)
+}
+
+# Function to create enrichment plots
+create_enrichment_plots <- function(go_results, kegg_results, output_dir) {
+    # GO BP dotplot
+    if (nrow(go_results$go_bp@result) > 0) {
+        p1 <- dotplot(go_results$go_bp, showCategory = 20) +
+            labs(title = "GO Biological Process Enrichment")
+        ggsave(file.path(output_dir, "go_bp_dotplot.png"), p1, 
+               width = 12, height = 8, dpi = 300)
+    }
+    
+    # KEGG dotplot
+    if (nrow(kegg_results@result) > 0) {
+        p2 <- dotplot(kegg_results, showCategory = 20) +
+            labs(title = "KEGG Pathway Enrichment")
+        ggsave(file.path(output_dir, "kegg_dotplot.png"), p2, 
+               width = 12, height = 8, dpi = 300)
+    }
+}
+
+# Main execution
+main <- function() {
+    # Set parameters
+    deseq2_file <- "deseq2_results/deseq2_significant.csv"
+    output_dir <- "enrichment_results"
+    
+    # Create output directory
+    if (!dir.exists(output_dir)) {
+        dir.create(output_dir, recursive = TRUE)
+    }
+    
+    # Read significant genes
+    sig_genes <- read.csv(deseq2_file)
+    gene_list <- sig_genes$gene_symbol
+    
+    # Run enrichment analyses
+    go_results <- run_go_enrichment(gene_list, output_dir)
+    kegg_results <- run_kegg_enrichment(gene_list, output_dir)
+    
+    # Create plots
+    create_enrichment_plots(go_results, kegg_results, output_dir)
+    
+    cat("Functional enrichment analysis completed.\n")
+    cat("Results saved to:", output_dir, "\n")
+}
+
+# Run main function
+if (!interactive()) {
+    main()
+}
+```
+
+SCRIPT 4: BASH PIPELINE SCRIPT
+===============================
+
+File: rnaseq_pipeline.sh
+```bash
+#!/bin/bash
+
+# RNA-seq Analysis Pipeline
+# Author: Dr. Sarah Chen
+# Date: February 15, 2024
+
+# Set parameters
+PROJECT_DIR="/path/to/project"
+FASTQ_DIR="$PROJECT_DIR/fastq_files"
+OUTPUT_DIR="$PROJECT_DIR/analysis_results"
+REFERENCE_DIR="/path/to/reference"
+THREADS=8
+
+# Create output directories
+mkdir -p $OUTPUT_DIR/{fastqc,trimmed,aligned,counts,results}
+
+# Quality control
+echo "Running FastQC..."
+fastqc $FASTQ_DIR/*.fastq.gz -o $OUTPUT_DIR/fastqc -t $THREADS
+
+# Adapter trimming
+echo "Trimming adapters..."
+for sample in $FASTQ_DIR/*_R1.fastq.gz; do
+    base=$(basename $sample _R1.fastq.gz)
+    trimmomatic PE -threads $THREADS \
+        $FASTQ_DIR/${base}_R1.fastq.gz \
+        $FASTQ_DIR/${base}_R2.fastq.gz \
+        $OUTPUT_DIR/trimmed/${base}_R1_trimmed.fastq.gz \
+        $OUTPUT_DIR/trimmed/${base}_R1_unpaired.fastq.gz \
+        $OUTPUT_DIR/trimmed/${base}_R2_trimmed.fastq.gz \
+        $OUTPUT_DIR/trimmed/${base}_R2_unpaired.fastq.gz \
+        ILLUMINACLIP:$REFERENCE_DIR/TruSeq3-PE.fa:2:30:10 \
+        LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+done
+
+# Alignment with STAR
+echo "Aligning reads with STAR..."
+for sample in $OUTPUT_DIR/trimmed/*_R1_trimmed.fastq.gz; do
+    base=$(basename $sample _R1_trimmed.fastq.gz)
+    STAR --runMode alignReads \
+        --genomeDir $REFERENCE_DIR/star_index \
+        --readFilesIn $OUTPUT_DIR/trimmed/${base}_R1_trimmed.fastq.gz \
+                      $OUTPUT_DIR/trimmed/${base}_R2_trimmed.fastq.gz \
+        --readFilesCommand zcat \
+        --outSAMtype BAM SortedByCoordinate \
+        --quantMode GeneCounts \
+        --outFileNamePrefix $OUTPUT_DIR/aligned/${base}_ \
+        --runThreadN $THREADS
+done
+
+# Generate count matrix
+echo "Generating count matrix..."
+python3 generate_count_matrix.py \
+    --input_dir $OUTPUT_DIR/aligned \
+    --output_file $OUTPUT_DIR/counts/gene_counts.txt
+
+# Run R analysis
+echo "Running differential expression analysis..."
+Rscript differential_expression.R
+
+echo "Running functional enrichment analysis..."
+Rscript functional_enrichment.R
+
+echo "Pipeline completed successfully!"
+```
+
+USAGE INSTRUCTIONS:
+==================
+
+1. Install required software and packages
+2. Set up reference genome and annotation files
+3. Organize input files in proper directory structure
+4. Modify parameters in scripts as needed
+5. Run pipeline: bash rnaseq_pipeline.sh
+6. Check output directories for results
+7. Review quality control metrics
+8. Interpret differential expression results
+9. Validate key findings experimentally
+
+EXPECTED OUTPUTS:
+================
+
+- Quality control reports and plots
+- Aligned BAM files
+- Count matrices
+- Differential expression results
+- Functional enrichment results
+- Visualization plots
+- Analysis reports

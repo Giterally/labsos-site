@@ -104,7 +104,6 @@ export default function SimpleExperimentTreePage() {
   // Custom block names and ordering state
   const [blockNames, setBlockNames] = useState<Record<string, string>>({})
   const [customBlocks, setCustomBlocks] = useState<Array<{id: string, name: string, block_type: string, position: number}>>([])
-  const [blockOrder, setBlockOrder] = useState<string[]>([])
   const [nodeOrder, setNodeOrder] = useState<Record<string, string[]>>({})
   
   // Drag and drop state
@@ -127,34 +126,48 @@ export default function SimpleExperimentTreePage() {
   }
 
   const getBlockTitle = (nodeType: string) => {
+    // Check if this is a tree block
+    const treeBlock = customBlocks.find(block => block.id === nodeType)
+    if (treeBlock) {
+      return treeBlock.name
+    }
+    
     // Use custom name if available, otherwise fall back to default
     if (blockNames[nodeType]) {
       return blockNames[nodeType]
     }
     
-    switch (nodeType) {
-      case 'protocol': return 'Protocols'
-      case 'analysis': return 'Analysis'
-      case 'data_creation': return 'Data Creation'
-      case 'results': return 'Results'
-      default: return nodeType.charAt(0).toUpperCase() + nodeType.slice(1)
+    // Regular node type titles
+    const titleMap: Record<string, string> = {
+      'protocol': 'Protocol Steps',
+      'data_creation': 'Data Creation',
+      'analysis': 'Analysis',
+      'results': 'Results'
     }
+    return titleMap[nodeType] || nodeType
   }
 
   const getBlockIcon = (nodeType: string) => {
-    // Check if this is a custom block and get its block_type
-    const customBlock = customBlocks.find(block => block.id === nodeType)
-    const actualBlockType = customBlock ? customBlock.block_type : nodeType
+    // Check if this is a tree block
+    const treeBlock = customBlocks.find(block => block.id === nodeType)
     
-    switch (actualBlockType) {
+    if (treeBlock) {
+      // Infer type from block name
+      const blockName = treeBlock.name.toLowerCase()
+      if (blockName.includes('protocol') || blockName.includes('method')) return '📋'
+      if (blockName.includes('analysis') || blockName.includes('processing')) return '🔬'
+      if (blockName.includes('data') || blockName.includes('collection')) return '📊'
+      if (blockName.includes('result') || blockName.includes('finding')) return '📈'
+      return '📄' // default for custom blocks
+    }
+    
+    // Regular node types
+    switch (nodeType) {
       case 'protocol': return '📋'
       case 'analysis': return '🔬'
       case 'data_creation': return '📊'
       case 'results': return '📈'
-      case 'custom': return '📄'
-      default: 
-        // Fallback for any other types
-        return '📄'
+      default: return '📄'
     }
   }
 
@@ -192,18 +205,15 @@ export default function SimpleExperimentTreePage() {
         const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
         if (blocksResponse.ok) {
           const blocksData = await blocksResponse.json()
-          setCustomBlocks(blocksData.customBlocks || [])
+          setCustomBlocks(blocksData.treeBlocks || [])
           
-          // Set block names from custom blocks
+          // Set block names from tree blocks
           const names: Record<string, string> = {}
-          blocksData.customBlocks?.forEach((block: any) => {
+          blocksData.treeBlocks?.forEach((block: any) => {
             names[block.id] = block.name
           })
           setBlockNames(names)
           
-          // Set block order
-          const order = blocksData.blockOrder?.map((item: any) => item.block_type) || []
-          setBlockOrder(order)
         }
       } else {
         // For regular blocks, delete all nodes of this type
@@ -300,45 +310,87 @@ export default function SimpleExperimentTreePage() {
     setDragOverItem(null)
   }
 
-  // Block reordering
+  // Block reordering (unified system)
   const handleBlockReorder = async (draggedBlockId: string, targetBlockId: string) => {
-    // Use the actual state values instead of computed allBlockTypes to avoid circular dependency
-    const regularBlockTypes = Object.keys(groupedNodes).filter(type => !type.startsWith('custom_') && !customBlocks.some(block => block.id === type))
-    const customBlockTypes = blockOrder.filter(id => customBlocks.some(block => block.id === id))
-    const currentOrder = [...regularBlockTypes, ...customBlockTypes]
-    
-    const draggedIndex = currentOrder.indexOf(draggedBlockId)
-    const targetIndex = currentOrder.indexOf(targetBlockId)
-    
-    if (draggedIndex === -1 || targetIndex === -1) return
-    
-    // Remove dragged item and insert at target position
-    const [draggedItem] = currentOrder.splice(draggedIndex, 1)
-    currentOrder.splice(targetIndex, 0, draggedItem)
-    
-    // Save to Supabase (only custom blocks need to be saved)
-    const customBlockOrder = currentOrder.filter((id: string) => customBlocks.some(block => block.id === id))
-    
     try {
-      const response = await fetch(`/api/trees/${treeId}/blocks/order`, {
-        method: 'PUT',
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+
+      // Get current block order from the database
+      const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`, {
         headers: {
-          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          blockOrder: customBlockOrder
-        }),
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to update block order')
+      if (!blocksResponse.ok) {
+        throw new Error('Failed to fetch current block order')
       }
+
+      const blocksData = await blocksResponse.json()
+      const currentBlocks = blocksData.treeBlocks || []
       
-      setBlockOrder(customBlockOrder)
+      // Find the dragged and target blocks
+      const draggedBlock = currentBlocks.find((block: any) => block.id === draggedBlockId)
+      const targetBlock = currentBlocks.find((block: any) => block.id === targetBlockId)
+      
+      if (!draggedBlock || !targetBlock) {
+        throw new Error('Could not find blocks to reorder')
+      }
+
+      // Create new order by updating positions
+      const newBlocks = currentBlocks.map((block: any) => {
+        if (block.id === draggedBlockId) {
+          return { ...block, position: targetBlock.position }
+        } else if (block.id === targetBlockId) {
+          return { ...block, position: draggedBlock.position }
+        }
+        return block
+      })
+
+      // Update block positions in the database
+      const updatePromises = newBlocks.map((block: any) => 
+        fetch(`/api/trees/${treeId}/blocks/${block.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            position: block.position
+          }),
+        })
+      )
+
+      const results = await Promise.all(updatePromises)
+      const failedUpdates = results.filter(response => !response.ok)
+      
+      if (failedUpdates.length > 0) {
+        throw new Error('Failed to update some block positions')
+      }
+
+      // Refresh the blocks data
+      const refreshResponse = await fetch(`/api/trees/${treeId}/blocks`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      })
+
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json()
+        setCustomBlocks(refreshData.treeBlocks || [])
+      }
+
     } catch (err) {
       console.error('Error updating block order:', err)
+      alert(`Failed to update block order: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
+
+
 
   // Node reordering within same block
   const handleNodeReorder = async (draggedNodeId: string, targetNodeId: string, blockType: string) => {
@@ -407,6 +459,7 @@ export default function SimpleExperimentTreePage() {
 
   // Group nodes by type and include custom blocks
   const groupedNodes = useMemo(() => {
+    // Unified system: group nodes by block_id (stored in node.type)
     const grouped = experimentNodes.reduce((acc, node) => {
       if (!acc[node.type]) {
         acc[node.type] = []
@@ -415,42 +468,39 @@ export default function SimpleExperimentTreePage() {
       return acc
     }, {} as Record<string, ExperimentNode[]>)
 
-    // Add custom blocks to the grouped nodes
+    // Add all tree blocks to the grouped nodes (even if they have no nodes)
     customBlocks.forEach(block => {
       if (!grouped[block.id]) {
         grouped[block.id] = []
       }
     })
 
+    // Also add regular node types for backward compatibility
+    const regularTypes = ['protocol', 'data_creation', 'analysis', 'results']
+    regularTypes.forEach(type => {
+      if (!grouped[type]) {
+        grouped[type] = []
+      }
+    })
+
     return grouped
   }, [experimentNodes, customBlocks])
 
-  // Get all block types in the desired order
+  // Get all block types in the desired order (unified system)
   const allBlockTypes = useMemo(() => {
-    // Get all regular block types (those with nodes and not custom blocks)
-    const regularBlockTypes = Object.keys(groupedNodes).filter(type => 
-      !type.startsWith('custom_') && 
-      !customBlocks.some(block => block.id === type) &&
-      groupedNodes[type].length > 0
-    )
-    
-    // Get all custom block types in their saved order
-    // Include all custom blocks, even if they have no nodes yet
-    const customBlockTypes = blockOrder.filter(id => customBlocks.some(block => block.id === id))
-    
-    // Debug logging
-    console.log('Debug allBlockTypes:', {
-      customBlocks: customBlocks,
-      blockOrder: blockOrder,
-      customBlockTypes: customBlockTypes,
-      regularBlockTypes: regularBlockTypes,
-      groupedNodes: Object.keys(groupedNodes)
-    })
-    
-    // Combine regular and custom blocks in the correct order
-    // Regular blocks come first, then custom blocks in their saved order
-    return [...regularBlockTypes, ...customBlockTypes]
-  }, [groupedNodes, customBlocks, blockOrder])
+    if (customBlocks.length > 0) {
+      // If we have tree_blocks, use them (sorted by position)
+      return customBlocks
+        .sort((a, b) => a.position - b.position)
+        .map(block => block.id)
+    } else {
+      // Fallback: show regular node types for trees without tree_blocks
+      const regularTypes = ['protocol', 'data_creation', 'analysis', 'results']
+      return regularTypes.filter(type => 
+        groupedNodes[type] && groupedNodes[type].length > 0
+      )
+    }
+  }, [customBlocks, groupedNodes])
 
   // Permission check for editing
   const hasEditPermission = isProjectOwner || isProjectMember
@@ -586,18 +636,15 @@ export default function SimpleExperimentTreePage() {
         }
         const data = await response.json()
         
-        setCustomBlocks(data.customBlocks || [])
+        // Use unified tree_blocks system
+        setCustomBlocks(data.treeBlocks || [])
         
-        // Set block names from custom blocks
+        // Set block names from tree blocks
         const names: Record<string, string> = {}
-        data.customBlocks?.forEach((block: any) => {
+        data.treeBlocks?.forEach((block: any) => {
           names[block.id] = block.name
         })
         setBlockNames(names)
-        
-        // Set block order
-        const order = data.blockOrder?.map((item: any) => item.block_type) || []
-        setBlockOrder(order)
       } catch (err) {
         console.error('Error fetching blocks:', err)
       }
@@ -2078,18 +2125,14 @@ export default function SimpleExperimentTreePage() {
                   const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
                   if (blocksResponse.ok) {
                     const blocksData = await blocksResponse.json()
-                    setCustomBlocks(blocksData.customBlocks || [])
+                    setCustomBlocks(blocksData.treeBlocks || [])
                     
-                    // Set block names from custom blocks
+                    // Set block names from tree blocks
                     const names: Record<string, string> = {}
-                    blocksData.customBlocks?.forEach((block: any) => {
+                    blocksData.treeBlocks?.forEach((block: any) => {
                       names[block.id] = block.name
                     })
                     setBlockNames(names)
-                    
-                    // Set block order
-                    const order = blocksData.blockOrder?.map((item: any) => item.block_type) || []
-                    setBlockOrder(order)
                   }
                   
                   setShowAddBlockForm(false)
@@ -2133,18 +2176,14 @@ export default function SimpleExperimentTreePage() {
                   const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
                   if (blocksResponse.ok) {
                     const blocksData = await blocksResponse.json()
-                    setCustomBlocks(blocksData.customBlocks || [])
+                    setCustomBlocks(blocksData.treeBlocks || [])
                     
-                    // Set block names from custom blocks
+                    // Set block names from tree blocks
                     const names: Record<string, string> = {}
-                    blocksData.customBlocks?.forEach((block: any) => {
+                    blocksData.treeBlocks?.forEach((block: any) => {
                       names[block.id] = block.name
                     })
                     setBlockNames(names)
-                    
-                    // Set block order
-                    const order = blocksData.blockOrder?.map((item: any) => item.block_type) || []
-                    setBlockOrder(order)
                   }
                   
                   setShowEditBlockForm(false)
