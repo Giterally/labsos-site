@@ -55,7 +55,7 @@ export const NodeLinkSchema = z.object({
 export const NodeAttachmentSchema = z.object({
   id: z.string(),
   name: z.string(),
-  range: z.string().optional(),
+  range: z.string().nullish(),  // Accept string, null, or undefined
 });
 
 /**
@@ -126,7 +126,11 @@ export function fixCommonIssues(nodeData: any): any {
       url: link.url || '',
       desc: link.desc || '',
     })),
-    attachments: (nodeData.attachments || []).slice(0, 50),
+    attachments: (nodeData.attachments || []).slice(0, 50).map((att: any) => ({
+      id: att.id || '',
+      name: att.name || '',
+      range: att.range === null ? undefined : att.range,  // Convert null to undefined
+    })),
     dependencies: (nodeData.dependencies || []).map((dep: any) => ({
       referenced_title: dep.referenced_title || '',
       dependency_type: validDependencyTypes.includes(dep.dependency_type)
