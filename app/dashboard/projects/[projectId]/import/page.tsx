@@ -541,15 +541,16 @@ export default function ImportPage() {
     }
   };
 
-  const handleGenerateProposals = async () => {
+  const handleGenerateProposals = () => {
     // Check if there are existing proposals
     if (proposals.length > 0) {
+      // Just show the confirmation modal, don't start generating yet
       setShowRegenerateConfirm(true);
       return;
     }
     
     // If no existing proposals, generate directly
-    await generateProposalsInternal();
+    generateProposalsInternal();
   };
 
   const generateProposalsInternal = async () => {
@@ -1460,43 +1461,58 @@ export default function ImportPage() {
                         <XCircle className="h-4 w-4 mr-2" />
                         Clear All Proposals
                       </Button>
-                      <AlertDialog open={showRegenerateConfirm} onOpenChange={setShowRegenerateConfirm}>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            onClick={() => {
-                              const completedCount = sources.filter(s => s.status === 'completed').length;
-                              if (completedCount === 0) {
-                                setError('No completed files found. Please upload files first.');
-                                return;
-                              }
-                              handleGenerateProposals();
-                            }}
-                            disabled={sources.filter(s => s.status === 'completed').length === 0 || generatingProposals}
-                            className="bg-blue-600 hover:bg-blue-700"
-                          >
-                            {generatingProposals ? (
-                              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                              <Sparkles className="h-4 w-4 mr-2" />
-                            )}
-                            {generatingProposals ? 'Generating...' : 'Generate AI Proposals'}
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Clear Existing Proposals?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will delete all existing AI-generated proposals ({proposals.length} proposals) and generate new ones from your uploaded files. This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={generateProposalsInternal}>
-                              Clear & Generate New Proposals
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      {/* Modal for confirmation when proposals exist */}
+                      {proposals.length > 0 ? (
+                        <AlertDialog open={showRegenerateConfirm} onOpenChange={setShowRegenerateConfirm}>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              disabled={sources.filter(s => s.status === 'completed').length === 0 || generatingProposals}
+                              className="bg-blue-600 hover:bg-blue-700"
+                            >
+                              {generatingProposals ? (
+                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Sparkles className="h-4 w-4 mr-2" />
+                              )}
+                              {generatingProposals ? 'Generating...' : 'Generate AI Proposals'}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Clear Existing Proposals?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will delete all existing AI-generated proposals ({proposals.length} proposals) and generate new ones from your uploaded files. This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={generateProposalsInternal}>
+                                Clear & Generate New Proposals
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <Button
+                          onClick={() => {
+                            const completedCount = sources.filter(s => s.status === 'completed').length;
+                            if (completedCount === 0) {
+                              setError('No completed files found. Please upload files first.');
+                              return;
+                            }
+                            generateProposalsInternal();
+                          }}
+                          disabled={sources.filter(s => s.status === 'completed').length === 0 || generatingProposals}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          {generatingProposals ? (
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-4 w-4 mr-2" />
+                          )}
+                          {generatingProposals ? 'Generating...' : 'Generate AI Proposals'}
+                        </Button>
+                      )}
                       <Button
                         onClick={handleClearAll}
                         disabled={clearing || sources.length === 0}

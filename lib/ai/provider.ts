@@ -165,7 +165,7 @@ export class ClaudeProvider implements AIProvider {
       
       const response = await this.client.messages.create({
         model: 'claude-3-haiku-20240307',
-        max_tokens: 2000,
+        max_tokens: 4096, // Increased from 2000 to prevent JSON truncation
         temperature: 0.3, // Lower temperature for more consistent JSON
         messages: [{ role: 'user', content: jsonPrompt }],
       });
