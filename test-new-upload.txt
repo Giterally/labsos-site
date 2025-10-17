@@ -1,0 +1,21 @@
+Test File for Upload Processing Fix
+
+This file tests the complete upload and processing workflow.
+
+The upload should now:
+1. Upload the file successfully
+2. Automatically use local processing in development
+3. Process the file completely
+4. Change status from uploaded → processing → completed
+5. Generate proposed nodes
+
+Research Protocol:
+1. Sample preparation and collection
+2. RNA extraction using standard protocols
+3. Quality control and quantification
+4. Library preparation for sequencing
+5. Next-generation sequencing
+6. Data analysis and interpretation
+7. Results validation and reporting
+
+This test verifies that the fix for the Inngest event processing issue is working properly in the development environment.

@@ -73,7 +73,7 @@ export async function processFileLocally(sourceId: string, projectId: string) {
       metadata: {
         ...chunk.metadata,
         tokenCount: embeddings[index].tokenCount,
-        embeddingModel: 'claude-3-5-sonnet-20241022',
+        embeddingModel: process.env.OPENAI_API_KEY ? 'text-embedding-3-small' : 'claude-3-haiku-20240307',
       },
     }));
 

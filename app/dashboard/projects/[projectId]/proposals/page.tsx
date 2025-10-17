@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   CheckCircle, 
   XCircle, 
@@ -18,7 +19,14 @@ import {
   Plus,
   FileText,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Paperclip,
+  Link as LinkIcon,
+  Settings,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface ProposedNode {
@@ -80,6 +88,11 @@ export default function ProposalsPage() {
   const [selectedProposals, setSelectedProposals] = useState<Set<string>>(new Set());
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [completedTreeId, setCompletedTreeId] = useState<string | null>(null);
+  const [showCompletion, setShowCompletion] = useState(false);
+  const [deletingProposal, setDeletingProposal] = useState<string | null>(null);
+  const [sseConnected, setSseConnected] = useState(false);
+  const [expandedProposals, setExpandedProposals] = useState<Set<string>>(new Set());
 
   const fetchProposals = useCallback(async () => {
     try {
@@ -119,13 +132,124 @@ export default function ProposalsPage() {
     }
   }, [projectId]);
 
+  // SSE connection for real-time updates
+  const connectSSE = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.log('No session token available for SSE connection (proposals)');
+      return null;
+    }
+
+    // Check if token is expired (JWT tokens typically expire in 1 hour)
+    const tokenPayload = JSON.parse(atob(session.access_token.split('.')[1]));
+    const tokenExpiry = tokenPayload.exp * 1000; // Convert to milliseconds
+    const now = Date.now();
+    
+    if (tokenExpiry - now < 60000) { // If token expires in less than 1 minute
+      console.log('Token expires soon, refreshing session (proposals)');
+      const { data: { session: newSession } } = await supabase.auth.refreshSession();
+      if (!newSession?.access_token) {
+        console.log('Failed to refresh session for SSE (proposals)');
+        return null;
+      }
+      session.access_token = newSession.access_token;
+    }
+
+    // EventSource doesn't support custom headers, so we need to pass the token as a query parameter
+    const eventSource = new EventSource(`/api/projects/${projectId}/status?token=${encodeURIComponent(session.access_token)}`);
+
+    eventSource.onopen = () => {
+      console.log('SSE connection opened (proposals)');
+      setSseConnected(true);
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('SSE message received (proposals):', data);
+
+        switch (data.type) {
+          case 'connected':
+          case 'subscribed':
+            console.log('SSE (proposals):', data.message);
+            break;
+          
+          case 'new_proposal':
+          case 'proposal_update':
+            console.log('Proposal update (proposals):', data);
+            // Refresh proposals when they change
+            fetchProposals();
+            break;
+          
+          case 'proposal_deleted':
+            console.log('Proposal deleted (proposals):', data);
+            // Remove from selected if it was selected
+            setSelectedProposals(prev => {
+              const newSelected = new Set(prev);
+              newSelected.delete(data.proposalId);
+              return newSelected;
+            });
+            // Refresh proposals
+            fetchProposals();
+            break;
+          
+          case 'heartbeat':
+            // Keep connection alive
+            break;
+          
+          default:
+            console.log('Unknown SSE message type (proposals):', data.type);
+        }
+      } catch (error) {
+        console.error('Error parsing SSE message (proposals):', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error (proposals):', error);
+      setSseConnected(false);
+      
+      // Close the current connection
+      eventSource.close();
+      
+      // Attempt to reconnect after 5 seconds, but only if we're still on the page
+      setTimeout(async () => {
+        try {
+          console.log('Attempting to reconnect SSE (proposals)...');
+          const newEventSource = await connectSSE();
+          if (!newEventSource) {
+            console.log('Failed to reconnect SSE (proposals), will retry in 30 seconds');
+            setTimeout(() => connectSSE(), 30000);
+          }
+        } catch (reconnectError) {
+          console.error('SSE reconnection failed (proposals):', reconnectError);
+          // Retry again in 30 seconds
+          setTimeout(() => connectSSE(), 30000);
+        }
+      }, 5000);
+    };
+
+    return eventSource;
+  }, [projectId, fetchProposals]);
+
   useEffect(() => {
     setLoading(true);
     fetchProposals();
-    // Poll for updates every 30 seconds (reduced frequency)
-    const interval = setInterval(fetchProposals, 30000);
-    return () => clearInterval(interval);
-  }, [fetchProposals]);
+    
+    // Connect to SSE for real-time updates
+    const eventSource = connectSSE();
+    
+    // Fallback polling every 60 seconds (reduced frequency since we have SSE)
+    const interval = setInterval(fetchProposals, 60000);
+    
+    return () => {
+      clearInterval(interval);
+      if (eventSource) {
+        eventSource.close();
+        setSseConnected(false);
+      }
+    };
+  }, [fetchProposals, connectSSE]);
 
   const handleManualRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -189,8 +313,9 @@ export default function ProposalsPage() {
       const result = await response.json();
 
       if (response.ok) {
-        // Navigate to the experiment tree
-        router.push(`/dashboard/projects/${projectId}/trees/${result.treeId}`);
+        // Show completion page with navigation options
+        setCompletedTreeId(result.treeId);
+        setShowCompletion(true);
       } else {
         setError(result.error || 'Failed to build tree');
       }
@@ -246,6 +371,53 @@ export default function ProposalsPage() {
     }
   };
 
+  const handleDeleteProposal = async (proposalId: string) => {
+    if (!confirm('Are you sure you want to delete this proposal? This action cannot be undone.')) {
+      return;
+    }
+
+    setDeletingProposal(proposalId);
+    setError(null);
+
+    try {
+      // Get session for API call
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch(`/api/projects/${projectId}/proposals`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          proposalIds: [proposalId],
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        // Remove from selected if it was selected
+        const newSelected = new Set(selectedProposals);
+        newSelected.delete(proposalId);
+        setSelectedProposals(newSelected);
+        
+        // Refresh the list
+        fetchProposals();
+      } else {
+        setError(result.error || 'Failed to delete proposal');
+      }
+    } catch (error) {
+      console.error('Delete proposal error:', error);
+      setError('Failed to delete proposal');
+    } finally {
+      setDeletingProposal(null);
+    }
+  };
+
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return 'bg-green-500';
     if (confidence >= 0.6) return 'bg-yellow-500';
@@ -295,9 +467,27 @@ export default function ProposalsPage() {
   // Group proposed nodes by type (like the tree building logic)
   const nodeTypeGroups = proposedProposals.reduce((groups, proposal) => {
     // Determine node type from tags or fallback to a default
-    let nodeType = 'protocol'; // default fallback
+    let nodeType = 'uncategorized'; // default fallback
     
-    if (proposal.node_json.metadata?.tags && Array.isArray(proposal.node_json.metadata.tags)) {
+    // Try to get node_type from metadata first
+    if (proposal.node_json.metadata?.node_type) {
+      const rawType = proposal.node_json.metadata.node_type.toLowerCase();
+      // Map common variations to valid types
+      if (rawType === 'protocol' || rawType === 'method' || rawType === 'procedure') {
+        nodeType = 'protocol';
+      } else if (rawType === 'analysis' || rawType === 'processing' || rawType === 'computation') {
+        nodeType = 'analysis';
+      } else if (rawType === 'results' || rawType === 'result' || rawType === 'findings' || rawType === 'conclusions') {
+        nodeType = 'results';
+      } else if (rawType === 'data' || rawType === 'data_creation' || rawType === 'materials' || rawType === 'equipment') {
+        nodeType = 'data_creation';
+      } else {
+        // If none match, keep as uncategorized but log it
+        console.log(`[PROPOSALS] Unknown node_type: ${rawType} for proposal ${proposal.id}`);
+      }
+    } 
+    // Fallback to checking tags if node_type is not available
+    else if (proposal.node_json.metadata?.tags && Array.isArray(proposal.node_json.metadata.tags)) {
       const tags = proposal.node_json.metadata.tags;
       if (tags.includes('protocol') || tags.includes('method') || tags.includes('procedure')) {
         nodeType = 'protocol';
@@ -308,8 +498,6 @@ export default function ProposalsPage() {
       } else if (tags.includes('data') || tags.includes('materials') || tags.includes('equipment')) {
         nodeType = 'data_creation';
       }
-    } else if (proposal.node_json.metadata?.node_type) {
-      nodeType = proposal.node_json.metadata.node_type.toLowerCase();
     }
     
     if (!groups[nodeType]) {
@@ -318,6 +506,11 @@ export default function ProposalsPage() {
     groups[nodeType].push(proposal);
     return groups;
   }, {} as Record<string, typeof proposedProposals>);
+
+  // Log grouping summary
+  console.log('[PROPOSALS] Grouped proposals:', Object.entries(nodeTypeGroups).map(([type, nodes]) => 
+    `${type}: ${nodes.length}`
+  ).join(', '));
 
   if (loading) {
     return (
@@ -347,6 +540,50 @@ export default function ProposalsPage() {
     );
   }
 
+  // Show completion page after successful tree creation
+  if (showCompletion && completedTreeId) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="max-w-2xl mx-auto text-center space-y-6">
+          <div className="space-y-4">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <h1 className="text-3xl font-bold">Experiment Tree Created!</h1>
+            <p className="text-muted-foreground text-lg">
+              Your AI-generated experiment tree has been successfully created with {selectedProposals.size} nodes.
+            </p>
+          </div>
+
+          <div className="flex gap-4 justify-center">
+            <Button
+              onClick={() => router.push(`/project/${projectId}/trees/${completedTreeId}`)}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              View Experiment Tree
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/project/${projectId}`)}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Project
+            </Button>
+          </div>
+
+          <div className="mt-8 p-4 bg-muted rounded-lg">
+            <h3 className="font-semibold mb-2">What's next?</h3>
+            <p className="text-sm text-muted-foreground">
+              You can now edit your experiment tree, add more nodes, reorder blocks, and customize the workflow to fit your research needs.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
@@ -357,6 +594,12 @@ export default function ProposalsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${sseConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-xs text-muted-foreground">
+              {sseConnected ? 'Live updates' : 'Polling mode'}
+            </span>
+          </div>
           <Button
             variant="outline"
             onClick={handleManualRefresh}
@@ -518,12 +761,16 @@ export default function ProposalsPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {nodes.map((proposal, index) => (
+                  <div className="space-y-3">
+                    {nodes.map((proposal, index) => {
+                      const isExpanded = expandedProposals.has(proposal.id);
+                      const node = proposal.node_json;
+                      
+                      return (
                       <Card key={proposal.id} className="hover:shadow-md transition-shadow">
                         <CardHeader className="pb-3">
                           <div className="flex items-start justify-between">
-                            <div className="flex items-start space-x-3">
+                              <div className="flex items-start space-x-3 flex-1">
                               <div className="mt-1">
                                 <Checkbox
                                   id={`proposal-${proposal.id}`}
@@ -532,87 +779,231 @@ export default function ProposalsPage() {
                                   className="h-4 w-4 border-2 data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
                                 />
                               </div>
-                              <div className="flex-1">
+                                <div className="flex-1 min-w-0">
                                 <CardTitle className="text-base line-clamp-2">
-                                  {proposal.node_json.title || proposal.node_json.name || 'Untitled Node'}
+                                    {node.title || 'Untitled Node'}
                                 </CardTitle>
                                 <CardDescription className="mt-1 line-clamp-2">
-                                  {proposal.node_json.short_summary || proposal.node_json.description || ''}
+                                    {node.short_summary || node.description || 'No description available'}
                                 </CardDescription>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <div className={`w-2 h-2 rounded-full ${getConfidenceColor(proposal.confidence)}`} />
-                              <span className="text-xs text-muted-foreground">
-                                {Math.round(proposal.confidence * 100)}%
-                              </span>
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
+                                <div className={`w-2 h-2 rounded-full ${getConfidenceColor(proposal.confidence)}`} />
+                                <span className="text-xs text-muted-foreground">
+                                  {Math.round(proposal.confidence * 100)}%
+                                </span>
+                              </div>
+                                <Button
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedProposals);
+                                    if (isExpanded) {
+                                      newExpanded.delete(proposal.id);
+                                    } else {
+                                      newExpanded.add(proposal.id);
+                                    }
+                                    setExpandedProposals(newExpanded);
+                                  }}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronUp className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              <Button
+                                onClick={() => handleDeleteProposal(proposal.id)}
+                                variant="ghost"
+                                size="sm"
+                                disabled={deletingProposal === proposal.id}
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                              >
+                                {deletingProposal === proposal.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <XCircle className="h-3 w-3" />
+                                )}
+                              </Button>
                             </div>
                           </div>
                         </CardHeader>
+                          
+                          {isExpanded && (
                         <CardContent className="pt-0">
-                          <div className="space-y-3">
-                            {/* 4-Slide Content Preview */}
-                            <div className="grid grid-cols-2 gap-2">
-                              {/* Slide 1: Overview */}
-                              <div className="bg-white/50 rounded p-2 border">
-                                <h4 className="font-medium text-xs mb-1 text-blue-600">📋 Overview</h4>
-                                <p className="text-xs text-muted-foreground line-clamp-2">
-                                  {proposal.node_json.content?.text || proposal.node_json.short_summary || 'No overview available'}
-                                </p>
+                              <Tabs defaultValue="content" className="w-full">
+                                <TabsList className="grid w-full grid-cols-4">
+                                  <TabsTrigger value="content" className="flex items-center gap-2">
+                                    <FileText className="h-4 w-4" />
+                                    Content
+                                  </TabsTrigger>
+                                  <TabsTrigger value="links" className="flex items-center gap-2">
+                                    <LinkIcon className="h-4 w-4" />
+                                    Links
+                                  </TabsTrigger>
+                                  <TabsTrigger value="attachments" className="flex items-center gap-2">
+                                    <Paperclip className="h-4 w-4" />
+                                    Attachments
+                                  </TabsTrigger>
+                                  <TabsTrigger value="metadata" className="flex items-center gap-2">
+                                    <Settings className="h-4 w-4" />
+                                    Metadata
+                                  </TabsTrigger>
+                                </TabsList>
+                                
+                                <TabsContent value="content" className="mt-4">
+                                  <div className="space-y-2">
+                                    <h4 className="font-medium text-sm">Content</h4>
+                                    {node.content?.text ? (
+                                      <div className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted/50 rounded p-3 max-h-96 overflow-y-auto">
+                                        {node.content.text}
                               </div>
-
-                              {/* Slide 2: Steps */}
-                              <div className="bg-white/50 rounded p-2 border">
-                                <h4 className="font-medium text-xs mb-1 text-green-600">⚡ Steps</h4>
-                                {proposal.node_json.content?.structured_steps && proposal.node_json.content.structured_steps.length > 0 ? (
-                                  <div className="text-xs text-muted-foreground">
-                                    {proposal.node_json.content.structured_steps.length} steps
-                                    <div className="mt-1">
-                                      {proposal.node_json.content.structured_steps.slice(0, 1).map((step, stepIndex) => (
-                                        <div key={stepIndex} className="truncate">
-                                          {step.step_no}. {step.action}
+                                    ) : (
+                                      <p className="text-sm text-muted-foreground italic">No content available</p>
+                                    )}
+                                    
+                                    {node.content?.structured_steps && node.content.structured_steps.length > 0 && (
+                                      <div className="mt-4">
+                                        <h5 className="font-medium text-sm mb-2">Steps</h5>
+                                        <div className="space-y-2">
+                                          {node.content.structured_steps.map((step, idx) => (
+                                            <div key={idx} className="text-sm border-l-2 border-primary pl-3">
+                                              <span className="font-medium">{step.step_no}.</span> {step.action}
+                                              {step.params && Object.keys(step.params).length > 0 && (
+                                                <div className="text-xs text-muted-foreground mt-1">
+                                                  {Object.entries(step.params).map(([key, value]) => (
+                                                    <div key={key}>{key}: {String(value)}</div>
+                                                  ))}
+                                                </div>
+                                              )}
                                         </div>
                                       ))}
                                     </div>
                                   </div>
-                                ) : (
-                                  <p className="text-xs text-muted-foreground">No steps defined</p>
+                                    )}
+                                  </div>
+                                </TabsContent>
+                                
+                                <TabsContent value="links" className="mt-4">
+                                  <div className="space-y-2">
+                                    <h4 className="font-medium text-sm">Links</h4>
+                                    {node.links && node.links.length > 0 ? (
+                                      <div className="space-y-2">
+                                        {node.links.map((link, idx) => (
+                                          <div key={idx} className="p-3 border rounded bg-muted/50">
+                                            <div className="flex items-start justify-between">
+                                              <div className="flex-1">
+                                                <p className="font-medium text-sm">{link.type || 'Link'}</p>
+                                                {link.desc && (
+                                                  <p className="text-xs text-muted-foreground mt-1">{link.desc}</p>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <a 
+                                              href={link.url} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer"
+                                              className="text-xs text-blue-600 hover:underline mt-1 block truncate"
+                                            >
+                                              {link.url}
+                                            </a>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-muted-foreground italic">No links available</p>
                                 )}
                               </div>
-
-                              {/* Slide 3: Materials */}
-                              <div className="bg-white/50 rounded p-2 border">
-                                <h4 className="font-medium text-xs mb-1 text-orange-600">🧪 Materials</h4>
-                                <p className="text-xs text-muted-foreground">
-                                  {proposal.node_json.metadata?.estimated_time_minutes || 0} min
-                                </p>
-                                <div className="flex gap-1 mt-1">
-                                  {proposal.node_json.metadata?.tags?.slice(0, 2).map((tag, tagIndex) => (
-                                    <Badge key={tagIndex} variant="secondary" className="text-xs px-1 py-0">
+                                </TabsContent>
+                                
+                                <TabsContent value="attachments" className="mt-4">
+                                  <div className="space-y-2">
+                                    <h4 className="font-medium text-sm">Attachments</h4>
+                                    {node.attachments && node.attachments.length > 0 ? (
+                                      <div className="space-y-2">
+                                        {node.attachments.map((attachment, idx) => (
+                                          <div key={idx} className="p-3 border rounded bg-muted/50">
+                                            <div className="flex items-center gap-2">
+                                              <Paperclip className="h-4 w-4 text-muted-foreground" />
+                                              <div className="flex-1">
+                                                <p className="font-medium text-sm">{attachment.name}</p>
+                                                {attachment.range && (
+                                                  <p className="text-xs text-muted-foreground">Range: {attachment.range}</p>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-muted-foreground italic">No attachments available</p>
+                                    )}
+                                  </div>
+                                </TabsContent>
+                                
+                                <TabsContent value="metadata" className="mt-4">
+                                  <div className="space-y-3">
+                                    <h4 className="font-medium text-sm">Metadata</h4>
+                                    <div className="grid grid-cols-2 gap-3 text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Node Type:</span>
+                                        <p className="font-medium">{node.metadata?.node_type || 'Not specified'}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Status:</span>
+                                        <p className="font-medium">{node.metadata?.status || 'Not specified'}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Estimated Time:</span>
+                                        <p className="font-medium">{node.metadata?.estimated_time_minutes || 0} minutes</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Confidence:</span>
+                                        <p className="font-medium">{Math.round(proposal.confidence * 100)}%</p>
+                                      </div>
+                                    </div>
+                                    
+                                    {node.metadata?.tags && node.metadata.tags.length > 0 && (
+                                      <div>
+                                        <span className="text-sm text-muted-foreground">Tags:</span>
+                                        <div className="flex flex-wrap gap-1 mt-2">
+                                          {node.metadata.tags.map((tag, idx) => (
+                                            <Badge key={idx} variant="secondary" className="text-xs">
                                       {tag}
                                     </Badge>
                                   ))}
                                 </div>
                               </div>
-
-                              {/* Slide 4: Sources */}
-                              <div className="bg-white/50 rounded p-2 border">
-                                <h4 className="font-medium text-xs mb-1 text-purple-600">📚 Sources</h4>
-                                <p className="text-xs text-muted-foreground">
-                                  {proposal.node_json.provenance?.sources?.length || 0} chunks
-                                </p>
-                                <div className="flex items-center gap-1 mt-1">
-                                  <div className={`w-1.5 h-1.5 rounded-full ${getConfidenceColor(proposal.confidence)}`} />
-                                  <span className="text-xs text-muted-foreground">
-                                    {Math.round(proposal.confidence * 100)}% confidence
-                                  </span>
+                                    )}
+                                    
+                                    {node.metadata?.parameters && Object.keys(node.metadata.parameters).length > 0 && (
+                                      <div>
+                                        <span className="text-sm text-muted-foreground">Parameters:</span>
+                                        <div className="mt-2 p-2 bg-muted/50 rounded text-xs font-mono max-h-48 overflow-y-auto">
+                                          {JSON.stringify(node.metadata.parameters, null, 2)}
                                 </div>
                               </div>
+                                    )}
+                                    
+                                    {node.provenance?.sources && node.provenance.sources.length > 0 && (
+                                      <div>
+                                        <span className="text-sm text-muted-foreground">Source Chunks:</span>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          Generated from {node.provenance.sources.length} source chunk(s)
+                                        </p>
                             </div>
+                                    )}
                           </div>
+                                </TabsContent>
+                              </Tabs>
                         </CardContent>
+                          )}
                       </Card>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>

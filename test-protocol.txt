@@ -1,0 +1,42 @@
+RNA-Seq Analysis Protocol
+
+This document outlines the complete RNA-Seq analysis workflow for differential gene expression analysis.
+
+## Sample Preparation
+1. Extract total RNA from tissue samples using TRIzol reagent
+2. Assess RNA quality using Bioanalyzer (RIN > 7.0)
+3. Quantify RNA concentration using Qubit fluorometer
+4. Prepare RNA libraries using Illumina TruSeq Stranded mRNA kit
+
+## Sequencing
+1. Pool libraries at equimolar concentrations
+2. Sequence on Illumina NovaSeq 6000 platform
+3. Generate 150bp paired-end reads
+4. Target 30M reads per sample
+
+## Data Processing
+1. Quality control using FastQC
+2. Adapter trimming with Trimmomatic
+3. Alignment to reference genome (GRCh38) using STAR
+4. Quantification of gene expression using featureCounts
+
+## Differential Expression Analysis
+1. Import count data into R/Bioconductor
+2. Normalize using DESeq2
+3. Perform differential expression analysis
+4. Apply multiple testing correction (FDR < 0.05)
+5. Generate volcano plots and heatmaps
+
+## Quality Metrics
+- Mapping rate > 80%
+- Duplicate rate < 20%
+- GC content 40-60%
+- Library complexity assessment
+
+## Software Requirements
+- FastQC v0.11.9
+- Trimmomatic v0.39
+- STAR v2.7.9a
+- featureCounts v2.0.1
+- R v4.2.0
+- DESeq2 v1.36.0

@@ -32,7 +32,7 @@ export class ClaudeProvider implements AIProvider {
     // Generate a semantic summary that can be used for similarity matching
     try {
       const response = await this.client.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-3-haiku-20240307',
         max_tokens: 100,
         messages: [{
           role: 'user',
@@ -94,33 +94,90 @@ export class ClaudeProvider implements AIProvider {
     return Math.abs(hash);
   }
 
+  private async retryWithBackoff<T>(operation: () => Promise<T>, maxRetries: number = 3): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        lastError = error;
+        
+        // Check if it's a rate limit error
+        if (error.status === 429 || error.message?.includes('rate_limit_error')) {
+          const retryAfter = error.headers?.['retry-after'] || Math.pow(2, attempt);
+          const delay = parseInt(retryAfter) * 1000; // Convert to milliseconds
+          
+          console.log(`Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+          
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+        }
+        
+        // For non-rate-limit errors, don't retry
+        throw error;
+      }
+    }
+    
+    throw lastError!;
+  }
+
   async generateText(prompt: string, options: GenerateTextOptions = {}): Promise<string> {
-    const response = await this.client.messages.create({
-      model: options.model || 'claude-3-5-sonnet-20241022',
-      max_tokens: options.maxTokens || 2000,
-      temperature: options.temperature || 0.7,
-      messages: [{ role: 'user', content: prompt }],
+    return this.retryWithBackoff(async () => {
+      const response = await this.client.messages.create({
+        model: options.model || 'claude-3-haiku-20240307',
+        max_tokens: options.maxTokens || 2000,
+        temperature: options.temperature || 0.7,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return response.content[0].type === 'text' ? response.content[0].text : '';
     });
-    return response.content[0].type === 'text' ? response.content[0].text : '';
   }
 
   async generateJSON(prompt: string, schema?: any): Promise<any> {
-    const jsonPrompt = `${prompt}\n\nPlease respond with valid JSON${schema ? ` that matches this schema: ${JSON.stringify(schema, null, 2)}` : ''}.`;
-    
-    const response = await this.client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 2000,
-      temperature: 0.3, // Lower temperature for more consistent JSON
-      messages: [{ role: 'user', content: jsonPrompt }],
+    return this.retryWithBackoff(async () => {
+      const jsonPrompt = `${prompt}\n\nPlease respond with valid JSON${schema ? ` that matches this schema: ${JSON.stringify(schema, null, 2)}` : ''}. Do not include any markdown formatting or code blocks - just the raw JSON.`;
+      
+      const response = await this.client.messages.create({
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 2000,
+        temperature: 0.3, // Lower temperature for more consistent JSON
+        messages: [{ role: 'user', content: jsonPrompt }],
+      });
+      
+      let content = response.content[0].type === 'text' ? response.content[0].text : '{}';
+      
+      // Clean up the content to extract JSON
+      content = this.extractJSONFromResponse(content);
+      
+      try {
+        return JSON.parse(content);
+      } catch (error) {
+        console.error('Failed to parse JSON response from Claude:', content);
+        console.error('Original response:', response.content[0]);
+        throw new Error('Invalid JSON response from Claude');
+      }
     });
+  }
+
+  private extractJSONFromResponse(content: string): string {
+    // Remove markdown code blocks if present
+    content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '');
     
-    const content = response.content[0].type === 'text' ? response.content[0].text : '{}';
-    try {
-      return JSON.parse(content);
-    } catch (error) {
-      console.error('Failed to parse JSON response from Claude:', content);
-      throw new Error('Invalid JSON response from Claude');
+    // Find the first { and last } to extract JSON object
+    const firstBrace = content.indexOf('{');
+    const lastBrace = content.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      content = content.substring(firstBrace, lastBrace + 1);
     }
+    
+    // Clean up any remaining whitespace
+    content = content.trim();
+    
+    return content;
   }
 }
 
@@ -140,6 +197,7 @@ export class OpenAIProvider implements AIProvider {
     const response = await this.client.embeddings.create({
       model: 'text-embedding-3-small',
       input: text,
+      dimensions: 384,  // Match database vector dimensions
     });
     return response.data[0].embedding;
   }
@@ -148,6 +206,7 @@ export class OpenAIProvider implements AIProvider {
     const response = await this.client.embeddings.create({
       model: 'text-embedding-3-small',
       input: texts,
+      dimensions: 384,  // Match database vector dimensions
     });
     return response.data.map(item => item.embedding);
   }

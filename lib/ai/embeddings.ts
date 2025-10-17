@@ -1,4 +1,4 @@
-import { getAIProviderInstance } from './provider';
+import { getAIProviderInstance, OpenAIProvider } from './provider';
 import { supabaseServer } from '../supabase-server';
 
 export interface EmbeddingResult {
@@ -22,29 +22,67 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 // Generate embeddings for multiple texts in batch
 export async function generateBatchEmbeddings(texts: string[]): Promise<BatchEmbeddingResult> {
   const startTime = Date.now();
-  const aiProvider = getAIProviderInstance();
   
-  // Generate embeddings in batches to avoid rate limits
-  const batchSize = 5; // Smaller batch size for Claude to avoid rate limits
+  console.log(`[EMBEDDINGS] Starting batch embedding generation for ${texts.length} texts`);
+  
+  // Try to use OpenAI for embeddings if available, fallback to Claude
+  let aiProvider;
+  let batchSize = 5; // Default for Claude
+  
+  try {
+    if (process.env.OPENAI_API_KEY) {
+      aiProvider = new OpenAIProvider();
+      batchSize = 100; // OpenAI can handle larger batches
+      console.log(`[EMBEDDINGS] Using OpenAI embeddings with batch size ${batchSize}`);
+    } else {
+      aiProvider = getAIProviderInstance();
+      console.log(`[EMBEDDINGS] Using Claude embeddings with batch size ${batchSize}`);
+    }
+  } catch (error) {
+    console.warn(`[EMBEDDINGS] OpenAI not available, falling back to Claude:`, error);
+    aiProvider = getAIProviderInstance();
+  }
   const results: EmbeddingResult[] = [];
   let totalTokens = 0;
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
-    const embeddings = await aiProvider.generateEmbeddings(batch);
+    console.log(`[EMBEDDINGS] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(texts.length/batchSize)} (${batch.length} texts)`);
     
-    for (let j = 0; j < batch.length; j++) {
-      const tokenCount = countTokens(batch[j]);
-      totalTokens += tokenCount;
+    try {
+      // Add timeout for each batch
+      const batchPromise = aiProvider.generateEmbeddings(batch);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(`Embedding batch ${Math.floor(i/batchSize) + 1} timed out after 2 minutes`)), 2 * 60 * 1000)
+      );
       
-      results.push({
-        id: `batch_${i}_${j}`,
-        embedding: embeddings[j],
-        tokenCount,
-      });
+      const embeddings = await Promise.race([batchPromise, timeoutPromise]) as number[][];
+      
+      for (let j = 0; j < batch.length; j++) {
+        const tokenCount = countTokens(batch[j]);
+        totalTokens += tokenCount;
+        
+        results.push({
+          id: `batch_${i}_${j}`,
+          embedding: embeddings[j],
+          tokenCount,
+        });
+      }
+      
+      console.log(`[EMBEDDINGS] Completed batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(texts.length/batchSize)}`);
+      
+      // Small delay between batches to avoid rate limits
+      if (i + batchSize < texts.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    } catch (error) {
+      console.error(`[EMBEDDINGS] Error processing batch ${Math.floor(i/batchSize) + 1}:`, error);
+      throw new Error(`Failed to generate embeddings for batch ${Math.floor(i/batchSize) + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
+  console.log(`[EMBEDDINGS] Completed embedding generation for ${texts.length} texts in ${Date.now() - startTime}ms`);
+  
   return {
     embeddings: results,
     totalTokens,
@@ -77,7 +115,7 @@ export async function storeEmbeddings(
     metadata: {
       ...chunk.metadata,
       tokenCount: embeddings[index].tokenCount,
-      embeddingModel: 'claude-3-5-sonnet-20241022',
+      embeddingModel: process.env.OPENAI_API_KEY ? 'text-embedding-3-small' : 'claude-3-haiku-20240307',
     },
   }));
 

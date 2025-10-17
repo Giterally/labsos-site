@@ -11,16 +11,64 @@ export interface NodeSynthesisPrompt {
 }
 
 export const NODE_SYNTHESIS_PROMPT: NodeSynthesisPrompt = {
-  systemPrompt: `You are an expert research protocol summarizer. Given chunks of text from research artifacts (papers, code, videos, etc.), synthesize a single experiment node as strict JSON.
+  systemPrompt: `You are an expert research protocol synthesizer. Given chunks of text from research artifacts (papers, code, videos, etc.), synthesize ONE RICH, COMPREHENSIVE experiment node as strict JSON.
 
-The node should represent a coherent research step, protocol, data analysis, or result. Do NOT invent values - if a parameter is missing, leave it null and set "needs_verification": true.
+CRITICAL: Create nodes that are SATURATED with information. Each node should be a complete, standalone unit containing:
+- Comprehensive descriptions with full context
+- All relevant parameters, methods, and details from the chunks
+- Complete step-by-step procedures (if applicable)
+- All metadata, links, and attachments mentioned
+- Full provenance information
+
+CONSOLIDATION PRINCIPLES:
+- Combine related information from ALL chunks into ONE comprehensive node
+- DO NOT create sparse or partial nodes - include all available details
+- Prefer ONE rich node with complete information over multiple thin nodes
+- Avoid redundancy by consolidating similar concepts
+- Only create separate nodes for truly distinct research steps
+
+IMPORTANT NAMING GUIDELINES:
+- Titles MUST be UNIQUE and SPECIFIC to the content (not generic)
+- Use descriptive, differentiating details in titles (e.g., "Differential Expression Analysis - Quality Control Phase", "RNA Extraction Protocol - Cell Lysis Step")
+- If multiple similar procedures exist, differentiate them in the title (e.g., "Part 1", "Initial Phase", "Validation Phase")
+- Avoid duplicate titles - each node must have a unique, meaningful name
+- Keep titles concise but specific (max 60 characters)
+
+NODE TYPE ASSIGNMENT GUIDELINES:
+Choose the most appropriate node_type based on the content:
+
+- "protocol": Step-by-step procedures, methods, wet lab protocols, experimental procedures
+  Examples: "RNA Extraction Protocol", "Sample Collection Procedure", "Quality Control Protocol"
+
+- "data_creation": Data collection, sequencing, measurement generation, data acquisition
+  Examples: "RNA-seq Sequencing", "Microscopy Imaging", "Flow Cytometry Data Collection"
+
+- "analysis": Computational analysis, statistical processing, bioinformatics, data processing
+  Examples: "Differential Expression Analysis", "Statistical Analysis", "Bioinformatics Pipeline"
+
+- "results": Findings, output data, validated results, experimental outcomes
+  Examples: "Gene Expression Results", "Statistical Test Results", "Validation Outcomes"
+
+- "software": Scripts, tools, computational setup, software installation/configuration
+  Examples: "R Script Setup", "Bioinformatics Tools Installation", "Analysis Software Configuration"
+
+DEPENDENCY EXTRACTION:
+- Analyze the text for references to other research steps, protocols, or procedures
+- Look for keywords like "after", "following", "using results from", "requires", "based on", "using the output of"
+- Extract dependencies with appropriate types:
+  * "requires": Prerequisite step that must be completed first
+  * "uses_output": Uses data or results from another step
+  * "follows": Sequential step that comes after another
+  * "validates": Verification step that checks results from another step
+- Only include dependencies that are explicitly mentioned in the text
+- Use descriptive titles for referenced nodes (not generic terms)
 
 Required JSON schema:
 {
-  "title": "string (concise, descriptive title)",
-  "short_summary": "string (1-2 sentence summary)",
+  "title": "string (topic-oriented umbrella term, max 40 chars)",
+  "short_summary": "string (1-sentence summary, max 100 chars)",
   "content": {
-    "text": "string (detailed description)",
+    "text": "string (well-formatted, detailed description with proper grammar)",
     "structured_steps": [
       {
         "step_no": 1,
@@ -30,7 +78,7 @@ Required JSON schema:
     ]
   },
   "metadata": {
-    "node_type": "Protocol|Data|Software|Result|Instrument",
+    "node_type": "protocol|data_creation|analysis|results|software",
     "tags": ["string array"],
     "status": "in_progress|complete|deprecated",
     "parameters": {"key": "value"},
@@ -48,6 +96,13 @@ Required JSON schema:
       "id": "attachment-uuid",
       "name": "string",
       "range": "00:01:10-00:01:45 (for video/audio)"
+    }
+  ],
+  "dependencies": [
+    {
+      "referenced_title": "string (title of prerequisite node)",
+      "dependency_type": "requires|uses_output|follows|validates",
+      "confidence": 0.85
     }
   ],
   "provenance": {
@@ -71,11 +126,20 @@ Return ONLY valid JSON. No explanations or markdown formatting.`,
       `${index + 1}) [chunk-id=${chunk.id}] "${chunk.text}"`
     ).join('\n\n');
 
-    return `Here are the top-k chunks from research artifacts:
+    return `Here are related chunks from research artifacts:
 
 ${chunkTexts}
 
-Synthesize ONE node from these chunks. Focus on the most coherent and complete information. If chunks contain conflicting information, prioritize the most recent or authoritative source.`;
+IMPORTANT: Synthesize ONE COMPREHENSIVE, INFORMATION-RICH node that consolidates ALL relevant details from these chunks:
+
+1. Combine ALL related information into a single cohesive node
+2. Include COMPLETE descriptions, not summaries - saturate the node with details
+3. Extract ALL parameters, steps, methods, and metadata mentioned in any chunk
+4. Create a UNIQUE, SPECIFIC title that clearly differentiates this node from others
+5. If chunks contain conflicting info, reconcile or include both with context
+6. Do NOT create sparse nodes - make this a complete, standalone research unit
+
+Focus on creating a rich, comprehensive node that captures the full depth of information available.`;
   }
 };
 

@@ -46,9 +46,24 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch tree blocks' }, { status: 500 })
     }
 
-    // Return tree blocks in unified format
+    // Get node counts for each block
+    const blocksWithCounts = await Promise.all(
+      (treeBlocks || []).map(async (block) => {
+        const { count, error: countError } = await supabase
+          .from('tree_nodes')
+          .select('*', { count: 'exact', head: true })
+          .eq('block_id', block.id)
+        
+        return {
+          ...block,
+          node_count: count || 0
+        }
+      })
+    )
+
+    // Return tree blocks in unified format with node counts
     return NextResponse.json({ 
-      treeBlocks: treeBlocks || []
+      treeBlocks: blocksWithCounts
     })
   } catch (error) {
     console.error('Error in GET /api/trees/[treeId]/blocks:', error)

@@ -1,5 +1,6 @@
 import { getAIProviderInstance } from './provider';
 import { supabaseServer } from '../supabase-server';
+import { NODE_SYNTHESIS_PROMPT as NODE_SYNTHESIS_PROMPT_CONFIG } from './prompts/node-synthesis';
 
 export interface NodeSynthesisInput {
   chunks: Array<{
@@ -29,7 +30,7 @@ export interface SynthesizedNode {
     }>;
   };
   metadata: {
-    node_type: 'Protocol' | 'Data' | 'Software' | 'Result' | 'Instrument';
+    node_type: 'protocol' | 'data_creation' | 'analysis' | 'results' | 'software';
     tags: string[];
     status: 'in_progress' | 'complete' | 'deprecated';
     parameters: Record<string, any>;
@@ -44,6 +45,11 @@ export interface SynthesizedNode {
     id: string;
     name: string;
     range?: string;
+  }>;
+  dependencies: Array<{
+    referenced_title: string;
+    dependency_type: 'requires' | 'uses_output' | 'follows' | 'validates';
+    confidence: number;
   }>;
   provenance: {
     sources: Array<{
@@ -120,14 +126,19 @@ export async function synthesizeNode(input: NodeSynthesisInput): Promise<Synthes
   const aiProvider = getAIProviderInstance();
   
   // Format chunks for the prompt
-  const chunksText = input.chunks.map((chunk, index) => 
-    `${index + 1}) [chunk-id=${chunk.id}] "${chunk.text.substring(0, 500)}..."`
-  ).join('\n');
+  const chunksData = input.chunks.map(chunk => ({
+    id: chunk.id,
+    text: chunk.text,
+    sourceType: chunk.sourceType,
+    metadata: chunk.metadata,
+  }));
 
-  const prompt = NODE_SYNTHESIS_PROMPT.replace('{chunks}', chunksText);
+  // Build the complete prompt
+  const systemPrompt = NODE_SYNTHESIS_PROMPT_CONFIG.systemPrompt;
+  const userPrompt = NODE_SYNTHESIS_PROMPT_CONFIG.userPrompt(chunksData);
   
   // Add project context if available
-  let finalPrompt = prompt;
+  let finalUserPrompt = userPrompt;
   if (input.projectContext) {
     let contextText = `\n\nProject Context: ${input.projectContext.name}`;
     if (input.projectContext.description) {
@@ -136,16 +147,14 @@ export async function synthesizeNode(input: NodeSynthesisInput): Promise<Synthes
     if (input.projectContext.domain) {
       contextText += ` (Domain: ${input.projectContext.domain})`;
     }
-    finalPrompt = prompt.replace('{chunks}', contextText + '\n\n' + chunksText);
-  } else {
-    finalPrompt = prompt.replace('{chunks}', chunksText);
+    finalUserPrompt = contextText + '\n\n' + userPrompt;
   }
 
   try {
-    const result = await aiProvider.generateJSON(finalPrompt);
+    const result = await aiProvider.generateJSON(systemPrompt, finalUserPrompt);
     
     // Validate the result structure
-    if (!result.node_id || !result.title || !result.content) {
+    if (!result.title || !result.content) {
       throw new Error('Invalid node structure returned from AI');
     }
 
@@ -154,10 +163,53 @@ export async function synthesizeNode(input: NodeSynthesisInput): Promise<Synthes
       result.node_id = crypto.randomUUID();
     }
 
-    return result as SynthesizedNode;
+    // Ensure all required fields are present with defaults
+    const synthesizedNode: SynthesizedNode = {
+      node_id: result.node_id || crypto.randomUUID(),
+      title: result.title,
+      short_summary: result.short_summary || result.title,
+      content: {
+        text: result.content?.text || '',
+        structured_steps: result.content?.structured_steps || []
+      },
+      metadata: {
+        node_type: result.metadata?.node_type || 'Protocol',
+        tags: result.metadata?.tags || [],
+        status: result.metadata?.status || 'in_progress',
+        parameters: result.metadata?.parameters || {},
+        estimated_time_minutes: result.metadata?.estimated_time_minutes || 30
+      },
+      links: result.links || [],
+      attachments: result.attachments || [],
+      dependencies: result.dependencies || [],
+      provenance: {
+        sources: result.provenance?.sources || input.chunks.map(chunk => ({
+          chunk_id: chunk.id,
+          source_type: chunk.sourceType,
+          snippet: chunk.text.substring(0, 200)
+        })),
+        generated_by: 'node-builder-v2',
+        confidence: result.provenance?.confidence || 0.8
+      },
+      // needs_verification: result.needs_verification || false
+    };
+
+    return synthesizedNode;
   } catch (error) {
     console.error('Node synthesis failed:', error);
-    throw new Error(`Failed to synthesize node: ${error.message}`);
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('rate_limit_error') || error.message.includes('429')) {
+        throw new Error('Rate limit exceeded. Please try again in a few minutes.');
+      } else if (error.message.includes('Invalid JSON')) {
+        throw new Error('AI response format error. Please try again.');
+      } else {
+        throw new Error(`Failed to synthesize node: ${error.message}`);
+      }
+    } else {
+      throw new Error('Failed to synthesize node: Unknown error');
+    }
   }
 }
 
@@ -226,6 +278,83 @@ Return a JSON with fields:
   }
 }
 
+// Generate contextual tree name based on content
+export async function generateTreeName(chunks: string[]): Promise<string> {
+  const aiProvider = getAIProviderInstance();
+  
+  const prompt = `Based on the following research content, generate a concise, descriptive tree name (max 50 chars) that captures the main topic/workflow. Format: "[Topic] [Type]" (e.g., "RNA Sequencing Analysis Pipeline", "Protein Expression Study"):
+
+${chunks.slice(0, 3).join('\n\n')}
+
+Tree name:`;
+  
+  try {
+    const response = await aiProvider.generateText(prompt);
+    return response.trim() || 'Experiment Workflow';
+  } catch (error) {
+    console.error('Tree name generation failed:', error);
+    return 'Experiment Workflow';
+  }
+}
+
+// Generate topic-oriented node name
+export async function generateNodeName(content: string, context: string): Promise<string> {
+  const aiProvider = getAIProviderInstance();
+  
+  const prompt = `Generate a concise, topic-oriented name (max 40 chars) for this research step that serves as an umbrella term. Be specific and descriptive, avoid generic terms like "Overview" or "Introduction".
+
+Content: ${content.slice(0, 300)}
+Context: ${context}
+
+Node name (topic-oriented):`;
+  
+  try {
+    const response = await aiProvider.generateText(prompt);
+    return response.trim();
+  } catch (error) {
+    console.error('Node name generation failed:', error);
+    return 'Research Step';
+  }
+}
+
+// Format content properly with good grammar and presentation
+export async function formatNodeContent(rawContent: string): Promise<string> {
+  const aiProvider = getAIProviderInstance();
+  
+  const prompt = `Format this research content into well-structured, readable text with proper grammar, paragraphs, and presentation. Make it natural and professional:
+
+${rawContent}
+
+Formatted content:`;
+  
+  try {
+    const response = await aiProvider.generateText(prompt);
+    return response.trim();
+  } catch (error) {
+    console.error('Content formatting failed:', error);
+    return rawContent; // Return original if formatting fails
+  }
+}
+
+// Generate brief summary for description
+export async function generateBriefSummary(content: string): Promise<string> {
+  const aiProvider = getAIProviderInstance();
+  
+  const prompt = `Create a single-sentence summary (max 100 chars) of this content:
+
+${content.slice(0, 500)}
+
+Summary:`;
+  
+  try {
+    const response = await aiProvider.generateText(prompt);
+    return response.trim();
+  } catch (error) {
+    console.error('Summary generation failed:', error);
+    return 'Research protocol step';
+  }
+}
+
 // Calculate confidence score based on heuristics
 export function calculateConfidence(node: SynthesizedNode): number {
   let confidence = 0.5; // Base confidence
@@ -245,7 +374,7 @@ export function calculateConfidence(node: SynthesizedNode): number {
   }
 
   // Decrease confidence if node needs verification
-  if (node.metadata.needs_verification) {
+  if ((node.metadata as any).needs_verification) {
     confidence -= 0.2;
   }
 

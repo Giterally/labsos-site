@@ -20,10 +20,12 @@ export async function clusterChunks(
   projectId: string,
   options: ClusteringOptions = {}
 ): Promise<ClusterResult[]> {
+  // Adjust parameters based on embedding type
+  const isOpenAI = process.env.OPENAI_API_KEY;
   const {
-    minClusterSize = 2,
-    maxClusterSize = 10,
-    similarityThreshold = 0.7,
+    minClusterSize = 1, // Allow single-chunk nodes
+    maxClusterSize = isOpenAI ? 15 : 10, // Larger clusters for OpenAI embeddings
+    similarityThreshold = isOpenAI ? 0.5 : 0.3, // Higher threshold for OpenAI embeddings
     maxClusters = 20,
   } = options;
 
@@ -75,6 +77,7 @@ function performClustering(
   options: ClusteringOptions
 ): ClusterResult[] {
   const { minClusterSize, maxClusterSize, similarityThreshold, maxClusters } = options;
+  const isOpenAI = process.env.OPENAI_API_KEY;
   
   // Start with each embedding as its own cluster
   let clusters: Array<{
@@ -89,26 +92,33 @@ function performClustering(
     embeddings: [emb],
   }));
 
+  console.log(`[CLUSTERING] Starting with ${clusters.length} individual clusters`);
+  console.log(`[CLUSTERING] Parameters: similarityThreshold=${similarityThreshold}, minClusterSize=${minClusterSize}, maxClusters=${maxClusters}, embeddingType=${isOpenAI ? 'OpenAI' : 'Claude'}`);
+
   // Merge clusters until we can't find similar enough pairs
-  while (clusters.length > 1 && clusters.length > maxClusters) {
+  while (clusters.length > 1 && clusters.length > (maxClusters || 20)) {
     let bestMerge = null;
     let bestSimilarity = 0;
+    let maxSimilarityFound = 0;
 
     // Find the most similar pair of clusters
     for (let i = 0; i < clusters.length; i++) {
       for (let j = i + 1; j < clusters.length; j++) {
         const similarity = cosineSimilarity(clusters[i].centroid, clusters[j].centroid);
+        maxSimilarityFound = Math.max(maxSimilarityFound, similarity);
         
-        if (similarity > bestSimilarity && similarity >= similarityThreshold) {
+        if (similarity > bestSimilarity && similarity >= (similarityThreshold || 0.3)) {
           // Check if merge would exceed max cluster size
           const mergedSize = clusters[i].chunkIds.length + clusters[j].chunkIds.length;
-          if (mergedSize <= maxClusterSize) {
+          if (mergedSize <= (maxClusterSize || 10)) {
             bestSimilarity = similarity;
             bestMerge = { i, j, similarity };
           }
         }
       }
     }
+
+    console.log(`[CLUSTERING] Max similarity found: ${maxSimilarityFound.toFixed(3)}, threshold: ${similarityThreshold}`);
 
     if (!bestMerge) {
       break; // No more merges possible
@@ -139,7 +149,10 @@ function performClustering(
   }
 
   // Filter out clusters that are too small
-  const validClusters = clusters.filter(cluster => cluster.chunkIds.length >= minClusterSize);
+  const validClusters = clusters.filter(cluster => cluster.chunkIds.length >= (minClusterSize || 1));
+
+  console.log(`[CLUSTERING] Final results: ${clusters.length} total clusters, ${validClusters.length} valid clusters (size >= ${minClusterSize})`);
+  console.log(`[CLUSTERING] Cluster sizes: ${validClusters.map(c => c.chunkIds.length).join(', ')}`);
 
   // Convert to ClusterResult format
   return validClusters.map(cluster => ({
@@ -261,5 +274,11 @@ export async function getClusterChunks(
     throw new Error(`Failed to fetch cluster chunks: ${chunksError.message}`);
   }
 
-  return chunks || [];
+  return (chunks || []).map(chunk => ({
+    id: chunk.id,
+    text: chunk.text,
+    sourceType: chunk.source_type,
+    sourceRef: chunk.source_ref,
+    metadata: chunk.metadata,
+  }));
 }
