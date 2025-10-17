@@ -94,7 +94,11 @@ export class ClaudeProvider implements AIProvider {
     return Math.abs(hash);
   }
 
-  private async retryWithBackoff<T>(operation: () => Promise<T>, maxRetries: number = 3): Promise<T> {
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+  ): Promise<T> {
     let lastError: Error;
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -102,22 +106,41 @@ export class ClaudeProvider implements AIProvider {
         return await operation();
       } catch (error: any) {
         lastError = error;
+        const isLastAttempt = attempt === maxRetries;
         
-        // Check if it's a rate limit error
-        if (error.status === 429 || error.message?.includes('rate_limit_error')) {
-          const retryAfter = error.headers?.['retry-after'] || Math.pow(2, attempt);
-          const delay = parseInt(retryAfter) * 1000; // Convert to milliseconds
-          
-          console.log(`Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
-          
-          if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, delay));
-            continue;
-          }
+        // Determine if error is retryable
+        const isRateLimitError = error.status === 429 || error.message?.includes('rate_limit_error');
+        const isServiceError = error.status === 503 || error.message?.includes('service unavailable');
+        const isNetworkError = error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.message?.includes('network');
+        const isRetryable = isRateLimitError || isServiceError || isNetworkError;
+        
+        // Log error details
+        console.error(`[AI_PROVIDER] Error on attempt ${attempt + 1}/${maxRetries + 1}:`, {
+          status: error.status,
+          code: error.code,
+          message: error.message,
+          retryable: isRetryable,
+        });
+        
+        // If not retryable or last attempt, throw immediately
+        if (!isRetryable || isLastAttempt) {
+          throw error;
         }
         
-        // For non-rate-limit errors, don't retry
-        throw error;
+        // Calculate delay with exponential backoff
+        let delay: number;
+        if (isRateLimitError && error.headers?.['retry-after']) {
+          // Use server-provided retry-after if available
+          delay = parseInt(error.headers['retry-after']) * 1000;
+        } else {
+          // Exponential backoff: 1s, 2s, 4s, 8s...
+          delay = baseDelay * Math.pow(2, attempt);
+          // Add jitter to prevent thundering herd
+          delay += Math.random() * 1000;
+        }
+        
+        console.log(`[AI_PROVIDER] Retrying after ${(delay / 1000).toFixed(1)}s (attempt ${attempt + 2}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
     

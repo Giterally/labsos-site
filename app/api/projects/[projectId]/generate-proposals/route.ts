@@ -72,13 +72,16 @@ export async function POST(
     console.log(`[GENERATE PROPOSALS] Starting proposal generation for project: ${resolvedProjectId}`);
     console.log(`[GENERATE PROPOSALS] Found ${completedSources.length} completed sources`);
 
+    // Generate jobId for progress tracking
+    const jobId = `proposals_${resolvedProjectId}_${Date.now()}`;
+
     // Generate proposals using the AI synthesis pipeline with timeout
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('Proposal generation timed out after 15 minutes')), 15 * 60 * 1000);
     });
 
     const result = await Promise.race([
-      generateProposals(resolvedProjectId),
+      generateProposals(resolvedProjectId, jobId),
       timeoutPromise
     ]) as any;
 
@@ -88,6 +91,7 @@ export async function POST(
       success: true,
       nodesGenerated: result.nodesGenerated,
       clustersGenerated: result.clustersGenerated,
+      jobId: result.jobId,
       message: `Successfully generated ${result.nodesGenerated} proposed nodes from ${result.clustersGenerated} clusters`
     });
 

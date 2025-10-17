@@ -559,70 +559,118 @@ export async function POST(
         return aIndex - bIndex;
       });
       
-      for (const proposal of sortedProposals) {
-        const blockId = nodeBlockMapping.get(proposal.id);
-        const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
+      // Helper: chunk array into batches for parallel processing
+      const chunk = <T,>(arr: T[], size: number): T[][] => {
+        return Array.from({ length: Math.ceil(arr.length / size) }, (_, i) =>
+          arr.slice(i * size, i * size + size)
+        );
+      };
+
+      // Process nodes in batches of 10 for parallel AI calls (10x speedup)
+      const BATCH_SIZE = 10;
+      const nodeBatches = chunk(sortedProposals, BATCH_SIZE);
+      
+      console.log(`Processing ${sortedProposals.length} nodes in ${nodeBatches.length} batches of ${BATCH_SIZE}`);
+      
+      for (let batchIndex = 0; batchIndex < nodeBatches.length; batchIndex++) {
+        const batch = nodeBatches[batchIndex];
+        console.log(`Processing batch ${batchIndex + 1}/${nodeBatches.length} (${batch.length} nodes)`);
         
-        if (!actualBlockId) {
-          console.warn(`No block found for proposal ${proposal.id}, skipping`);
-          continue;
-        }
+        // Process entire batch in parallel
+        const batchResults = await Promise.all(
+          batch.map(async (proposal) => {
+            const blockId = nodeBlockMapping.get(proposal.id);
+            const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
+            
+            if (!actualBlockId) {
+              console.warn(`No block found for proposal ${proposal.id}, skipping`);
+              return null;
+            }
+            
+            // Get the raw content
+            const rawContent = proposal.node_json?.content?.text || proposal.node_json?.title || '';
+            const rawTitle = proposal.node_json?.title || proposal.node_json?.name || 'Untitled Node';
+            
+            // Format content and generate summary
+            let formattedContent = rawContent;
+            let briefSummary = proposal.node_json?.short_summary || proposal.node_json?.description || '';
+            
+            try {
+              // Run both AI calls in parallel for each node (2x speedup per node)
+              const [formatted, summary] = await Promise.all([
+                // Format the content for better presentation
+                (rawContent && rawContent.length > 0) 
+                  ? formatNodeContent(rawContent).catch(err => {
+                      console.error('Format error:', err.message);
+                      return rawContent;
+                    })
+                  : rawContent,
+                // Generate brief summary if not available or too long
+                ((!briefSummary || briefSummary.length > 100) && (rawContent || rawTitle))
+                  ? generateBriefSummary(rawContent || rawTitle).catch(err => {
+                      console.error('Summary error:', err.message);
+                      return briefSummary;
+                    })
+                  : briefSummary
+              ]);
+              
+              formattedContent = formatted;
+              briefSummary = summary;
+            } catch (error: any) {
+              console.error('Failed to format node content:', error);
+              // Use original content if formatting fails
+              if (error.message?.includes('rate_limit_error') || error.status === 429) {
+                console.log('Skipping content formatting due to rate limits, using original content');
+              }
+            }
+            
+            // Map node types to valid database values
+            const rawNodeType = proposal.node_json?.metadata?.node_type?.toLowerCase() || 'protocol';
+            const validNodeTypes = ['protocol', 'data_creation', 'analysis', 'results'];
+            let mappedNodeType = rawNodeType;
+            
+            // Handle common mappings
+            if (rawNodeType === 'result') {
+              mappedNodeType = 'results';
+            } else if (rawNodeType === 'data') {
+              mappedNodeType = 'data_creation';
+            } else if (!validNodeTypes.includes(rawNodeType)) {
+              // Default to protocol for unknown types
+              mappedNodeType = 'protocol';
+            }
+            
+            return {
+              proposal,
+              actualBlockId,
+              rawTitle,
+              briefSummary,
+              mappedNodeType,
+            };
+          })
+        );
         
-        // Get the raw content
-        const rawContent = proposal.node_json?.content?.text || proposal.node_json?.title || '';
-        const rawTitle = proposal.node_json?.title || proposal.node_json?.name || 'Untitled Node';
-        
-        // Format content and generate summary
-        let formattedContent = rawContent;
-        let briefSummary = proposal.node_json?.short_summary || proposal.node_json?.description || '';
-        
-        try {
-          // Format the content for better presentation (skip if rate limited)
-          if (rawContent && rawContent.length > 0) {
-            formattedContent = await formatNodeContent(rawContent);
-          }
+        // Filter out failed nodes and assign positions sequentially within each block
+        const validResults = batchResults.filter(Boolean);
+        validResults.forEach(result => {
+          if (!result) return;
           
-          // Generate brief summary if not available or too long (skip if rate limited)
-          if ((!briefSummary || briefSummary.length > 100) && (formattedContent || rawTitle)) {
-            briefSummary = await generateBriefSummary(formattedContent || rawTitle);
-          }
-        } catch (error: any) {
-          console.error('Failed to format node content:', error);
-          // Use original content if formatting fails due to rate limits or other issues
-          if (error.message?.includes('rate_limit_error') || error.status === 429) {
-            console.log('Skipping content formatting due to rate limits, using original content');
-          }
-        }
-        
-        // Get the current position for this block and increment it
-        const currentPosition = blockPositionCounters.get(actualBlockId) || 0;
-        blockPositionCounters.set(actualBlockId, currentPosition + 1);
-        
-        // Map node types to valid database values
-        const rawNodeType = proposal.node_json?.metadata?.node_type?.toLowerCase() || 'protocol';
-        const validNodeTypes = ['protocol', 'data_creation', 'analysis', 'results'];
-        let mappedNodeType = rawNodeType;
-        
-        // Handle common mappings
-        if (rawNodeType === 'result') {
-          mappedNodeType = 'results';
-        } else if (rawNodeType === 'data') {
-          mappedNodeType = 'data_creation';
-        } else if (!validNodeTypes.includes(rawNodeType)) {
-          // Default to protocol for unknown types
-          mappedNodeType = 'protocol';
-        }
-        
-        treeNodes.push({
-          tree_id: experimentTreeId,
-          block_id: actualBlockId,
-          name: rawTitle,
-          description: briefSummary,
-          node_type: mappedNodeType,
-          position: currentPosition, // Sequential position within the block
-          provenance: proposal.provenance,
-          confidence: proposal.confidence,
+          // Get the current position for this block and increment it
+          const currentPosition = blockPositionCounters.get(result.actualBlockId) || 0;
+          blockPositionCounters.set(result.actualBlockId, currentPosition + 1);
+          
+          treeNodes.push({
+            tree_id: experimentTreeId,
+            block_id: result.actualBlockId,
+            name: result.rawTitle,
+            description: result.briefSummary,
+            node_type: result.mappedNodeType,
+            position: currentPosition,
+            provenance: result.proposal.provenance,
+            confidence: result.proposal.confidence,
+          });
         });
+        
+        console.log(`Completed batch ${batchIndex + 1}/${nodeBatches.length}, processed ${validResults.length} nodes`);
       }
 
       console.log('Creating tree nodes:', treeNodes.length, 'nodes');

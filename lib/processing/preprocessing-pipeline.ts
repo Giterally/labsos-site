@@ -160,27 +160,38 @@ export async function preprocessFile(sourceId: string, projectId: string) {
       };
 
     } catch (error: any) {
+      const currentStage = error.message?.includes('download') ? 'download' 
+        : error.message?.includes('chunk') ? 'chunk'
+        : error.message?.includes('embed') ? 'embed'
+        : error.message?.includes('store') ? 'store'
+        : 'unknown';
+      
       console.error(`[PREPROCESSING] ✗ Error preprocessing source ${sourceId}:`, error);
       console.error(`[PREPROCESSING] Error details:`, {
+        stage: currentStage,
+        sourceName: source.source_name,
         message: error.message,
-        stack: error.stack?.split('\n').slice(0, 3).join('\n'),
+        stack: error.stack?.split('\n').slice(0, 5).join('\n'),
       });
 
-      // Update source status to failed - ensure this always happens
+      // Update source status to failed with actionable error message
       try {
         const processingTime = ((Date.now() - startTime) / 1000).toFixed(2);
-        const errorMessage = error.message || 'Unknown error occurred during preprocessing';
+        const baseErrorMessage = error.message || 'Unknown error occurred during preprocessing';
+        const actionableAdvice = getActionableAdvice(currentStage, error);
+        const fullErrorMessage = `${baseErrorMessage}${actionableAdvice ? ' ' + actionableAdvice : ''}`;
         
         const { error: updateError } = await supabaseServer
           .from('ingestion_sources')
           .update({ 
             status: 'failed', 
-            error_message: errorMessage,
+            error_message: fullErrorMessage,
             updated_at: new Date().toISOString(),
             metadata: {
               failedAt: new Date().toISOString(),
               processingTimeSeconds: parseFloat(processingTime),
               errorType: error.name || 'Error',
+              errorStage: currentStage,
             }
           })
           .eq('id', sourceId);
@@ -188,7 +199,7 @@ export async function preprocessFile(sourceId: string, projectId: string) {
         if (updateError) {
           console.error('[PREPROCESSING] Failed to update status to failed:', updateError);
         } else {
-          console.log(`[PREPROCESSING] Updated source ${sourceId} status to failed`);
+          console.log(`[PREPROCESSING] Updated source ${sourceId} status to failed with actionable message`);
         }
       } catch (statusUpdateError) {
         console.error('[PREPROCESSING] Critical error updating status to failed:', statusUpdateError);
@@ -222,5 +233,61 @@ export async function preprocessFile(sourceId: string, projectId: string) {
     }
     
     throw error;
+  }
+}
+
+/**
+ * Provides actionable advice based on the error stage and type
+ */
+function getActionableAdvice(stage: string, error: Error): string {
+  const errorMessage = error.message.toLowerCase();
+  
+  // Dimension mismatch error
+  if (stage === 'embed' && errorMessage.includes('dimensions')) {
+    return 'Server restart required to clear webpack cache. Run: rm -rf .next && restart dev server.';
+  }
+  
+  // File not found errors
+  if (stage === 'download' && (errorMessage.includes('not found') || errorMessage.includes('does not exist'))) {
+    return 'File may have been deleted from storage. Please re-upload the file.';
+  }
+  
+  // Rate limit errors
+  if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
+    return 'API rate limit exceeded. Please wait 2-3 minutes before retrying.';
+  }
+  
+  // Network/connection errors
+  if (errorMessage.includes('econnreset') || errorMessage.includes('network') || errorMessage.includes('timeout')) {
+    return 'Network connection issue. Please check your internet and retry.';
+  }
+  
+  // API key errors
+  if (errorMessage.includes('api key') || errorMessage.includes('unauthorized') || errorMessage.includes('401')) {
+    return 'Invalid or missing API key. Please check your .env.local configuration.';
+  }
+  
+  // Storage/database errors
+  if (stage === 'store' && (errorMessage.includes('database') || errorMessage.includes('postgres'))) {
+    return 'Database connection issue. Please verify Supabase configuration.';
+  }
+  
+  // Encoding errors
+  if (stage === 'chunk' && (errorMessage.includes('encoding') || errorMessage.includes('utf'))) {
+    return 'File encoding not supported. Please save the file as UTF-8 and re-upload.';
+  }
+  
+  // Generic advice based on stage
+  switch (stage) {
+    case 'download':
+      return 'Check that the file exists in storage and is accessible.';
+    case 'chunk':
+      return 'The file may be corrupted or in an unsupported format.';
+    case 'embed':
+      return 'AI embedding service may be unavailable. Please try again later.';
+    case 'store':
+      return 'Database may be temporarily unavailable. Please try again later.';
+    default:
+      return 'Please check the logs for more details or contact support.';
   }
 }

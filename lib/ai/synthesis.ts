@@ -1,6 +1,7 @@
 import { getAIProviderInstance } from './provider';
 import { supabaseServer } from '../supabase-server';
 import { NODE_SYNTHESIS_PROMPT as NODE_SYNTHESIS_PROMPT_CONFIG } from './prompts/node-synthesis';
+import { validateAndFixNode } from './schemas';
 
 export interface NodeSynthesisInput {
   chunks: Array<{
@@ -151,9 +152,19 @@ export async function synthesizeNode(input: NodeSynthesisInput): Promise<Synthes
   }
 
   try {
-    const result = await aiProvider.generateJSON(systemPrompt, finalUserPrompt);
+    const rawResult = await aiProvider.generateJSON(systemPrompt, finalUserPrompt);
     
-    // Validate the result structure
+    // Validate and potentially fix the AI output using Zod schemas
+    let result;
+    try {
+      result = validateAndFixNode(rawResult);
+      console.log('[SYNTHESIS] Schema validation passed');
+    } catch (validationError: any) {
+      console.error('[SYNTHESIS] Schema validation failed:', validationError.message);
+      throw new Error(`AI output validation failed: ${validationError.message}`);
+    }
+    
+    // Additional basic validation (redundant but kept for safety)
     if (!result.title || !result.content) {
       throw new Error('Invalid node structure returned from AI');
     }

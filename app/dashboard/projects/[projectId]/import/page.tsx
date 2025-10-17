@@ -100,6 +100,11 @@ export default function ImportPage() {
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [buildingTree, setBuildingTree] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
+  
+  // Progress tracking state
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [generationStatus, setGenerationStatus] = useState('');
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   // Define fetchData FIRST (before useEffect)
   const fetchData = useCallback(async () => {
@@ -551,6 +556,8 @@ export default function ImportPage() {
     setGeneratingProposals(true);
     setError(null);
     setSuccess(null);
+    setGenerationProgress(0);
+    setGenerationStatus('Initializing...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -560,6 +567,7 @@ export default function ImportPage() {
 
       // First, clear existing proposals if any
       if (proposals.length > 0) {
+        setGenerationStatus('Clearing existing proposals...');
         const deleteResponse = await fetch(`/api/projects/${projectId}/proposals`, {
           method: 'DELETE',
           headers: {
@@ -575,7 +583,9 @@ export default function ImportPage() {
         }
       }
 
-      // Then generate new proposals
+      setGenerationStatus('Starting AI proposal generation...');
+
+      // Then generate new proposals (starts async process)
       const response = await fetch(`/api/projects/${projectId}/generate-proposals`, {
         method: 'POST',
         headers: {
@@ -590,23 +600,78 @@ export default function ImportPage() {
       }
 
       const result = await response.json();
-      console.log('[GENERATE] Proposals generated successfully:', result);
+      const jobId = result.jobId;
+      setCurrentJobId(jobId);
+      
+      console.log('[GENERATE] Proposals generation started with jobId:', jobId);
+
+      // Poll for real progress
+      const progressInterval = setInterval(async () => {
+        try {
+          const progressRes = await fetch(`/api/projects/${projectId}/progress/${jobId}`, {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          });
+          
+          if (progressRes.ok) {
+            const progress = await progressRes.json();
+            
+            // Calculate percentage
+            const percentage = progress.total > 0 
+              ? Math.round((progress.current / progress.total) * 100) 
+              : 0;
+            
+            setGenerationProgress(percentage);
+            setGenerationStatus(progress.message || 'Processing...');
+            
+            // Check if complete
+            if (progress.stage === 'complete') {
+              clearInterval(progressInterval);
       
       // Refresh data to show new proposals
-      console.log('[GENERATE] Fetching updated proposals...');
+              console.log('[GENERATE] Generation complete, fetching updated proposals...');
       await fetchData();
-      console.log('[GENERATE] Data fetched, proposals count:', proposals.length);
+              console.log('[GENERATE] Data fetched, proposals count:', proposals.length);
       
       // Switch to proposals tab to show the results
       setActiveTab('proposals');
-      
-      // Show success message
-      setSuccess(`Generated ${result.nodesGenerated} proposed nodes from ${result.clustersGenerated} clusters`);
+              
+              // Show success message
+              setSuccess(`Generated ${result.nodesGenerated} proposed nodes from ${result.clustersGenerated} clusters`);
+              
+              // Reset progress
+              setGenerationProgress(0);
+              setGenerationStatus('');
+              setCurrentJobId(null);
+              setGeneratingProposals(false);
+            } else if (progress.stage === 'error') {
+              clearInterval(progressInterval);
+              throw new Error(progress.message || 'Generation failed');
+            }
+          }
+        } catch (pollError) {
+          console.error('Progress poll error:', pollError);
+        }
+      }, 1000); // Poll every second
+
+      // Safety timeout - clear interval after 20 minutes
+      setTimeout(() => {
+        clearInterval(progressInterval);
+        if (generatingProposals) {
+          setGeneratingProposals(false);
+          setError('Generation timed out. Please check the proposals tab to see if any nodes were generated.');
+        }
+      }, 20 * 60 * 1000);
+
     } catch (error: any) {
       console.error('Generate proposals error:', error);
       setError(error.message || 'Failed to generate proposals');
-    } finally {
       setGeneratingProposals(false);
+      setGenerationProgress(0);
+      setGenerationStatus('');
+      setCurrentJobId(null);
+    } finally {
       setShowRegenerateConfirm(false);
     }
   };
@@ -729,7 +794,7 @@ export default function ImportPage() {
       // Navigate to the created tree after brief delay
       if (result.treeId) {
         setTimeout(() => {
-          router.push(`/project/${projectId}/trees/${result.treeId}`);
+        router.push(`/project/${projectId}/trees/${result.treeId}`);
         }, 1500);
       }
     } catch (error: any) {
@@ -737,7 +802,7 @@ export default function ImportPage() {
       if (error.name === 'AbortError') {
         setError('Tree building timed out. The tree may still be creating in the background. Please check your project trees in a few minutes.');
       } else {
-        setError(error.message || 'Failed to build tree');
+      setError(error.message || 'Failed to build tree');
       }
     } finally {
       setBuildingTree(false);
@@ -1447,6 +1512,21 @@ export default function ImportPage() {
                     </div>
                   </div>
                   
+                  {/* Progress Bar for AI Generation */}
+                  {generatingProposals && generationStatus && (
+                    <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950 space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-blue-900 dark:text-blue-100">
+                          {generationStatus}
+                        </span>
+                        <span className="text-blue-600 dark:text-blue-400">
+                          {generationProgress}%
+                        </span>
+                      </div>
+                      <Progress value={generationProgress} className="h-2" />
+                    </div>
+                  )}
+                  
                   <div className="space-y-2">
                     {sources.map((source) => (
                       <div key={source.id} className="flex items-center justify-between p-3 border rounded-lg">
@@ -1543,8 +1623,8 @@ export default function ImportPage() {
                           </>
                         ) : (
                           <>
-                            <ArrowRight className="h-4 w-4 mr-2" />
-                            Build Tree ({selectedProposals.size})
+                        <ArrowRight className="h-4 w-4 mr-2" />
+                        Build Tree ({selectedProposals.size})
                           </>
                         )}
                       </Button>

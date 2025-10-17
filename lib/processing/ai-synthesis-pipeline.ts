@@ -2,8 +2,19 @@ import { supabaseServer } from '../supabase-server';
 import { clusterChunks, storeClusteringResults } from '../ai/clustering';
 import { synthesizeNode, storeSynthesizedNode, calculateConfidence } from '../ai/synthesis';
 import { detectDuplicates, mergeNodes } from '../ai/deduplication';
+import { progressTracker } from '../progress-tracker';
 
-export async function generateProposals(projectId: string) {
+export async function generateProposals(projectId: string, jobId?: string) {
+  // Generate jobId if not provided
+  const trackingJobId = jobId || `proposals_${projectId}_${Date.now()}`;
+  
+  // Initialize progress
+  progressTracker.update(trackingJobId, {
+    stage: 'initializing',
+    current: 0,
+    total: 4,
+    message: 'Initializing proposal generation...',
+  });
   try {
     console.log(`[AI SYNTHESIS] Starting proposal generation for project: ${projectId}`);
 
@@ -33,6 +44,13 @@ export async function generateProposals(projectId: string) {
     console.log(`[AI SYNTHESIS] Found ${chunks.length} preprocessed chunks`);
 
     // Step 1: Cluster chunks
+    progressTracker.update(trackingJobId, {
+      stage: 'clustering',
+      current: 1,
+      total: 4,
+      message: `Clustering ${chunks.length} chunks...`,
+    });
+    
     console.log(`[AI SYNTHESIS] Clustering chunks`);
     const clusters = await clusterChunks(projectId, {
       minClusterSize: 1, // Allow single-chunk nodes for hash-based embeddings
@@ -45,8 +63,17 @@ export async function generateProposals(projectId: string) {
     console.log(`[AI SYNTHESIS] Generated ${clusters.length} clusters`);
 
     // Step 2: Synthesize nodes from clusters
+    const totalItemsToSynthesize = clusters.length + (chunks.length === 1 && clusters.length === 0 ? 1 : 0);
+    progressTracker.update(trackingJobId, {
+      stage: 'synthesizing',
+      current: 0,
+      total: totalItemsToSynthesize || 1,
+      message: `Synthesizing nodes from ${clusters.length} clusters...`,
+    });
+    
     console.log(`[AI SYNTHESIS] Synthesizing nodes`);
     const proposedNodes = [];
+    let synthesizedCount = 0;
 
     // Handle single chunks that didn't get clustered
     if (chunks.length === 1 && clusters.length === 0) {
@@ -94,6 +121,14 @@ export async function generateProposals(projectId: string) {
         'proposed'
       );
       proposedNodes.push({ nodeId, confidence });
+      synthesizedCount++;
+
+      progressTracker.update(trackingJobId, {
+        stage: 'synthesizing',
+        current: synthesizedCount,
+        total: totalItemsToSynthesize || 1,
+        message: `Synthesized ${synthesizedCount}/${totalItemsToSynthesize} nodes...`,
+      });
 
       console.log(`[AI SYNTHESIS] Synthesized single-chunk node ${nodeId} with confidence ${confidence}`);
     }
@@ -153,6 +188,14 @@ export async function generateProposals(projectId: string) {
         'proposed'
       );
       proposedNodes.push({ nodeId, confidence });
+      synthesizedCount++;
+
+      progressTracker.update(trackingJobId, {
+        stage: 'synthesizing',
+        current: synthesizedCount,
+        total: totalItemsToSynthesize || 1,
+        message: `Synthesized ${synthesizedCount}/${totalItemsToSynthesize} nodes...`,
+      });
 
       console.log(`[AI SYNTHESIS] Synthesized node ${nodeId} with confidence ${confidence}`);
     }
@@ -255,6 +298,13 @@ export async function generateProposals(projectId: string) {
     console.log(`[AI SYNTHESIS] Generated ${proposedNodes.length} proposed nodes`);
 
     // Step 4: Deduplication pass
+    progressTracker.update(trackingJobId, {
+      stage: 'deduplicating',
+      current: 3,
+      total: 4,
+      message: `Detecting and merging duplicate nodes...`,
+    });
+    
     console.log(`[AI SYNTHESIS] Running deduplication pass...`);
     
     if (proposedNodes.length > 1) {
@@ -361,16 +411,24 @@ export async function generateProposals(projectId: string) {
     const finalCount = finalNodes?.length || proposedNodes.length;
     console.log(`[AI SYNTHESIS] Final node count after deduplication: ${finalCount}`);
 
+    // Mark as complete
+    progressTracker.complete(trackingJobId, `Generated ${finalCount} nodes successfully`);
+
     return {
       success: true,
       clustersGenerated: clusters.length,
       nodesGenerated: finalCount,
       proposedNodes: proposedNodes,
       duplicatesRemoved: proposedNodes.length - finalCount,
+      jobId: trackingJobId,
     };
 
   } catch (error: any) {
     console.error(`[AI SYNTHESIS] Error generating proposals for project ${projectId}:`, error);
+    
+    // Mark as error
+    progressTracker.error(trackingJobId, error.message || 'Failed to generate proposals');
+    
     throw error;
   }
 }
