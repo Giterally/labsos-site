@@ -3,72 +3,139 @@ import { clusterChunks, storeClusteringResults } from '../ai/clustering';
 import { synthesizeNode, storeSynthesizedNode, calculateConfidence } from '../ai/synthesis';
 import { detectDuplicates, mergeNodes } from '../ai/deduplication';
 import { progressTracker } from '../progress-tracker';
+import { generateWorkflowOutline, type WorkflowOutline, summarizeOutline, getDependencySections } from '../ai/planning-agent';
+import { retrieveContextForSynthesis, checkDuplication } from '../ai/rag-retriever';
 
 export async function generateProposals(projectId: string, jobId?: string) {
   // Generate jobId if not provided
   const trackingJobId = jobId || `proposals_${projectId}_${Date.now()}`;
   
   // Initialize progress
-  progressTracker.update(trackingJobId, {
+  await progressTracker.updateWithPersistence(trackingJobId, {
     stage: 'initializing',
     current: 0,
-    total: 4,
+    total: 100,
     message: 'Initializing proposal generation...',
   });
   try {
     console.log(`[AI SYNTHESIS] Starting proposal generation for project: ${projectId}`);
 
-    // Clear ALL existing proposals to prevent duplicates and invalid node types
-    console.log(`[AI SYNTHESIS] Clearing ALL existing proposals for project: ${projectId}`);
-    const { error: deleteError } = await supabaseServer
-      .from('proposed_nodes')
-      .delete()
-      .eq('project_id', projectId);
-
-    if (deleteError) {
-      console.warn(`[AI SYNTHESIS] Warning: Failed to clear existing proposals: ${deleteError.message}`);
-    } else {
-      console.log(`[AI SYNTHESIS] Successfully cleared existing proposals`);
-    }
+    // NOTE: Do NOT clear existing proposals upfront.
+    // We will generate new proposals first and only delete older ones after success.
 
     // Get all preprocessed chunks for the project
-    const { data: chunks, error: chunksError } = await supabaseServer
-      .from('chunks')
-      .select('id, text, source_type, source_ref, metadata, embedding')
-      .eq('project_id', projectId);
+    let chunks;
+    try {
+      const { data: chunksData, error: chunksError } = await supabaseServer
+        .from('chunks')
+        .select('id, text, source_type, source_ref, metadata, embedding')
+        .eq('project_id', projectId);
 
-    if (chunksError || !chunks || chunks.length === 0) {
-      throw new Error(`No preprocessed chunks found for project: ${chunksError?.message}`);
+      if (chunksError) {
+        throw new Error(`Database error fetching chunks: ${chunksError.message}`);
+      }
+
+      if (!chunksData || chunksData.length === 0) {
+        throw new Error('No preprocessed chunks found for project. Please ensure files have been uploaded and processed successfully.');
+      }
+
+      // Validate embeddings exist
+      const chunksWithoutEmbeddings = chunksData.filter(c => !c.embedding);
+      if (chunksWithoutEmbeddings.length > 0) {
+        console.warn(`[AI SYNTHESIS] Warning: ${chunksWithoutEmbeddings.length}/${chunksData.length} chunks missing embeddings`);
+      }
+
+      chunks = chunksData;
+      console.log(`[AI SYNTHESIS] Found ${chunks.length} preprocessed chunks (${chunks.length - chunksWithoutEmbeddings.length} with embeddings)`);
+    } catch (error: any) {
+      await progressTracker.errorWithPersistence(trackingJobId, `Failed to fetch chunks: ${error.message}`);
+      throw error;
     }
 
-    console.log(`[AI SYNTHESIS] Found ${chunks.length} preprocessed chunks`);
+    // Step 0: Generate workflow outline using Planning Agent
+    let workflowOutline: WorkflowOutline | null = null;
+    try {
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'initializing',
+        current: 5,
+        total: 100,
+        message: 'Analyzing document structure with Planning Agent...',
+      });
+      
+      console.log(`[AI SYNTHESIS] Generating workflow outline with Planning Agent...`);
+      workflowOutline = await generateWorkflowOutline(projectId);
+      
+      console.log(`[AI SYNTHESIS] Planning Agent generated outline:`);
+      console.log(summarizeOutline(workflowOutline));
+      
+      // Store outline in project metadata for user review
+      await supabaseServer
+        .from('projects')
+        .update({
+          metadata: {
+            workflowOutline,
+            outlineGeneratedAt: new Date().toISOString(),
+          }
+        })
+        .eq('id', projectId);
+      
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'initializing',
+        current: 10,
+        total: 100,
+        message: `Outline complete: ${workflowOutline.phases.length} phases, ~${workflowOutline.estimatedNodes} nodes`,
+      });
+    } catch (planningError: any) {
+      console.error('[AI SYNTHESIS] Planning Agent failed, continuing without outline:', planningError);
+      // Continue without outline - clustering will still work
+      workflowOutline = null;
+    }
 
     // Step 1: Cluster chunks
-    progressTracker.update(trackingJobId, {
-      stage: 'clustering',
-      current: 1,
-      total: 4,
-      message: `Clustering ${chunks.length} chunks...`,
-    });
-    
-    console.log(`[AI SYNTHESIS] Clustering chunks`);
-    const clusters = await clusterChunks(projectId, {
-      minClusterSize: 1, // Allow single-chunk nodes for hash-based embeddings
-      maxClusterSize: 10,
-      similarityThreshold: 0.3, // Lowered for hash-based embeddings
-      maxClusters: 20,
-    });
+    let clusters;
+    try {
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'clustering',
+        current: 15,
+        total: 100,
+        message: `Clustering ${chunks.length} chunks...`,
+      });
+      
+      console.log(`[AI SYNTHESIS] Clustering chunks`);
+      clusters = await clusterChunks(projectId, {
+        minClusterSize: 1, // Allow single-chunk nodes for hash-based embeddings
+        maxClusterSize: 10,
+        similarityThreshold: 0.3, // Lowered for hash-based embeddings
+        maxClusters: 20,
+      });
 
-    await storeClusteringResults(projectId, clusters);
-    console.log(`[AI SYNTHESIS] Generated ${clusters.length} clusters`);
+      await storeClusteringResults(projectId, clusters);
+      console.log(`[AI SYNTHESIS] Generated ${clusters.length} clusters`);
+    } catch (error: any) {
+      const errorMsg = `Clustering failed: ${error.message}`;
+      console.error(`[AI SYNTHESIS] ${errorMsg}`, error);
+      await progressTracker.errorWithPersistence(trackingJobId, errorMsg);
+      throw new Error(errorMsg);
+    }
 
-    // Step 2: Synthesize nodes from clusters
-    const totalItemsToSynthesize = clusters.length + (chunks.length === 1 && clusters.length === 0 ? 1 : 0);
-    progressTracker.update(trackingJobId, {
+    // Step 2: Synthesize nodes from clusters (and unclustered later)
+    // Pre-compute unclustered chunks to set an accurate total upfront
+    const clusteredChunkIds = new Set();
+    clusters.forEach(cluster => {
+      cluster.chunkIds.forEach(id => clusteredChunkIds.add(id));
+    });
+    const unclusteredChunksPre = chunks.filter(chunk => !clusteredChunkIds.has(chunk.id));
+
+    const totalItemsToSynthesize =
+      clusters.length +
+      (chunks.length === 1 && clusters.length === 0 ? 1 : 0) +
+      unclusteredChunksPre.length;
+
+    await progressTracker.updateWithPersistence(trackingJobId, {
       stage: 'synthesizing',
-      current: 0,
-      total: totalItemsToSynthesize || 1,
-      message: `Synthesizing nodes from ${clusters.length} clusters...`,
+      current: 20,
+      total: 100,
+      message: `Synthesizing nodes from ${clusters.length} clusters (0/${totalItemsToSynthesize})...`,
     });
     
     console.log(`[AI SYNTHESIS] Synthesizing nodes`);
@@ -123,11 +190,12 @@ export async function generateProposals(projectId: string, jobId?: string) {
       proposedNodes.push({ nodeId, confidence });
       synthesizedCount++;
 
-      progressTracker.update(trackingJobId, {
+      const progressPercent = Math.round(20 + (synthesizedCount / totalItemsToSynthesize) * 60);
+      await progressTracker.updateWithPersistence(trackingJobId, {
         stage: 'synthesizing',
-        current: synthesizedCount,
-        total: totalItemsToSynthesize || 1,
-        message: `Synthesized ${synthesizedCount}/${totalItemsToSynthesize} nodes...`,
+        current: progressPercent,
+        total: 100,
+        message: `Synthesizing nodes: ${synthesizedCount}/${totalItemsToSynthesize} complete...`,
       });
 
       console.log(`[AI SYNTHESIS] Synthesized single-chunk node ${nodeId} with confidence ${confidence}`);
@@ -135,77 +203,117 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
     // Process regular clusters
     for (const cluster of clusters) {
-      // Get chunks for this cluster
-      const { data: clusterChunks, error: chunksError } = await supabaseServer
-        .from('chunks')
-        .select('id, text, source_type, source_ref, metadata')
-        .eq('project_id', projectId)
-        .in('id', cluster.chunkIds);
+      try {
+        // Get chunks for this cluster
+        const { data: clusterChunks, error: chunksError } = await supabaseServer
+          .from('chunks')
+          .select('id, text, source_type, source_ref, metadata')
+          .eq('project_id', projectId)
+          .in('id', cluster.chunkIds);
 
-      if (chunksError || !clusterChunks) {
-        console.error(`Failed to fetch chunks for cluster ${cluster.clusterId}:`, chunksError);
-        continue;
+        if (chunksError || !clusterChunks) {
+          console.error(`[AI SYNTHESIS] Failed to fetch chunks for cluster ${cluster.clusterId}:`, chunksError);
+          continue;
+        }
+
+        // Get project context
+        const { data: project } = await supabaseServer
+          .from('projects')
+          .select('name, description')
+          .eq('id', projectId)
+          .single();
+
+        // Create cluster object for synthesis
+        const clusterObj = {
+          id: cluster.clusterId,
+          chunks: clusterChunks.map(chunk => ({
+            id: chunk.id,
+            text: chunk.text,
+            sourceType: chunk.source_type,
+            sourceRef: chunk.source_ref,
+            metadata: chunk.metadata,
+          })),
+          centroid: cluster.centroid,
+          size: cluster.size,
+          coherence: 1.0, // Default coherence for cluster objects
+        };
+
+        // Use RAG to retrieve additional context
+        let ragContext = null;
+        if (workflowOutline) {
+          try {
+            // Try to find matching section in outline
+            const clusterText = clusterObj.chunks.map(c => c.text).join(' ').substring(0, 500);
+            const matchingSection = workflowOutline.phases
+              .flatMap(p => p.sections)
+              .find(s => clusterText.toLowerCase().includes(s.title.toLowerCase().substring(0, 20)));
+            
+            if (matchingSection) {
+              console.log(`[AI SYNTHESIS] Retrieving RAG context for section: "${matchingSection.title}"`);
+              ragContext = await retrieveContextForSynthesis(
+                projectId,
+                clusterObj.chunks.map(c => c.id),
+                matchingSection,
+                { maxRelatedChunks: 8, maxDependencyChunks: 4 }
+              );
+              
+              // Check for duplication
+              const dupCheck = checkDuplication(matchingSection.title, ragContext.existingNodes);
+              if (dupCheck.isDuplicate) {
+                console.log(`[AI SYNTHESIS] Skipping duplicate node: "${matchingSection.title}" (${(dupCheck.similarity * 100).toFixed(0)}% similar to "${dupCheck.duplicateOf?.title}")`);
+                continue; // Skip this cluster, it's a duplicate
+              }
+            }
+          } catch (ragError: any) {
+            console.warn(`[AI SYNTHESIS] RAG retrieval failed, continuing without context:`, ragError.message);
+          }
+        }
+
+        // Synthesize node from chunks with RAG context
+        const synthesizedNode = await synthesizeNode({
+          chunks: clusterObj.chunks,
+          projectContext: project ? {
+            name: project.name,
+            description: project.description,
+          } : undefined,
+          retrievedContext: ragContext,
+        });
+
+        // Calculate confidence
+        const confidence = calculateConfidence(synthesizedNode);
+
+        // Store synthesized node
+        const nodeId = await storeSynthesizedNode(
+          projectId,
+          synthesizedNode,
+          'proposed'
+        );
+        proposedNodes.push({ nodeId, confidence });
+        synthesizedCount++;
+
+        const progressPercent = Math.round(20 + (synthesizedCount / totalItemsToSynthesize) * 60);
+        await progressTracker.updateWithPersistence(trackingJobId, {
+          stage: 'synthesizing',
+          current: progressPercent,
+          total: 100,
+          message: `Synthesized ${synthesizedCount}/${totalItemsToSynthesize} nodes...`,
+        });
+
+        console.log(`[AI SYNTHESIS] Synthesized node ${nodeId} with confidence ${confidence}`);
+      } catch (clusterError: any) {
+        console.error(`[AI SYNTHESIS] Failed to synthesize cluster ${cluster.clusterId}:`, clusterError);
+        // Continue with other clusters even if one fails
+        const progressPercent = Math.round(20 + (synthesizedCount / totalItemsToSynthesize) * 60);
+        await progressTracker.updateWithPersistence(trackingJobId, {
+          stage: 'synthesizing',
+          current: progressPercent,
+          total: 100,
+          message: `Warning: Failed to synthesize 1 cluster. Continuing... (${synthesizedCount}/${totalItemsToSynthesize})`,
+        });
       }
-
-      // Get project context
-      const { data: project } = await supabaseServer
-        .from('projects')
-        .select('name, description')
-        .eq('id', projectId)
-        .single();
-
-      // Create cluster object for synthesis
-      const clusterObj = {
-        id: cluster.clusterId,
-        chunks: clusterChunks.map(chunk => ({
-          id: chunk.id,
-          text: chunk.text,
-          sourceType: chunk.source_type,
-          sourceRef: chunk.source_ref,
-          metadata: chunk.metadata,
-        })),
-        centroid: cluster.centroid,
-        size: cluster.size,
-        coherence: cluster.coherence,
-      };
-
-      // Synthesize node from chunks
-      const synthesizedNode = await synthesizeNode({
-        chunks: clusterObj.chunks,
-        projectContext: project ? {
-          name: project.name,
-          description: project.description,
-        } : undefined,
-      });
-
-      // Calculate confidence
-      const confidence = calculateConfidence(synthesizedNode);
-
-      // Store synthesized node
-      const nodeId = await storeSynthesizedNode(
-        projectId,
-        synthesizedNode,
-        'proposed'
-      );
-      proposedNodes.push({ nodeId, confidence });
-      synthesizedCount++;
-
-      progressTracker.update(trackingJobId, {
-        stage: 'synthesizing',
-        current: synthesizedCount,
-        total: totalItemsToSynthesize || 1,
-        message: `Synthesized ${synthesizedCount}/${totalItemsToSynthesize} nodes...`,
-      });
-
-      console.log(`[AI SYNTHESIS] Synthesized node ${nodeId} with confidence ${confidence}`);
     }
 
     // Step 3: Handle unclustered chunks (fallback for hash-based embeddings)
-    const clusteredChunkIds = new Set();
-    clusters.forEach(cluster => {
-      cluster.chunkIds.forEach(id => clusteredChunkIds.add(id));
-    });
-
     const unclusteredChunks = chunks.filter(chunk => !clusteredChunkIds.has(chunk.id));
     
     if (unclusteredChunks.length > 0) {
@@ -273,6 +381,16 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
             console.log(`[AI SYNTHESIS] Synthesized unclustered chunk node ${nodeId} with confidence ${confidence}`);
             
+            // Update overall synthesized count and progress
+            synthesizedCount++;
+            const progressPercent = Math.round(20 + (synthesizedCount / totalItemsToSynthesize) * 60);
+            await progressTracker.updateWithPersistence(trackingJobId, {
+              stage: 'synthesizing',
+              current: progressPercent,
+              total: 100,
+              message: `Synthesized ${synthesizedCount}/${totalItemsToSynthesize} nodes...`,
+            });
+
             return { nodeId, confidence };
           } catch (error) {
             console.error(`[AI SYNTHESIS] Failed to process unclustered chunk ${chunk.id}:`, error);
@@ -298,10 +416,10 @@ export async function generateProposals(projectId: string, jobId?: string) {
     console.log(`[AI SYNTHESIS] Generated ${proposedNodes.length} proposed nodes`);
 
     // Step 4: Deduplication pass
-    progressTracker.update(trackingJobId, {
+    await progressTracker.updateWithPersistence(trackingJobId, {
       stage: 'deduplicating',
-      current: 3,
-      total: 4,
+      current: 85,
+      total: 100,
       message: `Detecting and merging duplicate nodes...`,
     });
     
@@ -401,18 +519,40 @@ export async function generateProposals(projectId: string, jobId?: string) {
       console.log(`[AI SYNTHESIS] Skipping deduplication (only ${proposedNodes.length} node)`);
     }
 
-    // Final count after deduplication
-    const { data: finalNodes } = await supabaseServer
-      .from('proposed_nodes')
-      .select('id')
-      .eq('project_id', projectId)
-      .eq('status', 'proposed');
+    // Finalize: keep only the proposals created in this run (safe regeneration)
+    const createdIds = proposedNodes.map(p => p.nodeId);
 
-    const finalCount = finalNodes?.length || proposedNodes.length;
-    console.log(`[AI SYNTHESIS] Final node count after deduplication: ${finalCount}`);
+    // Delete older proposals that are not part of this generation
+    if (createdIds.length > 0) {
+      // Fetch existing proposed IDs
+      const { data: existingProposed } = await supabaseServer
+        .from('proposed_nodes')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('status', 'proposed');
+
+      const idsToDelete = (existingProposed || [])
+        .map((r: any) => r.id)
+        .filter((id: string) => !createdIds.includes(id));
+
+      if (idsToDelete.length > 0) {
+        const { error: cleanupError } = await supabaseServer
+          .from('proposed_nodes')
+          .delete()
+          .in('id', idsToDelete);
+        if (cleanupError) {
+          console.warn('[AI SYNTHESIS] Cleanup of old proposals failed:', cleanupError);
+        } else {
+          console.log(`[AI SYNTHESIS] Removed ${idsToDelete.length} old proposals`);
+        }
+      }
+    }
+
+    const finalCount = createdIds.length;
+    console.log(`[AI SYNTHESIS] Final node count: ${finalCount}`);
 
     // Mark as complete
-    progressTracker.complete(trackingJobId, `Generated ${finalCount} nodes successfully`);
+    await progressTracker.completeWithPersistence(trackingJobId, `Generated ${finalCount} nodes successfully`);
 
     return {
       success: true,
@@ -427,7 +567,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
     console.error(`[AI SYNTHESIS] Error generating proposals for project ${projectId}:`, error);
     
     // Mark as error
-    progressTracker.error(trackingJobId, error.message || 'Failed to generate proposals');
+    await progressTracker.errorWithPersistence(trackingJobId, error.message || 'Failed to generate proposals');
     
     throw error;
   }

@@ -2,6 +2,10 @@ import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 
 // AI Provider abstraction for easy swapping between providers
+// 
+// ARCHITECTURE:
+// - OpenAI: Used exclusively for embeddings (text-embedding-3-small)
+// - Claude: Used for text generation, synthesis, planning, and JSON generation
 export interface AIProvider {
   generateEmbedding(text: string): Promise<number[]>;
   generateEmbeddings(texts: string[]): Promise<number[][]>;
@@ -163,24 +167,43 @@ export class ClaudeProvider implements AIProvider {
     return this.retryWithBackoff(async () => {
       const jsonPrompt = `${prompt}\n\nPlease respond with valid JSON${schema ? ` that matches this schema: ${JSON.stringify(schema, null, 2)}` : ''}. Do not include any markdown formatting or code blocks - just the raw JSON.`;
       
-      const response = await this.client.messages.create({
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 4096, // Increased from 2000 to prevent JSON truncation
-        temperature: 0.3, // Lower temperature for more consistent JSON
-        messages: [{ role: 'user', content: jsonPrompt }],
-      });
-      
-      let content = response.content[0].type === 'text' ? response.content[0].text : '{}';
-      
-      // Clean up the content to extract JSON
-      content = this.extractJSONFromResponse(content);
-      
       try {
-        return JSON.parse(content);
-      } catch (error) {
-        console.error('Failed to parse JSON response from Claude:', content);
-        console.error('Original response:', response.content[0]);
-        throw new Error('Invalid JSON response from Claude');
+        const response = await this.client.messages.create({
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 4096, // Increased from 2000 to prevent JSON truncation
+          temperature: 0.3, // Lower temperature for more consistent JSON
+          messages: [{ role: 'user', content: jsonPrompt }],
+        });
+        
+        let content = response.content[0].type === 'text' ? response.content[0].text : '{}';
+        
+        // Clean up the content to extract JSON
+        content = this.extractJSONFromResponse(content);
+        
+        try {
+          return JSON.parse(content);
+        } catch (parseError) {
+          console.error('[CLAUDE_PROVIDER] Failed to parse JSON response:', {
+            contentLength: content.length,
+            contentPreview: content.substring(0, 200),
+            error: parseError instanceof Error ? parseError.message : 'Unknown parse error',
+          });
+          throw new Error(`Invalid JSON response from Claude: ${parseError instanceof Error ? parseError.message : 'Parse error'}. Content preview: ${content.substring(0, 100)}...`);
+        }
+      } catch (error: any) {
+        // Enhance error messages
+        if (error.status === 429) {
+          throw new Error('Rate limit exceeded: Claude API has too many requests. Please wait a few minutes and try again.');
+        } else if (error.status === 401) {
+          throw new Error('Authentication failed: ANTHROPIC_API_KEY is invalid or missing.');
+        } else if (error.status === 500 || error.status === 529) {
+          throw new Error('Claude API is experiencing issues. Please try again in a few minutes.');
+        } else if (error.message?.includes('Invalid JSON')) {
+          // Re-throw JSON parsing errors with context
+          throw error;
+        } else {
+          throw new Error(`Claude API error: ${error.message || 'Unknown error'} (status: ${error.status || 'unknown'})`);
+        }
       }
     });
   }

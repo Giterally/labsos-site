@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { generateProposals } from '@/lib/processing/ai-synthesis-pipeline';
+import { randomUUID } from 'crypto';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
+  // Declare resolvedProjectId outside try block so it's accessible in catch
+  let resolvedProjectId: string;
+  
   try {
     const { projectId } = await params;
 
@@ -25,7 +29,7 @@ export async function POST(
     }
 
     // Resolve project ID
-    let resolvedProjectId = projectId;
+    resolvedProjectId = projectId;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(projectId)) {
       const { data: project, error: projectError } = await supabaseServer
@@ -72,18 +76,36 @@ export async function POST(
     console.log(`[GENERATE PROPOSALS] Starting proposal generation for project: ${resolvedProjectId}`);
     console.log(`[GENERATE PROPOSALS] Found ${completedSources.length} completed sources`);
 
-    // Generate jobId for progress tracking
-    const jobId = `proposals_${resolvedProjectId}_${Date.now()}`;
+    // Generate jobId for progress tracking (server-side generation)
+    const jobId = randomUUID();
 
-    // Generate proposals using the AI synthesis pipeline with timeout
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Proposal generation timed out after 15 minutes')), 15 * 60 * 1000);
-    });
+    // Create job record in database BEFORE starting generation
+    const { data: job, error: jobError } = await supabaseServer
+      .from('jobs')
+      .insert({
+        id: jobId,
+        type: 'proposal_generation',
+        status: 'running',
+        project_id: resolvedProjectId,
+        created_by: user.id,
+        started_at: new Date().toISOString(),
+        payload: {
+          sourceCount: completedSources.length,
+          sourceIds: completedSources.map(s => s.id)
+        }
+      })
+      .select()
+      .single();
 
-    const result = await Promise.race([
-      generateProposals(resolvedProjectId, jobId),
-      timeoutPromise
-    ]) as any;
+    if (jobError) {
+      console.error('[GENERATE PROPOSALS] Failed to create job record:', jobError);
+      return NextResponse.json({ error: 'Failed to initialize job tracking' }, { status: 500 });
+    }
+
+    console.log(`[GENERATE PROPOSALS] Created job record: ${jobId}`);
+
+    // Generate proposals using the AI synthesis pipeline (no artificial timeout)
+    const result = await generateProposals(resolvedProjectId, jobId) as any;
 
     console.log(`[GENERATE PROPOSALS] Generated ${result.nodesGenerated} proposals from ${result.clustersGenerated} clusters`);
 
@@ -91,15 +113,53 @@ export async function POST(
       success: true,
       nodesGenerated: result.nodesGenerated,
       clustersGenerated: result.clustersGenerated,
-      jobId: result.jobId,
+      jobId: jobId, // Return the server-generated jobId
       message: `Successfully generated ${result.nodesGenerated} proposed nodes from ${result.clustersGenerated} clusters`
     });
 
   } catch (error) {
-    console.error('Generate proposals API error:', error);
+    console.error('[GENERATE_PROPOSALS_API] Error occurred:', error);
+    
+    // Provide detailed error information
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    // Log detailed error for debugging
+    console.error('[GENERATE_PROPOSALS_API] Error details:', {
+      message: errorMessage,
+      stack: errorStack,
+      projectId: resolvedProjectId,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Determine user-friendly error message based on error type
+    let userMessage = 'Failed to generate proposals';
+    let statusCode = 500;
+    
+    if (errorMessage.includes('No preprocessed chunks found')) {
+      userMessage = 'No processed data found. Please ensure files have been successfully uploaded and processed.';
+      statusCode = 400;
+    } else if (errorMessage.includes('Rate limit')) {
+      userMessage = 'AI service rate limit reached. Please try again in a few minutes.';
+      statusCode = 429;
+    } else if (errorMessage.includes('ANTHROPIC_API_KEY') || errorMessage.includes('OPENAI_API_KEY')) {
+      userMessage = 'AI service configuration error. Please contact support.';
+      statusCode = 500;
+    } else if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+      userMessage = 'Request timed out. Your data may be too large or the AI service is slow. Please try again.';
+      statusCode = 408;
+    } else if (errorMessage.includes('Schema validation failed')) {
+      userMessage = 'AI generated invalid data structure. Please try again or contact support if this persists.';
+      statusCode = 500;
+    } else if (errorMessage.includes('Failed to store')) {
+      userMessage = 'Database error while saving proposals. Please try again.';
+      statusCode = 500;
+    }
+    
     return NextResponse.json({ 
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+      error: userMessage,
+      details: errorMessage,
+      timestamp: new Date().toISOString(),
+    }, { status: statusCode });
   }
 }

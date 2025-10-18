@@ -16,6 +16,7 @@ export interface NodeSynthesisInput {
     description?: string;
     domain?: string;
   };
+  retrievedContext?: any; // RAG context from rag-retriever
 }
 
 export interface SynthesizedNode {
@@ -149,6 +150,19 @@ export async function synthesizeNode(input: NodeSynthesisInput): Promise<Synthes
       contextText += ` (Domain: ${input.projectContext.domain})`;
     }
     finalUserPrompt = contextText + '\n\n' + userPrompt;
+  }
+  
+  // Add RAG-retrieved context if available
+  if (input.retrievedContext) {
+    const { formatContextForPrompt } = await import('./rag-retriever');
+    const ragContextText = formatContextForPrompt(input.retrievedContext);
+    finalUserPrompt = finalUserPrompt + '\n\n## Retrieved Context\n\n' + ragContextText;
+    console.log('[SYNTHESIS] Enhanced prompt with RAG context:', {
+      primaryChunks: input.retrievedContext.primaryChunks?.length || 0,
+      relatedChunks: input.retrievedContext.relatedChunks?.length || 0,
+      dependencyChunks: input.retrievedContext.dependencyChunks?.length || 0,
+      existingNodes: input.retrievedContext.existingNodes?.length || 0,
+    });
   }
 
   try {

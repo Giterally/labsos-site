@@ -83,6 +83,33 @@ export async function GET(
           .on(
             'postgres_changes',
             {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'jobs',
+              filter: `project_id=eq.${resolvedProjectId}`,
+            },
+            (payload) => {
+              // Only broadcast if progress fields were updated
+              if (payload.new.progress_updated_at !== payload.old.progress_updated_at) {
+                console.log('Progress update received:', payload);
+                const data = {
+                  type: 'progress_update',
+                  jobId: payload.new.id,
+                  progress: {
+                    stage: payload.new.progress_stage,
+                    current: payload.new.progress_current,
+                    total: payload.new.progress_total,
+                    message: payload.new.progress_message,
+                    timestamp: new Date(payload.new.progress_updated_at).getTime(),
+                  },
+                };
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+              }
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
               event: 'INSERT',
               schema: 'public',
               table: 'proposed_nodes',

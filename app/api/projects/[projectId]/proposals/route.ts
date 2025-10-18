@@ -2,12 +2,110 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase-client';
 import { supabaseServer } from '@/lib/supabase-server';
 import { generateTreeName, formatNodeContent, generateBriefSummary } from '@/lib/ai/synthesis';
+import { randomUUID } from 'crypto';
 
-// Simple in-memory cache for proposals (in production, use Redis or similar)
-const proposalsCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_DURATION = 30000; // 30 seconds
+// NOTE: Removed in-memory proposals cache to avoid stale data across instances
 
-// Dependency graph analysis and workflow-based block organization
+// Build tree blocks directly from proposals (preserving structure)
+async function createBlocksFromProposals(proposals: any[], experimentTreeId: string) {
+  console.log('[BLOCK ORGANIZATION] Creating blocks directly from proposals to preserve structure');
+  
+  // Group proposals by node_type to create logical blocks
+  const blocksByType = new Map<string, any[]>();
+  
+  proposals.forEach(proposal => {
+    const nodeType = proposal.node_json?.metadata?.node_type || 'general';
+    if (!blocksByType.has(nodeType)) {
+      blocksByType.set(nodeType, []);
+    }
+    blocksByType.get(nodeType)!.push(proposal);
+  });
+  
+  console.log('[BLOCK ORGANIZATION] Grouped proposals by type:', Array.from(blocksByType.keys()));
+  
+  // Create block inserts with logical ordering
+  const blockTypeOrder = ['protocol', 'data_creation', 'analysis', 'results', 'software'];
+  const blockInserts = [];
+  const nodeBlockMapping = new Map<string, string>();
+  
+  let blockPosition = 1;
+  
+  // Create blocks in logical order
+  for (const nodeType of blockTypeOrder) {
+    if (blocksByType.has(nodeType)) {
+      const blockName = getBlockDisplayName(nodeType);
+      const blockId = randomUUID();
+      
+      blockInserts.push({
+        id: blockId,
+        tree_id: experimentTreeId,
+        name: blockName,
+        position: blockPosition,
+        description: `Block containing ${nodeType} nodes`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      
+      // Map all proposals of this type to this block
+      blocksByType.get(nodeType)!.forEach(proposal => {
+        nodeBlockMapping.set(proposal.id, blockId);
+      });
+      
+      blockPosition++;
+    }
+  }
+  
+  // Handle any remaining types not in the predefined order
+  for (const [nodeType, typeProposals] of blocksByType) {
+    if (!blockTypeOrder.includes(nodeType)) {
+      const blockName = getBlockDisplayName(nodeType);
+      const blockId = randomUUID();
+      
+      blockInserts.push({
+        id: blockId,
+        tree_id: experimentTreeId,
+        name: blockName,
+        position: blockPosition,
+        description: `Block containing ${nodeType} nodes`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      
+      typeProposals.forEach(proposal => {
+        nodeBlockMapping.set(proposal.id, blockId);
+      });
+      
+      blockPosition++;
+    }
+  }
+  
+  // Sort nodes within each block by title for consistent ordering
+  const sortedNodes = proposals.sort((a, b) => {
+    const aTitle = a.node_json?.title || '';
+    const bTitle = b.node_json?.title || '';
+    return aTitle.localeCompare(bTitle);
+  });
+  
+  console.log('[BLOCK ORGANIZATION] Created', blockInserts.length, 'blocks from proposals');
+  
+  return { blockInserts, nodeBlockMapping, sortedNodes };
+}
+
+// Helper function to get display names for block types
+function getBlockDisplayName(nodeType: string): string {
+  const displayNames: Record<string, string> = {
+    'protocol': 'Protocol',
+    'data_creation': 'Data Creation', 
+    'analysis': 'Analysis',
+    'results': 'Results',
+    'software': 'Software',
+    'general': 'General'
+  };
+  
+  return displayNames[nodeType] || nodeType.charAt(0).toUpperCase() + nodeType.slice(1);
+}
+
+// Legacy function - keeping for reference but not used
 async function createWorkflowBasedBlocks(proposals: any[], experimentTreeId: string) {
   console.log('[BLOCK ORGANIZATION] Analyzing dependencies for workflow-based blocks');
   
@@ -117,7 +215,7 @@ async function createWorkflowBasedBlocks(proposals: any[], experimentTreeId: str
       
       // If phase has <= 15 nodes, create single block
       if (nodeArray.length <= MAX_NODES_PER_BLOCK) {
-        const blockId = crypto.randomUUID();
+        const blockId = randomUUID();
         blockInserts.push({
           id: blockId,
           tree_id: experimentTreeId,
@@ -143,7 +241,7 @@ async function createWorkflowBasedBlocks(proposals: any[], experimentTreeId: str
           const end = Math.min((i + 1) * MAX_NODES_PER_BLOCK, nodeArray.length);
           const subPhaseNodes = nodeArray.slice(start, end);
           
-          const blockId = crypto.randomUUID();
+          const blockId = randomUUID();
           const subPhaseName = numSubPhases > 1 ? `${phaseName} - Part ${i + 1}` : phaseName;
           
           blockInserts.push({
@@ -224,15 +322,6 @@ export async function GET(
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    // Check cache first
-    const cacheKey = `proposals-${resolvedProjectId}`;
-    const cached = proposalsCache.get(cacheKey);
-    const now = Date.now();
-    
-    if (cached && (now - cached.timestamp) < CACHE_DURATION) {
-      return NextResponse.json({ proposals: cached.data });
-    }
-
     // Get proposed nodes for the project with optimized query
     const { data: proposals, error } = await supabaseServer
       .from('proposed_nodes')
@@ -248,7 +337,7 @@ export async function GET(
       .eq('project_id', resolvedProjectId)
       .eq('status', 'proposed')
       .order('created_at', { ascending: false })
-      .limit(100); // Limit to prevent large responses
+      .limit(500); // Allow larger responses; UI can paginate if needed
 
     if (error) {
       console.error('Error fetching proposals:', error);
@@ -285,9 +374,6 @@ export async function GET(
     
     const blocksCount = Object.keys(nodeTypeGroups).length;
     const nodesCount = proposedNodes.length;
-
-    // Cache the results
-    proposalsCache.set(cacheKey, { data: proposals || [], timestamp: now });
 
     return NextResponse.json({ 
       proposals: proposals || [],
@@ -401,9 +487,6 @@ export async function DELETE(
       return NextResponse.json({ error: 'No proposals specified for deletion' }, { status: 400 });
     }
 
-    // Invalidate cache
-    proposalsCache.delete(`proposals-${resolvedProjectId}`);
-
     return NextResponse.json(deleteResult);
 
   } catch (error) {
@@ -421,7 +504,7 @@ export async function POST(
   try {
     const { projectId } = await params;
     const body = await request.json();
-    const { action, proposalIds, treeId, blockId } = body;
+    const { action, proposalIds, treeId, blockId, jobId } = body; // Extract jobId for progress tracking
 
     // Get the authorization header
     const authHeader = request.headers.get('authorization');
@@ -468,19 +551,56 @@ export async function POST(
     }
 
     if (action === 'accept') {
-      // Accept proposed nodes and add to experiment tree
-      const { data: proposals, error: fetchError } = await supabaseServer
-        .from('proposed_nodes')
-        .select('*')
-        .eq('project_id', resolvedProjectId)
-        .in('id', proposalIds);
+      // Import progress tracker at function scope (accessible in catch block)
+      const { progressTracker } = await import('@/lib/progress-tracker');
+      
+      // Initialize tracking variables at function scope (accessible in catch block)
+      const trackingJobId = jobId || `tree_build_${resolvedProjectId}_${Date.now()}`;
+      
+      try {
+        progressTracker.update(trackingJobId, {
+          stage: 'initializing',
+          current: 0,
+          total: 7,
+          message: 'Starting tree build...',
+        });
+        
+        console.log('[BUILD_TREE] Starting tree building process for', proposalIds.length, 'proposals');
+        
+        // Accept proposed nodes and add to experiment tree
+        progressTracker.update(trackingJobId, {
+          stage: 'initializing',
+          current: 1,
+          total: 7,
+          message: 'Fetching proposals...',
+        });
+        
+        const { data: proposals, error: fetchError } = await supabaseServer
+          .from('proposed_nodes')
+          .select('*')
+          .eq('project_id', resolvedProjectId)
+          .in('id', proposalIds);
 
-      if (fetchError || !proposals) {
-        return NextResponse.json({ error: 'Failed to fetch proposals' }, { status: 500 });
-      }
+        if (fetchError || !proposals) {
+          console.error('[BUILD_TREE] Failed to fetch proposals:', fetchError);
+          progressTracker.error(trackingJobId, 'Failed to fetch proposals');
+          return NextResponse.json({ 
+            error: 'Failed to fetch proposals',
+            details: fetchError?.message 
+          }, { status: 500 });
+        }
 
-      // Create or get experiment tree
-      let experimentTreeId = treeId;
+        console.log('[BUILD_TREE] Fetched', proposals.length, 'proposals');
+
+        // Create or get experiment tree
+        progressTracker.update(trackingJobId, {
+          stage: 'initializing',
+          current: 2,
+          total: 7,
+          message: 'Creating experiment tree...',
+        });
+        
+        let experimentTreeId = treeId;
       if (!experimentTreeId) {
         // Generate contextual tree name from proposal content
         let treeName = 'AI Generated Experiment Tree'; // fallback
@@ -515,9 +635,23 @@ export async function POST(
       }
 
       // Analyze dependencies and create workflow-based blocks
-      const { blockInserts, nodeBlockMapping, sortedNodes } = await createWorkflowBasedBlocks(proposals, experimentTreeId);
+        progressTracker.update(trackingJobId, {
+          stage: 'building_blocks',
+          current: 3,
+          total: 7,
+          message: 'Analyzing dependencies and organizing nodes...',
+        });
+        
+      const { blockInserts, nodeBlockMapping, sortedNodes } = await createBlocksFromProposals(proposals, experimentTreeId);
 
       console.log('Creating blocks:', blockInserts);
+      
+        progressTracker.update(trackingJobId, {
+          stage: 'building_blocks',
+          current: 4,
+          total: 7,
+          message: `Creating ${blockInserts.length} workflow blocks...`,
+        });
 
       const { data: blocks, error: blockInsertError } = await supabaseServer
         .from('tree_blocks')
@@ -671,10 +805,26 @@ export async function POST(
         });
         
         console.log(`Completed batch ${batchIndex + 1}/${nodeBatches.length}, processed ${validResults.length} nodes`);
+        
+        // Update progress after each batch
+        const batchProgress = Math.round(30 + ((batchIndex + 1) / nodeBatches.length) * 30); // 30-60%
+        progressTracker.update(trackingJobId, {
+          stage: 'building_nodes',
+          current: batchProgress,
+          total: 100,
+          message: `Processed batch ${batchIndex + 1}/${nodeBatches.length} (${validResults.length} nodes)...`,
+        });
       }
 
-      console.log('Creating tree nodes:', treeNodes.length, 'nodes');
-      console.log('Node sequencing by block:');
+        progressTracker.update(trackingJobId, {
+          stage: 'building_nodes',
+          current: 65,
+          total: 100,
+          message: `Creating ${treeNodes.length} tree nodes...`,
+        });
+        
+      console.log('[BUILD_TREE] Creating tree nodes:', treeNodes.length, 'nodes');
+      console.log('[BUILD_TREE] Node sequencing by block:');
       const blockSequences = new Map<string, string[]>();
       treeNodes.forEach(node => {
         if (!blockSequences.has(node.block_id)) {
@@ -683,135 +833,142 @@ export async function POST(
         blockSequences.get(node.block_id)!.push(`${node.position}: ${node.name}`);
       });
       blockSequences.forEach((sequence, blockId) => {
-        console.log(`Block ${blockId}: ${sequence.join(' → ')}`);
+        console.log(`[BUILD_TREE] Block ${blockId}: ${sequence.join(' → ')}`);
       });
 
-      const { error: insertError } = await supabaseServer
+      // Insert tree nodes and get the created node IDs
+      const { data: createdTreeNodes, error: insertError } = await supabaseServer
         .from('tree_nodes')
-        .insert(treeNodes);
+        .insert(treeNodes)
+        .select('id, name, position, block_id');
 
-      if (insertError) {
-        console.error('Tree nodes creation error:', insertError);
+      if (insertError || !createdTreeNodes || createdTreeNodes.length === 0) {
+        console.error('[BUILD_TREE] Tree nodes creation error:', insertError);
         
         // Provide more specific error messages
-        if (insertError.code === '23514') {
+        if (insertError?.code === '23514') {
           return NextResponse.json({ 
-            error: 'Invalid node type detected. Please regenerate proposals with updated AI model.' 
+            error: 'Invalid node type detected. Please regenerate proposals with updated AI model.',
+            details: insertError.message
           }, { status: 400 });
-        } else if (insertError.code === '23503') {
+        } else if (insertError?.code === '23503') {
           return NextResponse.json({ 
-            error: 'Invalid block or tree reference. Please try again.' 
+            error: 'Invalid block or tree reference. Please try again.',
+            details: insertError.message
           }, { status: 400 });
         } else {
           return NextResponse.json({ 
             error: 'Failed to create tree nodes',
-            details: insertError.message 
+            details: insertError?.message || 'Unknown error'
           }, { status: 500 });
         }
       }
 
-      console.log('Successfully created tree nodes');
+      console.log('[BUILD_TREE] Successfully created', createdTreeNodes.length, 'tree nodes');
 
-      // Create node content entries with formatted content
-      const nodeContentEntries: any[] = [];
-      for (const proposal of proposals) {
-        const blockId = nodeBlockMapping.get(proposal.id);
-        const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
-        
-        if (!actualBlockId) continue;
-        
-        const treeNode = treeNodes.find(n => 
-          n.block_id === actualBlockId && n.name === proposal.node_json?.title
+        progressTracker.update(trackingJobId, {
+          stage: 'building_nodes',
+          current: 80,
+          total: 100,
+          message: `Creating content for ${createdTreeNodes.length} nodes...`,
+        });
+
+      // Create node content entries using the created node IDs
+      console.log('[BUILD_TREE] Creating node content for', createdTreeNodes.length, 'nodes');
+      
+      const contentEntries: any[] = [];
+      for (const createdNode of createdTreeNodes) {
+        // Find the corresponding proposal by matching name, position, and block_id
+        const matchingTreeNode = treeNodes.find(tn => 
+          tn.name === createdNode.name && 
+          tn.position === createdNode.position && 
+          tn.block_id === createdNode.block_id
         );
         
-        if (treeNode) {
-          // Get the raw content
-          const rawContent = proposal.node_json?.content?.text || proposal.node_json?.title || '';
-          
-          // Format content for better presentation
-          let formattedContent = rawContent;
-          try {
-            if (rawContent && rawContent.length > 0) {
-              formattedContent = await formatNodeContent(rawContent);
-            }
-          } catch (error: any) {
-            console.error('Failed to format node content for storage:', error);
-            // Use original content if formatting fails due to rate limits or other issues
-            if (error.message?.includes('rate_limit_error') || error.status === 429) {
-              console.log('Skipping content formatting for storage due to rate limits, using original content');
-            }
-          }
-          
-          nodeContentEntries.push({
-            node_id: treeNode.tree_id, // This should be the node ID, but we need to get it from the insert
-            content: formattedContent,
-            status: 'draft'
-          });
+        if (!matchingTreeNode) {
+          console.warn('[BUILD_TREE] Could not find matching tree node for created node:', createdNode.name);
+          continue;
+        }
+        
+        // Find the proposal that created this node
+        const proposal = proposals.find(p => {
+          const blockId = nodeBlockMapping.get(p.id);
+          const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
+          return actualBlockId === matchingTreeNode.block_id && 
+                 p.node_json?.title === matchingTreeNode.name;
+        });
+        
+        if (!proposal) {
+          console.warn('[BUILD_TREE] Could not find matching proposal for node:', createdNode.name);
+          continue;
+        }
+        
+        // Get the formatted content from the proposal (already formatted during batch processing)
+        const formattedContent = proposal.node_json?.content?.text || proposal.node_json?.title || '';
+        
+        contentEntries.push({
+          node_id: createdNode.id, // Use the actual created node ID
+          content: formattedContent,
+          status: 'draft'
+        });
+      }
+
+      // Insert node content entries
+      if (contentEntries.length > 0) {
+        console.log('[BUILD_TREE] Inserting', contentEntries.length, 'content entries');
+        const { error: contentError } = await supabaseServer
+          .from('node_content')
+          .insert(contentEntries);
+
+        if (contentError) {
+          console.error('[BUILD_TREE] Failed to create node content:', contentError);
+          // Don't fail the entire request - nodes were created successfully
+          console.warn('[BUILD_TREE] Continuing despite content creation failure');
+        } else {
+          console.log('[BUILD_TREE] Successfully created node content entries');
         }
       }
 
-      // Get the created node IDs and create content entries
-      if (nodeContentEntries.length > 0) {
-        const { data: createdNodes, error: fetchNodesError } = await supabaseServer
-          .from('tree_nodes')
-          .select('id, position, block_id')
-          .eq('tree_id', experimentTreeId);
+      // Invalidate cache (REMOVED - cache no longer exists)
+      // proposalsCache.delete(`proposals-${resolvedProjectId}`);
 
-        if (!fetchNodesError && createdNodes) {
-          const contentEntries = createdNodes.map(node => {
-            const contentEntry = nodeContentEntries.find(entry => {
-              // Match by position and block_id
-              const originalNode = treeNodes.find(tn => 
-                tn.position === node.position && tn.block_id === node.block_id
-              );
-              return originalNode;
-            });
-            
-            if (contentEntry) {
-              return {
-                node_id: node.id,
-                content: contentEntry.content,
-                status: 'draft'
-              };
-            }
-            return null;
-          }).filter(Boolean);
+      // Mark as complete
+      progressTracker.complete(trackingJobId, 'Tree built successfully!');
+      
+      console.log('[BUILD_TREE] Tree building complete! Tree ID:', experimentTreeId);
 
-          if (contentEntries.length > 0) {
-            const { error: contentError } = await supabaseServer
-              .from('node_content')
-              .insert(contentEntries);
-
-            if (contentError) {
-              console.error('Failed to create node content:', contentError);
-            } else {
-              console.log('Successfully created node content entries');
-            }
-          }
-        }
-      }
-
-      // Update proposed nodes status
-      const { error: updateError } = await supabaseServer
-        .from('proposed_nodes')
-        .update({ 
-          status: 'accepted',
-          accepted_at: new Date().toISOString()
-        })
-        .in('id', proposalIds);
-
-      if (updateError) {
-        return NextResponse.json({ error: 'Failed to update proposal status' }, { status: 500 });
-      }
-
-      // Invalidate cache
-      proposalsCache.delete(`proposals-${resolvedProjectId}`);
-
+      // Proposals remain as 'proposed' status - user can build multiple trees or manually clear
+      
       return NextResponse.json({ 
         success: true, 
         treeId: experimentTreeId,
-        acceptedCount: proposals.length
+        acceptedCount: proposals.length,
+        nodesCreated: createdTreeNodes.length,
+        blocksCreated: blocks.length
       });
+        
+      } catch (treeBuildError: any) {
+        console.error('[BUILD_TREE] Tree building failed:', treeBuildError);
+        console.error('[BUILD_TREE] Stack trace:', treeBuildError.stack);
+        console.error('[BUILD_TREE] Error details:', {
+          message: treeBuildError.message,
+          code: treeBuildError.code,
+          projectId: resolvedProjectId,
+          proposalCount: proposalIds.length,
+          timestamp: new Date().toISOString(),
+        });
+        
+        // Mark progress as error
+        progressTracker.error(trackingJobId, `Tree building failed: ${treeBuildError.message}`);
+        
+        // Return detailed error - proposals should NOT be marked as accepted
+        return NextResponse.json({ 
+          error: 'Failed to build tree from proposals',
+          details: treeBuildError.message || 'Unknown error occurred during tree building',
+          stage: 'tree_building',
+          timestamp: new Date().toISOString(),
+        }, { status: 500 });
+      }
 
     } else if (action === 'reject') {
       // Reject proposed nodes
@@ -826,9 +983,6 @@ export async function POST(
       if (updateError) {
         return NextResponse.json({ error: 'Failed to reject proposals' }, { status: 500 });
       }
-
-      // Invalidate cache
-      proposalsCache.delete(`proposals-${resolvedProjectId}`);
 
       return NextResponse.json({ success: true, rejectedCount: proposalIds.length });
     }

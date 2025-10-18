@@ -105,6 +105,41 @@ export default function ImportPage() {
   const [generationProgress, setGenerationProgress] = useState(0);
   const [generationStatus, setGenerationStatus] = useState('');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  
+  // localStorage utilities for cross-tab persistence
+  const STORAGE_KEY = 'active_proposal_job';
+  const getStoredJobId = (projectId: string) => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(`${STORAGE_KEY}_${projectId}`);
+  };
+  const storeJobId = (projectId: string, jobId: string) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(`${STORAGE_KEY}_${projectId}`, jobId);
+  };
+  const clearStoredJobId = (projectId: string) => {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(`${STORAGE_KEY}_${projectId}`);
+  };
+  
+  // Tree building progress state
+  const [treeBuildProgress, setTreeBuildProgress] = useState(0);
+  const [treeBuildStatus, setTreeBuildStatus] = useState('');
+  const [treeBuildJobId, setTreeBuildJobId] = useState<string | null>(null);
+  
+  // localStorage utilities for tree building cross-tab persistence
+  const TREE_STORAGE_KEY = 'active_tree_build_job';
+  const getStoredTreeJobId = (projectId: string) => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(`${TREE_STORAGE_KEY}_${projectId}`);
+  };
+  const storeTreeJobId = (projectId: string, jobId: string) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(`${TREE_STORAGE_KEY}_${projectId}`, jobId);
+  };
+  const clearStoredTreeJobId = (projectId: string) => {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(`${TREE_STORAGE_KEY}_${projectId}`);
+  };
 
   // Define fetchData FIRST (before useEffect)
   const fetchData = useCallback(async () => {
@@ -155,7 +190,7 @@ export default function ImportPage() {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
+                'Authorization': `Bearer ${session?.access_token}`,
               },
               body: JSON.stringify({ sourceIds: [source.id] }),
             });
@@ -263,6 +298,67 @@ export default function ImportPage() {
             fetchData();
             break;
           
+          case 'progress_update':
+            console.log('Progress update:', data);
+            if (data.jobId === currentJobId) {
+              // Calculate percentage
+              const percentage = data.progress.total > 0 
+                ? Math.round((data.progress.current / data.progress.total) * 100) 
+                : 0;
+              
+              setGenerationProgress(percentage);
+              setGenerationStatus(data.progress.message || 'Processing...');
+              
+              // Check if complete
+              if (data.progress.stage === 'complete') {
+                clearStoredJobId(projectId);
+                setGeneratingProposals(false);
+                setGenerationProgress(0);
+                setGenerationStatus('');
+                setCurrentJobId(null);
+                // Refresh data to show new proposals
+                fetchData();
+                setActiveTab('proposals');
+                setSuccess(`Generated proposals successfully!`);
+              } else if (data.progress.stage === 'error') {
+                clearStoredJobId(projectId);
+                setGeneratingProposals(false);
+                setGenerationProgress(0);
+                setGenerationStatus('');
+                setCurrentJobId(null);
+                setError(data.progress.message || 'Generation failed');
+              }
+            } else if (data.jobId === treeBuildJobId) {
+              // Handle tree building progress updates
+              const percentage = data.progress.total > 0 
+                ? Math.round((data.progress.current / data.progress.total) * 100) 
+                : 0;
+              
+              setTreeBuildProgress(percentage);
+              setTreeBuildStatus(data.progress.message || 'Building tree...');
+              
+              // Check if complete
+              if (data.progress.stage === 'complete') {
+                clearStoredTreeJobId(projectId);
+                setBuildingTree(false);
+                setTreeBuildProgress(0);
+                setTreeBuildStatus('');
+                setTreeBuildJobId(null);
+                setSuccess(`Tree created successfully!`);
+                // Refresh data and redirect
+                fetchData();
+                window.location.reload();
+              } else if (data.progress.stage === 'error') {
+                clearStoredTreeJobId(projectId);
+                setBuildingTree(false);
+                setTreeBuildProgress(0);
+                setTreeBuildStatus('');
+                setTreeBuildJobId(null);
+                setError(data.progress.message || 'Tree building failed');
+              }
+            }
+            break;
+          
           case 'proposal_deleted':
             console.log('Proposal deleted:', data);
             // Remove from selected if it was selected
@@ -319,6 +415,131 @@ export default function ImportPage() {
     setLoading(true);  // Only set loading on mount
     fetchData();
     
+    // Check for active job on mount and resume if found
+    const checkActiveJob = async () => {
+      const storedJobId = getStoredJobId(projectId);
+      if (storedJobId) {
+        console.log('[IMPORT] Found stored job ID:', storedJobId);
+        
+        try {
+          // Check if job is still active
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            const progressRes = await fetch(`/api/projects/${projectId}/progress/${storedJobId}`, {
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+            });
+            
+            if (progressRes.ok) {
+              const progress = await progressRes.json();
+              
+              if (progress.stage === 'complete') {
+                console.log('[IMPORT] Stored job is complete, clearing localStorage');
+                clearStoredJobId(projectId);
+                setCurrentJobId(null);
+                setGeneratingProposals(false);
+                setGenerationProgress(0);
+                setGenerationStatus('');
+                // Refresh data to show new proposals
+                await fetchData();
+                setActiveTab('proposals');
+              } else if (progress.stage === 'error') {
+                console.log('[IMPORT] Stored job failed, clearing localStorage');
+                clearStoredJobId(projectId);
+                setCurrentJobId(null);
+                setGeneratingProposals(false);
+                setGenerationProgress(0);
+                setGenerationStatus('');
+                setError(progress.message || 'Generation failed');
+              } else {
+                console.log('[IMPORT] Resuming job tracking for:', storedJobId);
+                setCurrentJobId(storedJobId);
+                setGeneratingProposals(true);
+                
+                // Calculate percentage
+                const percentage = progress.total > 0 
+                  ? Math.round((progress.current / progress.total) * 100) 
+                  : 0;
+                
+                setGenerationProgress(percentage);
+                setGenerationStatus(progress.message || 'Resuming...');
+              }
+            } else {
+              console.log('[IMPORT] Could not fetch progress for stored job, clearing localStorage');
+              clearStoredJobId(projectId);
+            }
+          }
+        } catch (error) {
+          console.error('[IMPORT] Error checking stored job:', error);
+          clearStoredJobId(projectId);
+        }
+      }
+    };
+    
+    checkActiveJob();
+    
+    // Check for active tree build job on mount and resume if found
+    const checkActiveTreeJob = async () => {
+      const storedTreeJobId = getStoredTreeJobId(projectId);
+      if (storedTreeJobId) {
+        console.log('[IMPORT] Found stored tree build job ID:', storedTreeJobId);
+        
+        try {
+          // Check if job is still active
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            const progressRes = await fetch(`/api/projects/${projectId}/progress/${storedTreeJobId}`, {
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+            });
+            
+            if (progressRes.ok) {
+              const progress = await progressRes.json();
+              
+              if (progress.stage === 'complete') {
+                console.log('[IMPORT] Stored tree build job is complete, clearing localStorage');
+                clearStoredTreeJobId(projectId);
+                setTreeBuildJobId(null);
+                setBuildingTree(false);
+                setTreeBuildProgress(0);
+                setTreeBuildStatus('');
+              } else if (progress.stage === 'error') {
+                console.log('[IMPORT] Stored tree build job failed, clearing localStorage');
+                clearStoredTreeJobId(projectId);
+                setTreeBuildJobId(null);
+                setBuildingTree(false);
+                setTreeBuildProgress(0);
+                setTreeBuildStatus('');
+                setError(progress.message || 'Tree building failed');
+              } else {
+                console.log('[IMPORT] Resuming tree build job tracking for:', storedTreeJobId);
+                setTreeBuildJobId(storedTreeJobId);
+                setBuildingTree(true);
+                
+                // Calculate percentage
+                const percentage = progress.total > 0 
+                  ? Math.round((progress.current / progress.total) * 100) 
+                  : 0;
+                
+                setTreeBuildProgress(percentage);
+                setTreeBuildStatus(progress.message || 'Resuming tree build...');
+              }
+            } else {
+              console.log('[IMPORT] Could not fetch progress for stored tree build job, clearing localStorage');
+              clearStoredTreeJobId(projectId);
+            }
+          }
+        } catch (error) {
+          console.error('[IMPORT] Error checking stored tree build job:', error);
+          clearStoredTreeJobId(projectId);
+        }
+      }
+    };
+    
+    checkActiveTreeJob();
+    
     // Connect to SSE for real-time updates
     let eventSource: EventSource | null = null;
     connectSSE().then(source => {
@@ -335,7 +556,7 @@ export default function ImportPage() {
         setSseConnected(false);
       }
     };
-  }, [fetchData, connectSSE]);
+  }, [fetchData, connectSSE, projectId]);
 
   const handleFileUpload = async () => {
     if (selectedFiles.length === 0) return;
@@ -566,24 +787,7 @@ export default function ImportPage() {
         throw new Error('Not authenticated');
       }
 
-      // First, clear existing proposals if any
-      if (proposals.length > 0) {
-        setGenerationStatus('Clearing existing proposals...');
-        const deleteResponse = await fetch(`/api/projects/${projectId}/proposals`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ clearAll: true }),
-        });
-
-        if (!deleteResponse.ok) {
-          const errorData = await deleteResponse.json();
-          throw new Error(errorData.error || 'Failed to clear existing proposals');
-        }
-      }
-
+      // Start generation without deleting existing proposals; backend handles safe regeneration
       setGenerationStatus('Starting AI proposal generation...');
 
       // Then generate new proposals (starts async process)
@@ -604,66 +808,11 @@ export default function ImportPage() {
       const jobId = result.jobId;
       setCurrentJobId(jobId);
       
+      // Store jobId in localStorage for cross-tab persistence
+      storeJobId(projectId, jobId);
+      
       console.log('[GENERATE] Proposals generation started with jobId:', jobId);
-
-      // Poll for real progress
-      const progressInterval = setInterval(async () => {
-        try {
-          const progressRes = await fetch(`/api/projects/${projectId}/progress/${jobId}`, {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          });
-          
-          if (progressRes.ok) {
-            const progress = await progressRes.json();
-            
-            // Calculate percentage
-            const percentage = progress.total > 0 
-              ? Math.round((progress.current / progress.total) * 100) 
-              : 0;
-            
-            setGenerationProgress(percentage);
-            setGenerationStatus(progress.message || 'Processing...');
-            
-            // Check if complete
-            if (progress.stage === 'complete') {
-              clearInterval(progressInterval);
-      
-      // Refresh data to show new proposals
-              console.log('[GENERATE] Generation complete, fetching updated proposals...');
-      await fetchData();
-              console.log('[GENERATE] Data fetched, proposals count:', proposals.length);
-      
-      // Switch to proposals tab to show the results
-      setActiveTab('proposals');
-              
-              // Show success message
-              setSuccess(`Generated ${result.nodesGenerated} proposed nodes from ${result.clustersGenerated} clusters`);
-              
-              // Reset progress
-              setGenerationProgress(0);
-              setGenerationStatus('');
-              setCurrentJobId(null);
-              setGeneratingProposals(false);
-            } else if (progress.stage === 'error') {
-              clearInterval(progressInterval);
-              throw new Error(progress.message || 'Generation failed');
-            }
-          }
-        } catch (pollError) {
-          console.error('Progress poll error:', pollError);
-        }
-      }, 1000); // Poll every second
-
-      // Safety timeout - clear interval after 20 minutes
-      setTimeout(() => {
-        clearInterval(progressInterval);
-        if (generatingProposals) {
-          setGeneratingProposals(false);
-          setError('Generation timed out. Please check the proposals tab to see if any nodes were generated.');
-        }
-      }, 20 * 60 * 1000);
+      console.log('[GENERATE] Progress tracking now handled via SSE - no polling needed');
 
     } catch (error: any) {
       console.error('Generate proposals error:', error);
@@ -672,6 +821,8 @@ export default function ImportPage() {
       setGenerationProgress(0);
       setGenerationStatus('');
       setCurrentJobId(null);
+      // Clear stored jobId on error
+      clearStoredJobId(projectId);
     } finally {
       setShowRegenerateConfirm(false);
     }
@@ -742,71 +893,153 @@ export default function ImportPage() {
   };
 
   const handleBuildTree = async () => {
+    console.log('[DEBUG] ===== handleBuildTree called =====');
+    console.log('[DEBUG] selectedProposals.size:', selectedProposals.size);
+    console.log('[DEBUG] buildingTree state:', buildingTree);
+    console.log('[DEBUG] projectId:', projectId);
+    console.log('[DEBUG] selectedProposals:', Array.from(selectedProposals));
+    
     if (selectedProposals.size === 0) {
+      console.log('[DEBUG] No proposals selected, returning early');
       setError('Please select at least one proposal to build the tree');
       return;
     }
 
+    console.log('[DEBUG] Setting buildingTree to true');
     setBuildingTree(true);
+    console.log('[DEBUG] Clearing error and success states');
     setError(null);
     setSuccess(null);
+    console.log('[DEBUG] Setting initial progress state');
+    setTreeBuildProgress(0);
+    setTreeBuildStatus('Starting tree build...');
 
     try {
+      console.log('[DEBUG] Getting Supabase session...');
       const { data: { session } } = await supabase.auth.getSession();
+      console.log('[DEBUG] Session data:', { 
+        hasSession: !!session, 
+        hasAccessToken: !!session?.access_token,
+        tokenLength: session?.access_token?.length 
+      });
+      
       if (!session?.access_token) {
+        console.log('[DEBUG] No access token found, throwing error');
         throw new Error('Not authenticated');
       }
 
-      console.log(`[BUILD TREE] Building tree with ${selectedProposals.size} proposals...`);
-      setSuccess(`Building tree with ${selectedProposals.size} nodes... This may take 1-2 minutes.`);
+      console.log(`[DEBUG] Building tree with ${selectedProposals.size} proposals...`);
+      
+      // Generate a job ID for tree building progress tracking
+      const jobId = crypto.randomUUID();
+      console.log('[DEBUG] Generated jobId:', jobId);
+      setTreeBuildJobId(jobId);
+      
+      // Store tree build jobId in localStorage for cross-tab persistence
+      console.log('[DEBUG] Storing jobId in localStorage');
+      storeTreeJobId(projectId, jobId);
 
-      // Create a 3-minute timeout for tree building
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutes
+      const requestBody = {
+        action: 'accept',
+        proposalIds: Array.from(selectedProposals),
+        jobId, // Pass job ID for progress tracking
+      };
+      
+      console.log('[DEBUG] Making API call to:', `/api/projects/${projectId}/proposals`);
+      console.log('[DEBUG] Request body:', requestBody);
+      console.log('[DEBUG] Request headers:', {
+        'Authorization': `Bearer ${session.access_token.substring(0, 20)}...`,
+        'Content-Type': 'application/json',
+      });
 
-      const response = await fetch(`/api/projects/${projectId}/proposals`, {
+      // Start the tree building request
+      const responsePromise = fetch(`/api/projects/${projectId}/proposals`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          action: 'accept',
-          proposalIds: Array.from(selectedProposals),
-        }),
-        signal: controller.signal,
+        body: JSON.stringify(requestBody),
       });
 
-      clearTimeout(timeoutId);
+      console.log('[DEBUG] Fetch promise created, waiting for response...');
+      console.log('[BUILD TREE] Tree building started with jobId:', jobId);
+      console.log('[BUILD TREE] Progress tracking now handled via SSE - no polling needed');
+
+      // Wait for the response
+      const response = await responsePromise;
+      console.log('[DEBUG] Response received!');
+      console.log('[DEBUG] Response status:', response.status);
+      console.log('[DEBUG] Response ok:', response.ok);
+      console.log('[DEBUG] Response headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
+        console.log('[DEBUG] Response not ok, parsing error data...');
         const errorData = await response.json();
+        console.log('[DEBUG] Error data:', errorData);
         throw new Error(errorData.error || 'Failed to build tree');
       }
 
+      console.log('[DEBUG] Response ok, parsing JSON...');
       const result = await response.json();
+      console.log('[DEBUG] Success result:', result);
       console.log('[BUILD TREE] Tree created successfully:', result);
       
-      setSuccess(`Experiment tree created successfully with ${selectedProposals.size} nodes! Redirecting...`);
+      // Clear tree build state
+      console.log('[DEBUG] Clearing tree build state...');
+      clearStoredTreeJobId(projectId);
+      setTreeBuildJobId(null);
+      setBuildingTree(false);
+      setTreeBuildProgress(0);
+      setTreeBuildStatus('');
       
-      // Clear selection
+      console.log('[DEBUG] Setting success message...');
+      setSuccess(`Experiment tree created successfully with ${result.nodesCreated || selectedProposals.size} nodes! Redirecting...`);
+      
+      // Clear selection (won't see this since we're navigating away, but good cleanup)
       setSelectedProposals(new Set());
-      
-      // Navigate to the created tree after brief delay
+
+      // Navigate directly to the newly created tree (no delays, no reloads!)
       if (result.treeId) {
-        setTimeout(() => {
+        console.log('[DEBUG] ===== NAVIGATION START =====');
+        console.log('[DEBUG] Navigating to newly created tree:', result.treeId);
+        console.log('[DEBUG] Tree URL:', `/project/${projectId}/trees/${result.treeId}`);
+        console.log('[DEBUG] Current location before nav:', window.location.href);
+        console.log('[DEBUG] ProjectId:', projectId);
+        console.log('[DEBUG] Timestamp:', new Date().toISOString());
+        
         router.push(`/project/${projectId}/trees/${result.treeId}`);
-        }, 1500);
+        
+        console.log('[DEBUG] Navigation command issued');
+        console.log('[DEBUG] ===== NAVIGATION END =====');
+      } else {
+        console.error('[DEBUG] ===== NO TREE ID IN RESPONSE =====');
+        console.error('[DEBUG] Response data:', result);
+        console.warn('[DEBUG] No treeId in response, reloading page as fallback');
+        window.location.reload();
       }
     } catch (error: any) {
-      console.error('Build tree error:', error);
-      if (error.name === 'AbortError') {
-        setError('Tree building timed out. The tree may still be creating in the background. Please check your project trees in a few minutes.');
-      } else {
+      console.log('[DEBUG] ===== ERROR CAUGHT =====');
+      console.error('[DEBUG] Build tree error:', error);
+      console.log('[DEBUG] Error type:', typeof error);
+      console.log('[DEBUG] Error message:', error.message);
+      console.log('[DEBUG] Error stack:', error.stack);
       setError(error.message || 'Failed to build tree');
-      }
+      setTreeBuildProgress(0);
+      setTreeBuildStatus('');
+      // Clear stored tree build jobId on error
+      clearStoredTreeJobId(projectId);
     } finally {
+      console.log('[DEBUG] ===== FINALLY BLOCK =====');
+      console.log('[DEBUG] Setting buildingTree to false');
       setBuildingTree(false);
+      // Clear progress after a delay
+      setTimeout(() => {
+        console.log('[DEBUG] Clearing progress state after delay');
+        setTreeBuildProgress(0);
+        setTreeBuildStatus('');
+        setTreeBuildJobId(null);
+      }, 3000);
     }
   };
 
@@ -938,6 +1171,30 @@ export default function ImportPage() {
         <Alert className="border-green-200 bg-green-50 text-green-800">
           <CheckCircle className="h-4 w-4" />
           <AlertDescription>{success}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Resume Generation Banner */}
+      {currentJobId && generatingProposals && (
+        <Alert className="border-blue-200 bg-blue-50 text-blue-800">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          <AlertDescription>
+            AI generation in progress: {generationProgress}% - {generationStatus}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                clearStoredJobId(projectId);
+                setCurrentJobId(null);
+                setGeneratingProposals(false);
+                setGenerationProgress(0);
+                setGenerationStatus('');
+              }}
+              className="ml-2 h-6 px-2 text-xs"
+            >
+              Dismiss
+            </Button>
+          </AlertDescription>
         </Alert>
       )}
 
@@ -1630,7 +1887,8 @@ export default function ImportPage() {
                       <Button
                         onClick={handleBuildTree}
                         disabled={selectedProposals.size === 0 || buildingTree}
-                        className="bg-green-600 hover:bg-green-700"
+                        style={{ backgroundColor: '#1B5E20' }}
+                        className="hover:opacity-90"
                       >
                         {buildingTree ? (
                           <>
@@ -1646,6 +1904,31 @@ export default function ImportPage() {
                       </Button>
                     </div>
                   </div>
+                  
+                  {/* Tree Building Progress Bar */}
+                  {buildingTree && (
+                    <div className="mb-6">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Building Tree
+                        </span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          {treeBuildProgress}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                        <div 
+                          className="bg-green-600 h-2.5 rounded-full transition-all duration-300"
+                          style={{ width: `${treeBuildProgress}%` }}
+                        />
+                      </div>
+                      {treeBuildStatus && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                          {treeBuildStatus}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   
                   {/* Group proposals by block type and display in order */}
                   {(() => {

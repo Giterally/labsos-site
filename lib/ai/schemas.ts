@@ -25,7 +25,7 @@ export const NodeContentSchema = z.object({
   structured_steps: z.array(z.object({
     step_no: z.number().int().positive(),
     action: z.string().min(5),
-    params: z.record(z.any()),
+    params: z.record(z.any()).optional(),
   })).optional(),
 });
 
@@ -37,7 +37,7 @@ export const NodeMetadataSchema = z.object({
   tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed'),
   status: z.enum(validStatusTypes),
   parameters: z.record(z.any()),
-  estimated_time_minutes: z.number().int().nonnegative(),
+  estimated_time_minutes: z.number().int().nonnegative().nullable(),
 });
 
 /**
@@ -159,15 +159,35 @@ export function validateAndFixNode(nodeData: any): z.infer<typeof ProposedNodeSc
     // First attempt: validate as-is
     return ProposedNodeSchema.parse(nodeData);
   } catch (firstError) {
-    console.warn('[SCHEMA_VALIDATION] Initial validation failed, attempting fixes:', firstError);
+    if (firstError instanceof z.ZodError) {
+      console.warn('[SCHEMA_VALIDATION] Initial validation failed:', {
+        errors: firstError.errors.map(e => ({
+          path: e.path.join('.'),
+          message: e.message,
+          received: e.code === 'invalid_type' ? (e as any).received : undefined,
+        })),
+      });
+    }
 
     try {
       // Second attempt: apply common fixes
       const fixed = fixCommonIssues(nodeData);
+      console.log('[SCHEMA_VALIDATION] Applied fixes, retrying validation');
       return ProposedNodeSchema.parse(fixed);
     } catch (secondError) {
-      console.error('[SCHEMA_VALIDATION] Validation failed after fixes:', secondError);
-      throw new Error(`Schema validation failed: ${secondError instanceof z.ZodError ? secondError.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') : secondError}`);
+      if (secondError instanceof z.ZodError) {
+        const errorDetails = secondError.errors.map(e => {
+          const path = e.path.join('.') || 'root';
+          return `  - ${path}: ${e.message}${e.code === 'invalid_type' ? ` (received: ${(e as any).received})` : ''}`;
+        }).join('\n');
+        
+        console.error('[SCHEMA_VALIDATION] Validation failed after fixes:\n', errorDetails);
+        console.error('[SCHEMA_VALIDATION] Problematic data:', JSON.stringify(nodeData, null, 2));
+        
+        throw new Error(`Schema validation failed:\n${errorDetails}\n\nThis usually means the AI generated an invalid node structure. Please try again.`);
+      }
+      
+      throw new Error(`Schema validation failed: ${secondError instanceof Error ? secondError.message : 'Unknown error'}`);
     }
   }
 }

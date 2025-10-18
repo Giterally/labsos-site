@@ -19,11 +19,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
     }
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '');
+    // Extract the auth token
+    const authToken = authHeader.replace('Bearer ', '');
 
     // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authToken);
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

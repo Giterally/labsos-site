@@ -1,4 +1,4 @@
-import { aiProvider } from './provider';
+import { getAIProviderInstance } from './provider';
 
 /**
  * Calculate Levenshtein distance between two strings
@@ -101,8 +101,8 @@ Respond in JSON format:
   "reasoning": "Brief explanation of why they are or aren't duplicates"
 }`;
 
-    const response = await aiProvider.generateText({
-      prompt,
+    const aiProvider = getAIProviderInstance();
+    const response = await aiProvider.generateText(prompt, {
       maxTokens: 300,
       temperature: 0.3, // Lower temperature for more consistent detection
     });

@@ -15,7 +15,12 @@ export interface BatchEmbeddingResult {
 
 // Generate embeddings for a single text
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const aiProvider = getAIProviderInstance();
+  // Always use OpenAI for embeddings - fail fast if not available
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY is required for embedding generation. Please set your OpenAI API key in environment variables.');
+  }
+  
+  const aiProvider = new OpenAIProvider();
   return await aiProvider.generateEmbedding(text);
 }
 
@@ -25,23 +30,14 @@ export async function generateBatchEmbeddings(texts: string[]): Promise<BatchEmb
   
   console.log(`[EMBEDDINGS] Starting batch embedding generation for ${texts.length} texts`);
   
-  // Try to use OpenAI for embeddings if available, fallback to Claude
-  let aiProvider;
-  let batchSize = 5; // Default for Claude
-  
-  try {
-    if (process.env.OPENAI_API_KEY) {
-      aiProvider = new OpenAIProvider();
-      batchSize = 100; // OpenAI can handle larger batches
-      console.log(`[EMBEDDINGS] Using OpenAI embeddings with batch size ${batchSize}`);
-    } else {
-      aiProvider = getAIProviderInstance();
-      console.log(`[EMBEDDINGS] Using Claude embeddings with batch size ${batchSize}`);
-    }
-  } catch (error) {
-    console.warn(`[EMBEDDINGS] OpenAI not available, falling back to Claude:`, error);
-    aiProvider = getAIProviderInstance();
+  // Always use OpenAI for embeddings - fail fast if not available
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY is required for embedding generation. Please set your OpenAI API key in environment variables.');
   }
+  
+  const aiProvider = new OpenAIProvider();
+  const batchSize = 100; // OpenAI can handle larger batches
+  console.log(`[EMBEDDINGS] Using OpenAI embeddings with batch size ${batchSize}`);
   const results: EmbeddingResult[] = [];
   let totalTokens = 0;
 
@@ -115,7 +111,7 @@ export async function storeEmbeddings(
     metadata: {
       ...chunk.metadata,
       tokenCount: embeddings[index].tokenCount,
-      embeddingModel: process.env.OPENAI_API_KEY ? 'text-embedding-3-small' : 'claude-3-haiku-20240307',
+      embeddingModel: 'text-embedding-3-small', // Always use OpenAI for embeddings
     },
   }));
 

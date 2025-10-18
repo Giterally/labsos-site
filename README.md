@@ -8,6 +8,8 @@ A comprehensive platform for organizing research projects, experiment trees, sof
 - Organize research workflows as sequential steps
 - Track protocols, equipment, and procedures
 - Version control and collaboration
+- **Real-time Progress Tracking**: Cross-tab, cross-session progress updates via Server-Sent Events (SSE)
+- **Persistent Progress**: Progress persists through page refreshes and browser restarts
 
 ### 💻 **Software Management**
 - Track internal and external software tools

@@ -45,8 +45,53 @@ export async function clusterChunks(
     return [];
   }
 
+  // Validate embedding dimensions and filter out incompatible ones
+  const validChunks = chunks.filter(chunk => {
+    if (!chunk.embedding || !Array.isArray(chunk.embedding)) {
+      console.warn(`[CLUSTERING] Chunk ${chunk.id} has invalid embedding, skipping`);
+      return false;
+    }
+    return true;
+  });
+
+  if (validChunks.length === 0) {
+    console.warn('[CLUSTERING] No chunks with valid embeddings found');
+    return [];
+  }
+
+  // Check for mixed embedding dimensions
+  const dimensions = new Set(validChunks.map(c => c.embedding.length));
+  let finalChunks = validChunks;
+  
+  if (dimensions.size > 1) {
+    console.warn(`[CLUSTERING] Found mixed embedding dimensions: ${Array.from(dimensions)}`);
+    
+    // Find the most common dimension
+    const dimensionCounts = new Map<number, number>();
+    validChunks.forEach(chunk => {
+      const dim = chunk.embedding.length;
+      dimensionCounts.set(dim, (dimensionCounts.get(dim) || 0) + 1);
+    });
+    
+    const mostCommonDimension = Array.from(dimensionCounts.entries())
+      .sort((a, b) => b[1] - a[1])[0][0];
+    
+    console.warn(`[CLUSTERING] Using dimension ${mostCommonDimension} (most common), filtering out ${validChunks.length - dimensionCounts.get(mostCommonDimension)!} incompatible chunks`);
+    
+    // Filter to only use chunks with the most common dimension
+    finalChunks = validChunks.filter(chunk => chunk.embedding.length === mostCommonDimension);
+    
+    if (finalChunks.length === 0) {
+      throw new Error(`No chunks found with consistent embedding dimension. Found dimensions: ${Array.from(dimensions)}`);
+    }
+    
+    console.log(`[CLUSTERING] Using ${finalChunks.length} chunks with consistent dimension ${mostCommonDimension}`);
+  } else {
+    console.log(`[CLUSTERING] Using ${validChunks.length} chunks with consistent dimension ${Array.from(dimensions)[0]}`);
+  }
+
   // Convert to array of embeddings with IDs
-  const embeddings = chunks.map(chunk => ({
+  const embeddings = finalChunks.map(chunk => ({
     id: chunk.id,
     embedding: chunk.embedding,
     text: chunk.text,

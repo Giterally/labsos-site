@@ -1,6 +1,7 @@
 import { supabaseServer } from '../supabase-server';
 import { preprocessText } from '../ingestion/preprocessors/text';
 import { chunkText } from '../ingestion/chunker';
+import { chunkTextSemantically } from '../ingestion/semantic-chunker';
 import { generateBatchEmbeddings } from '../ai/embeddings';
 
 export async function preprocessFile(sourceId: string, projectId: string) {
@@ -69,16 +70,22 @@ export async function preprocessFile(sourceId: string, projectId: string) {
         throw new Error(errorMsg);
       }
 
-      // Step 2: Chunk the content
-      console.log(`[PREPROCESSING] Step 2/4: Chunking content`);
-      const chunks = chunkText(
+      // Step 2: Chunk the content using semantic chunking
+      console.log(`[PREPROCESSING] Step 2/4: Chunking content with semantic boundaries`);
+      const chunks = chunkTextSemantically(
         preprocessedContent.text!,
         source.source_type,
         { sourceId, sourceName: source.source_name },
-        { maxTokens: 800, overlapTokens: 100 }
+        { maxTokens: 1000, overlapTokens: 150, preserveStructure: true }
       );
 
-      console.log(`[PREPROCESSING] Generated ${chunks.length} chunks successfully`);
+      console.log(`[PREPROCESSING] Generated ${chunks.length} chunks with semantic boundaries`);
+      console.log(`[PREPROCESSING] Chunk structure flags:`, {
+        withTables: chunks.filter(c => c.metadata.structureFlags.containsTable).length,
+        withCode: chunks.filter(c => c.metadata.structureFlags.containsCode).length,
+        withNumberedLists: chunks.filter(c => c.metadata.structureFlags.containsNumberedList).length,
+        protocols: chunks.filter(c => c.metadata.structureFlags.isProtocol).length,
+      });
 
       // Step 3: Generate embeddings with timeout protection
       console.log(`[PREPROCESSING] Step 3/4: Generating embeddings for ${chunks.length} chunks`);
@@ -108,7 +115,7 @@ export async function preprocessFile(sourceId: string, projectId: string) {
         metadata: {
           ...chunk.metadata,
           tokenCount: embeddings[index].tokenCount,
-          embeddingModel: process.env.OPENAI_API_KEY ? 'text-embedding-3-small' : 'claude-3-haiku-20240307',
+          embeddingModel: 'text-embedding-3-small', // Always use OpenAI for embeddings
         },
       }));
 
