@@ -8,9 +8,15 @@ export async function GET(
   try {
     const { jobId } = await context.params;
 
-    const progress = progressTracker.get(jobId);
+    console.log('[PROGRESS_API] Fetching progress for job:', jobId);
+
+    // Use getWithFallback to check database when cache is empty
+    const progress = await progressTracker.getWithFallback(jobId);
+
+    console.log('[PROGRESS_API] Progress data:', progress);
 
     if (!progress) {
+      console.log('[PROGRESS_API] No progress found for job:', jobId);
       // Return default initializing state if no progress found
       return NextResponse.json({
         stage: 'initializing',
@@ -20,6 +26,13 @@ export async function GET(
         timestamp: Date.now(),
       });
     }
+
+    console.log('[PROGRESS_API] Returning progress:', {
+      stage: progress.stage,
+      current: progress.current,
+      total: progress.total,
+      percentage: progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0,
+    });
 
     return NextResponse.json(progress);
   } catch (error: any) {

@@ -6,6 +6,26 @@ import { progressTracker } from '../progress-tracker';
 import { generateWorkflowOutline, type WorkflowOutline, summarizeOutline, getDependencySections } from '../ai/planning-agent';
 import { retrieveContextForSynthesis, checkDuplication } from '../ai/rag-retriever';
 
+// Helper function to check if job was cancelled
+async function checkCancellation(jobId: string): Promise<boolean> {
+  try {
+    const { data: job } = await supabaseServer
+      .from('jobs')
+      .select('status')
+      .eq('id', jobId)
+      .single();
+    
+    const cancelled = job?.status === 'cancelled';
+    if (cancelled) {
+      console.log('[AI SYNTHESIS] Cancellation detected for job:', jobId);
+    }
+    return cancelled;
+  } catch (error) {
+    console.error('[AI SYNTHESIS] Error checking cancellation:', error);
+    return false;
+  }
+}
+
 export async function generateProposals(projectId: string, jobId?: string) {
   // Generate jobId if not provided
   const trackingJobId = jobId || `proposals_${projectId}_${Date.now()}`;
@@ -17,6 +37,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
     total: 100,
     message: 'Initializing proposal generation...',
   });
+  console.log('[AI SYNTHESIS] Progress updated: 0/100 (0%) - Initializing');
   try {
     console.log(`[AI SYNTHESIS] Starting proposal generation for project: ${projectId}`);
 
@@ -79,16 +100,45 @@ export async function generateProposals(projectId: string, jobId?: string) {
         })
         .eq('id', projectId);
       
-      await progressTracker.updateWithPersistence(trackingJobId, {
-        stage: 'initializing',
-        current: 10,
-        total: 100,
-        message: `Outline complete: ${workflowOutline.phases.length} phases, ~${workflowOutline.estimatedNodes} nodes`,
+      console.log('[AI SYNTHESIS] About to update progress after Planning Agent success...');
+      console.log('[AI SYNTHESIS] Planning Agent result:', {
+        phases: workflowOutline.phases.length,
+        estimatedNodes: workflowOutline.estimatedNodes,
+        title: workflowOutline.title
       });
+
+      try {
+        await progressTracker.updateWithPersistence(trackingJobId, {
+          stage: 'initializing',
+          current: 15,
+          total: 100,
+          message: `Outline complete: ${workflowOutline.phases.length} phases, ~${workflowOutline.estimatedNodes} nodes`,
+        });
+        console.log('[AI SYNTHESIS] Progress update successful!');
+        console.log('[AI SYNTHESIS] Progress updated: 15/100 (15%) - Planning Agent complete');
+      } catch (progressError) {
+        console.error('[AI SYNTHESIS] Progress update failed:', progressError);
+        console.error('[AI SYNTHESIS] Progress error details:', {
+          error: progressError.message,
+          stack: progressError.stack,
+          trackingJobId: trackingJobId
+        });
+        // Continue anyway - don't let progress update failure stop the pipeline
+        console.log('[AI SYNTHESIS] Continuing pipeline despite progress update failure...');
+      }
     } catch (planningError: any) {
       console.error('[AI SYNTHESIS] Planning Agent failed, continuing without outline:', planningError);
       // Continue without outline - clustering will still work
       workflowOutline = null;
+      
+      // Update progress to indicate we're moving forward despite the error
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'initializing',
+        current: 10,
+        total: 100,
+        message: 'Planning Agent skipped, proceeding to clustering...',
+      });
+      console.log('[AI SYNTHESIS] Progress updated: 10/100 (10%) - Planning Agent skipped');
     }
 
     // Step 1: Cluster chunks
@@ -100,6 +150,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
         total: 100,
         message: `Clustering ${chunks.length} chunks...`,
       });
+      console.log('[AI SYNTHESIS] Progress updated: 15/100 (15%) - Clustering');
       
       console.log(`[AI SYNTHESIS] Clustering chunks`);
       clusters = await clusterChunks(projectId, {
@@ -111,6 +162,14 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
       await storeClusteringResults(projectId, clusters);
       console.log(`[AI SYNTHESIS] Generated ${clusters.length} clusters`);
+      
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'clustering',
+        current: 25,
+        total: 100,
+        message: `Generated ${clusters.length} clusters, starting synthesis...`,
+      });
+      console.log('[AI SYNTHESIS] Progress updated: 25/100 (25%) - Clustering complete');
     } catch (error: any) {
       const errorMsg = `Clustering failed: ${error.message}`;
       console.error(`[AI SYNTHESIS] ${errorMsg}`, error);
@@ -133,10 +192,11 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
     await progressTracker.updateWithPersistence(trackingJobId, {
       stage: 'synthesizing',
-      current: 20,
+      current: 25,
       total: 100,
       message: `Synthesizing nodes from ${clusters.length} clusters (0/${totalItemsToSynthesize})...`,
     });
+    console.log('[AI SYNTHESIS] Progress updated: 25/100 (25%) - Starting synthesis');
     
     console.log(`[AI SYNTHESIS] Synthesizing nodes`);
     const proposedNodes = [];
@@ -190,7 +250,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
       proposedNodes.push({ nodeId, confidence });
       synthesizedCount++;
 
-      const progressPercent = Math.round(20 + (synthesizedCount / totalItemsToSynthesize) * 60);
+      const progressPercent = Math.round(25 + (synthesizedCount / totalItemsToSynthesize) * 60);
       await progressTracker.updateWithPersistence(trackingJobId, {
         stage: 'synthesizing',
         current: progressPercent,
@@ -203,6 +263,21 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
     // Process regular clusters
     for (const cluster of clusters) {
+      // Check for cancellation before processing each cluster
+      if (await checkCancellation(trackingJobId)) {
+        console.log(`[AI SYNTHESIS] Generation cancelled by user after creating ${proposedNodes.length} nodes`);
+        await progressTracker.completeWithPersistence(
+          trackingJobId, 
+          `Generation stopped. Created ${proposedNodes.length} proposed nodes.`
+        );
+        return {
+          success: true,
+          clustersGenerated: clusters.length,
+          nodesGenerated: proposedNodes.length,
+          cancelled: true,
+        };
+      }
+
       try {
         // Get chunks for this cluster
         const { data: clusterChunks, error: chunksError } = await supabaseServer
@@ -291,7 +366,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
         proposedNodes.push({ nodeId, confidence });
         synthesizedCount++;
 
-        const progressPercent = Math.round(20 + (synthesizedCount / totalItemsToSynthesize) * 60);
+        const progressPercent = Math.round(25 + (synthesizedCount / totalItemsToSynthesize) * 60);
         await progressTracker.updateWithPersistence(trackingJobId, {
           stage: 'synthesizing',
           current: progressPercent,
@@ -303,7 +378,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
       } catch (clusterError: any) {
         console.error(`[AI SYNTHESIS] Failed to synthesize cluster ${cluster.clusterId}:`, clusterError);
         // Continue with other clusters even if one fails
-        const progressPercent = Math.round(20 + (synthesizedCount / totalItemsToSynthesize) * 60);
+        const progressPercent = Math.round(25 + (synthesizedCount / totalItemsToSynthesize) * 60);
         await progressTracker.updateWithPersistence(trackingJobId, {
           stage: 'synthesizing',
           current: progressPercent,
@@ -338,6 +413,21 @@ export async function generateProposals(projectId: string, jobId?: string) {
       console.log(`[AI SYNTHESIS] Processing ${batches.length} batches of unclustered chunks`);
 
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        // Check for cancellation before each batch
+        if (await checkCancellation(trackingJobId)) {
+          console.log(`[AI SYNTHESIS] Generation cancelled during unclustered processing after ${proposedNodes.length} nodes`);
+          await progressTracker.completeWithPersistence(
+            trackingJobId, 
+            `Generation stopped. Created ${proposedNodes.length} proposed nodes.`
+          );
+          return {
+            success: true,
+            clustersGenerated: clusters.length,
+            nodesGenerated: proposedNodes.length,
+            cancelled: true,
+          };
+        }
+
         const batch = batches[batchIndex];
         console.log(`[AI SYNTHESIS] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} chunks)`);
 
@@ -383,7 +473,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
             
             // Update overall synthesized count and progress
             synthesizedCount++;
-            const progressPercent = Math.round(20 + (synthesizedCount / totalItemsToSynthesize) * 60);
+            const progressPercent = Math.round(25 + (synthesizedCount / totalItemsToSynthesize) * 60);
             await progressTracker.updateWithPersistence(trackingJobId, {
               stage: 'synthesizing',
               current: progressPercent,
@@ -443,12 +533,34 @@ export async function generateProposals(projectId: string, jobId?: string) {
           if (duplicates.length > 0) {
             console.log(`[AI SYNTHESIS] Found ${duplicates.length} duplicate pairs, merging...`);
             
+            await progressTracker.updateWithPersistence(trackingJobId, {
+              stage: 'deduplicating',
+              current: 90,
+              total: 100,
+              message: `Merging ${duplicates.length} duplicate pairs...`,
+            });
+            
             // Track which nodes to delete
             const nodesToDelete = new Set<string>();
             const nodesToUpdate: any[] = [];
 
             // Process each duplicate pair
             for (const dup of duplicates) {
+              // Check for cancellation before processing each duplicate
+              if (await checkCancellation(trackingJobId)) {
+                console.log(`[AI SYNTHESIS] Generation cancelled during deduplication after processing ${nodesToDelete.size} duplicates`);
+                await progressTracker.completeWithPersistence(
+                  trackingJobId, 
+                  `Generation stopped. Created ${proposedNodes.length} proposed nodes, merged ${nodesToDelete.size} duplicates.`
+                );
+                return {
+                  success: true,
+                  clustersGenerated: clusters.length,
+                  nodesGenerated: proposedNodes.length,
+                  cancelled: true,
+                };
+              }
+
               // Skip if already marked for deletion
               if (nodesToDelete.has(dup.node1Id) || nodesToDelete.has(dup.node2Id)) {
                 continue;
@@ -493,6 +605,21 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
             // Update merged nodes
             for (const update of nodesToUpdate) {
+              // Check for cancellation before each update
+              if (await checkCancellation(trackingJobId)) {
+                console.log(`[AI SYNTHESIS] Generation cancelled during node updates`);
+                await progressTracker.completeWithPersistence(
+                  trackingJobId,
+                  `Generation stopped. Created ${proposedNodes.length} nodes, partially merged duplicates.`
+                );
+                return {
+                  success: true,
+                  clustersGenerated: clusters.length,
+                  nodesGenerated: proposedNodes.length,
+                  cancelled: true,
+                };
+              }
+
               const { error: updateError } = await supabaseServer
                 .from('proposed_nodes')
                 .update({
@@ -508,12 +635,45 @@ export async function generateProposals(projectId: string, jobId?: string) {
             }
 
             console.log(`[AI SYNTHESIS] Deduplication complete: ${nodesToDelete.size} duplicates removed, ${nodesToUpdate.length} nodes merged`);
+            
+            // Update progress to show finalization phase
+            await progressTracker.updateWithPersistence(trackingJobId, {
+              stage: 'complete',
+              current: 95,
+              total: 100,
+              message: 'Finalizing and cleaning up...',
+            });
+            console.log('[AI SYNTHESIS] Progress updated: 95/100 (95%) - Finalizing');
           } else {
             console.log(`[AI SYNTHESIS] No duplicates found`);
+            
+            // Update progress to show finalization phase even when no duplicates
+            await progressTracker.updateWithPersistence(trackingJobId, {
+              stage: 'complete',
+              current: 95,
+              total: 100,
+              message: 'Finalizing and cleaning up...',
+            });
+            console.log('[AI SYNTHESIS] Progress updated: 95/100 (95%) - Finalizing');
           }
         }
       } catch (dedupError) {
         console.error('[AI SYNTHESIS] Deduplication failed, continuing without it:', dedupError);
+        
+        // Check for cancellation even if dedup failed
+        if (await checkCancellation(trackingJobId)) {
+          console.log(`[AI SYNTHESIS] Generation cancelled after deduplication error`);
+          await progressTracker.completeWithPersistence(
+            trackingJobId,
+            `Generation stopped. Created ${proposedNodes.length} nodes.`
+          );
+          return {
+            success: true,
+            clustersGenerated: clusters.length,
+            nodesGenerated: proposedNodes.length,
+            cancelled: true,
+          };
+        }
       }
     } else {
       console.log(`[AI SYNTHESIS] Skipping deduplication (only ${proposedNodes.length} node)`);
@@ -524,6 +684,21 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
     // Delete older proposals that are not part of this generation
     if (createdIds.length > 0) {
+      // Check for cancellation before cleanup
+      if (await checkCancellation(trackingJobId)) {
+        console.log(`[AI SYNTHESIS] Generation cancelled before finalization`);
+        await progressTracker.completeWithPersistence(
+          trackingJobId,
+          `Generation stopped. Created ${proposedNodes.length} nodes successfully.`
+        );
+        return {
+          success: true,
+          clustersGenerated: clusters.length,
+          nodesGenerated: proposedNodes.length,
+          cancelled: true,
+        };
+      }
+
       // Fetch existing proposed IDs
       const { data: existingProposed } = await supabaseServer
         .from('proposed_nodes')

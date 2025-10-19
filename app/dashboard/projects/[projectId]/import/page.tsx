@@ -41,7 +41,8 @@ import {
   Plus,
   RotateCcw,
   ArrowLeft,
-  Loader2
+  Loader2,
+  Square
 } from 'lucide-react';
 
 interface IngestionSource {
@@ -59,7 +60,7 @@ interface IngestionSource {
 interface Job {
   id: string;
   type: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   payload: any;
   result?: any;
   error?: string;
@@ -299,36 +300,10 @@ export default function ImportPage() {
             break;
           
           case 'progress_update':
-            console.log('Progress update:', data);
-            if (data.jobId === currentJobId) {
-              // Calculate percentage
-              const percentage = data.progress.total > 0 
-                ? Math.round((data.progress.current / data.progress.total) * 100) 
-                : 0;
-              
-              setGenerationProgress(percentage);
-              setGenerationStatus(data.progress.message || 'Processing...');
-              
-              // Check if complete
-              if (data.progress.stage === 'complete') {
-                clearStoredJobId(projectId);
-                setGeneratingProposals(false);
-                setGenerationProgress(0);
-                setGenerationStatus('');
-                setCurrentJobId(null);
-                // Refresh data to show new proposals
-                fetchData();
-                setActiveTab('proposals');
-                setSuccess(`Generated proposals successfully!`);
-              } else if (data.progress.stage === 'error') {
-                clearStoredJobId(projectId);
-                setGeneratingProposals(false);
-                setGenerationProgress(0);
-                setGenerationStatus('');
-                setCurrentJobId(null);
-                setError(data.progress.message || 'Generation failed');
-              }
-            } else if (data.jobId === treeBuildJobId) {
+            console.log('[SSE] Progress update received:', data);
+            console.log('[SSE] Current jobId:', currentJobId, 'Message jobId:', data.jobId);
+            // Note: Proposal generation progress now handled via polling, not SSE
+            if (data.jobId === treeBuildJobId) {
               // Handle tree building progress updates
               const percentage = data.progress.total > 0 
                 ? Math.round((data.progress.current / data.progress.total) * 100) 
@@ -464,6 +439,18 @@ export default function ImportPage() {
                 
                 setGenerationProgress(percentage);
                 setGenerationStatus(progress.message || 'Resuming...');
+                
+                // Resume polling
+                console.log('[IMPORT] Resuming polling for progress...');
+                const pollInterval = setInterval(async () => {
+                  const status = await pollProgress(storedJobId);
+                  if (status === 'complete' || status === 'error') {
+                    clearInterval(pollInterval);
+                  }
+                }, 1000);
+                
+                // Store interval reference for cleanup
+                (window as any).__progressPollInterval = pollInterval;
               }
             } else {
               console.log('[IMPORT] Could not fetch progress for stored job, clearing localStorage');
@@ -554,6 +541,10 @@ export default function ImportPage() {
       if (eventSource) {
         eventSource.close();
         setSseConnected(false);
+      }
+      // Cleanup polling interval
+      if ((window as any).__progressPollInterval) {
+        clearInterval((window as any).__progressPollInterval);
       }
     };
   }, [fetchData, connectSSE, projectId]);
@@ -812,7 +803,18 @@ export default function ImportPage() {
       storeJobId(projectId, jobId);
       
       console.log('[GENERATE] Proposals generation started with jobId:', jobId);
-      console.log('[GENERATE] Progress tracking now handled via SSE - no polling needed');
+      console.log('[GENERATE] Starting polling for progress updates...');
+
+      // Start polling for progress
+      const pollInterval = setInterval(async () => {
+        const status = await pollProgress(jobId);
+        if (status === 'complete' || status === 'error') {
+          clearInterval(pollInterval);
+        }
+      }, 1000); // Poll every 1 second
+
+      // Store interval reference for cleanup
+      (window as any).__progressPollInterval = pollInterval;
 
     } catch (error: any) {
       console.error('Generate proposals error:', error);
@@ -827,6 +829,128 @@ export default function ImportPage() {
       setShowRegenerateConfirm(false);
     }
   };
+
+  const handleStopGeneration = async () => {
+    if (!currentJobId) {
+      console.error('[STOP] No current job ID');
+      return;
+    }
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Not authenticated');
+      }
+
+      console.log('[STOP] Cancelling job:', currentJobId);
+
+      const response = await fetch(`/api/projects/${projectId}/jobs/${currentJobId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to cancel generation');
+      }
+
+      console.log('[STOP] Job cancellation requested successfully');
+      setGenerationStatus('Stopping generation...');
+      
+    } catch (error: any) {
+      console.error('[STOP] Error cancelling generation:', error);
+      setError(error.message || 'Failed to stop generation');
+    }
+  };
+
+  // Poll progress endpoint for updates
+  const pollProgress = useCallback(async (jobId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const response = await fetch(`/api/projects/${projectId}/progress/${jobId}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.error('[POLL] Failed to fetch progress');
+        return;
+      }
+
+      const progress = await response.json();
+      console.log('[POLL] Progress update:', progress);
+
+      // Calculate percentage
+      const percentage = progress.total > 0 
+        ? Math.round((progress.current / progress.total) * 100) 
+        : 0;
+
+      console.log('[POLL] Calculated percentage:', {
+        current: progress.current,
+        total: progress.total,
+        percentage: percentage,
+        stage: progress.stage,
+        message: progress.message,
+      });
+      
+      setGenerationProgress(percentage);
+      setGenerationStatus(progress.message || 'Processing...');
+
+      // Check if complete
+      if (progress.stage === 'complete') {
+        console.log('[POLL] Generation complete!');
+        // Update UI first
+        setGenerationProgress(100);
+        setGenerationStatus(progress.message || 'Complete!');
+        
+        const wasCancelled = progress.message?.includes('stopped') || 
+                             progress.message?.includes('cancelled');
+        
+        console.log('[POLL] Completion type:', wasCancelled ? 'CANCELLED' : 'NORMAL');
+        
+        // Small delay to show 100% completion
+        setTimeout(() => {
+          clearStoredJobId(projectId);
+          setGeneratingProposals(false);
+          setGenerationProgress(0);
+          setGenerationStatus('');
+          setCurrentJobId(null);
+          // Refresh data to show new proposals
+          fetchData();
+          
+          if (wasCancelled) {
+            setSuccess(progress.message || 'Generation stopped. Nodes created are preserved.');
+            // Stay on current tab
+          } else {
+            setActiveTab('proposals');
+            setSuccess('Generated proposals successfully!');
+          }
+        }, 1500);
+        
+        return 'complete';
+      } else if (progress.stage === 'error') {
+        console.error('[POLL] Generation failed:', progress.message);
+        clearStoredJobId(projectId);
+        setGeneratingProposals(false);
+        setGenerationProgress(0);
+        setGenerationStatus('');
+        setCurrentJobId(null);
+        setError(progress.message || 'Generation failed');
+        return 'error';
+      }
+      
+      return 'running';
+    } catch (error) {
+      console.error('[POLL] Error fetching progress:', error);
+      return 'running'; // Continue polling on error
+    }
+  }, [projectId, supabase, setGenerationProgress, setGenerationStatus, setGeneratingProposals, setCurrentJobId, setError, setSuccess, setActiveTab, fetchData, clearStoredJobId]);
 
   const handleDeleteSource = async (sourceId: string) => {
     if (!confirm('Are you sure you want to delete this file? This action cannot be undone.')) {
@@ -1174,29 +1298,6 @@ export default function ImportPage() {
         </Alert>
       )}
 
-      {/* Resume Generation Banner */}
-      {currentJobId && generatingProposals && (
-        <Alert className="border-blue-200 bg-blue-50 text-blue-800">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <AlertDescription>
-            AI generation in progress: {generationProgress}% - {generationStatus}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                clearStoredJobId(projectId);
-                setCurrentJobId(null);
-                setGeneratingProposals(false);
-                setGenerationProgress(0);
-                setGenerationStatus('');
-              }}
-              className="ml-2 h-6 px-2 text-xs"
-            >
-              Dismiss
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
@@ -1720,55 +1821,69 @@ export default function ImportPage() {
                       </Button>
                       {/* Modal for confirmation when proposals exist */}
                       {proposals.length > 0 ? (
-                        <AlertDialog open={showRegenerateConfirm} onOpenChange={setShowRegenerateConfirm}>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              disabled={sources.filter(s => s.status === 'completed').length === 0 || generatingProposals}
-                              className="bg-blue-600 hover:bg-blue-700"
-                            >
-                              {generatingProposals ? (
-                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                              ) : (
+                        generatingProposals ? (
+                          <Button
+                            onClick={handleStopGeneration}
+                            variant="outline"
+                            className="border-red-300 text-red-600 hover:bg-red-50"
+                          >
+                            <Square className="h-4 w-4 mr-2 fill-current" />
+                            Stop Generation
+                          </Button>
+                        ) : (
+                          <AlertDialog open={showRegenerateConfirm} onOpenChange={setShowRegenerateConfirm}>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                disabled={sources.filter(s => s.status === 'completed').length === 0}
+                                className="bg-blue-600 hover:bg-blue-700"
+                              >
                                 <Sparkles className="h-4 w-4 mr-2" />
-                              )}
-                              {generatingProposals ? 'Generating...' : 'Generate AI Proposals'}
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Clear Existing Proposals?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will delete all existing AI-generated proposals ({proposals.length} proposals) and generate new ones from your uploaded files. This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={generateProposalsInternal}>
-                                Clear & Generate New Proposals
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                                Regenerate AI Proposals
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Clear Existing Proposals?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will delete all existing AI-generated proposals ({proposals.length} proposals) and generate new ones from your uploaded files. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={generateProposalsInternal}>
+                                  Clear & Generate New Proposals
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )
                       ) : (
-                        <Button
-                          onClick={() => {
-                            const completedCount = sources.filter(s => s.status === 'completed').length;
-                            if (completedCount === 0) {
-                              setError('No completed files found. Please upload files first.');
-                              return;
-                            }
-                            generateProposalsInternal();
-                          }}
-                          disabled={sources.filter(s => s.status === 'completed').length === 0 || generatingProposals}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          {generatingProposals ? (
-                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
+                        generatingProposals ? (
+                          <Button
+                            onClick={handleStopGeneration}
+                            variant="outline"
+                            className="border-red-300 text-red-600 hover:bg-red-50"
+                          >
+                            <Square className="h-4 w-4 mr-2 fill-current" />
+                            Stop Generation
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={() => {
+                              const completedCount = sources.filter(s => s.status === 'completed').length;
+                              if (completedCount === 0) {
+                                setError('No completed files found. Please upload files first.');
+                                return;
+                              }
+                              generateProposalsInternal();
+                            }}
+                            disabled={sources.filter(s => s.status === 'completed').length === 0}
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
                             <Sparkles className="h-4 w-4 mr-2" />
-                          )}
-                          {generatingProposals ? 'Generating...' : 'Generate AI Proposals'}
-                        </Button>
+                            Generate AI Proposals
+                          </Button>
+                        )
                       )}
                       <Button
                         onClick={handleClearAll}

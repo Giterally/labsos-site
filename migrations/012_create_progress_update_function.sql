@@ -70,7 +70,10 @@ BEGIN
       progress_message = message,
       progress_updated_at = NOW(),
       updated_at = NOW(),
-      status = 'completed',
+      status = CASE 
+        WHEN status = 'cancelled' THEN 'cancelled'
+        ELSE 'completed' 
+      END,
       completed_at = NOW()
     WHERE jobs.id = job_id;
     

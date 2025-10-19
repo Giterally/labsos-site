@@ -104,17 +104,18 @@ export async function POST(
 
     console.log(`[GENERATE PROPOSALS] Created job record: ${jobId}`);
 
-    // Generate proposals using the AI synthesis pipeline (no artificial timeout)
-    const result = await generateProposals(resolvedProjectId, jobId) as any;
+    // Start generation in background - don't await
+    generateProposals(resolvedProjectId, jobId).catch(error => {
+      console.error('[GENERATE PROPOSALS] Background error:', error);
+      // Error handling is done inside generateProposals via progressTracker
+    });
 
-    console.log(`[GENERATE PROPOSALS] Generated ${result.nodesGenerated} proposals from ${result.clustersGenerated} clusters`);
-
+    // Return jobId immediately so frontend can start tracking
     return NextResponse.json({
       success: true,
-      nodesGenerated: result.nodesGenerated,
-      clustersGenerated: result.clustersGenerated,
-      jobId: jobId, // Return the server-generated jobId
-      message: `Successfully generated ${result.nodesGenerated} proposed nodes from ${result.clustersGenerated} clusters`
+      jobId: jobId,
+      message: 'Proposal generation started',
+      status: 'started'
     });
 
   } catch (error) {

@@ -14,7 +14,8 @@ export type ProgressStage =
   | 'building_blocks'
   | 'building_nodes'
   | 'complete'
-  | 'error';
+  | 'error'
+  | 'cancelled';
 
 export interface ProgressUpdate {
   stage: ProgressStage;
