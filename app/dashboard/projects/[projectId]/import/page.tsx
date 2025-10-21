@@ -42,8 +42,11 @@ import {
   RotateCcw,
   ArrowLeft,
   Loader2,
-  Square
+  Square,
+  ChevronDown,
+  Info
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface IngestionSource {
   id: string;
@@ -97,6 +100,9 @@ export default function ImportPage() {
   const [proposals, setProposals] = useState<any[]>([]);
   const [proposalsStats, setProposalsStats] = useState<{ totalNodes: number; totalBlocks: number; blockBreakdown: { type: string; count: number }[] } | null>(null);
   const [selectedProposals, setSelectedProposals] = useState<Set<string>>(new Set());
+  const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
+  const [selectedDetailView, setSelectedDetailView] = useState<Record<string, string>>({});
+  const [showConfidenceInfo, setShowConfidenceInfo] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState('upload');
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [buildingTree, setBuildingTree] = useState(false);
@@ -1435,10 +1441,6 @@ export default function ImportPage() {
               {sseConnected ? 'Live updates' : 'Polling mode'}
             </span>
           </div>
-          <Button onClick={fetchData} variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
         </div>
       </div>
 
@@ -2146,18 +2148,18 @@ export default function ImportPage() {
                     </div>
                     <div className="flex gap-2">
                       <Button
-                        onClick={() => setSelectedProposals(new Set(proposals.map(p => p.id)))}
+                        onClick={() => {
+                          const allSelected = selectedProposals.size === proposals.length;
+                          if (allSelected) {
+                            setSelectedProposals(new Set());
+                          } else {
+                            setSelectedProposals(new Set(proposals.map(p => p.id)));
+                          }
+                        }}
                         variant="outline"
                         size="sm"
                       >
-                        Select All
-                      </Button>
-                      <Button
-                        onClick={() => setSelectedProposals(new Set())}
-                        variant="outline"
-                        size="sm"
-                      >
-                        Clear Selection
+                        {selectedProposals.size === proposals.length ? 'Clear Selection' : 'Select All'}
                       </Button>
                       {buildingTree ? (
                         <Button
@@ -2283,110 +2285,239 @@ export default function ImportPage() {
 
                     return (
                       <div className="space-y-6">
-                        {blocksToRender.map((block, blockIndex) => (
-                          <div key={block.key} className="border rounded-lg p-4">
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full text-sm font-medium">
-                                {blockIndex + 1}
+                        {blocksToRender.map((block, blockIndex) => {
+                          const blockKey = block.key;
+                          const isBlockExpanded = expandedBlocks.has(blockKey);
+                          const selectedInBlock = block.nodes.filter(proposal => selectedProposals.has(proposal.id)).length;
+                          
+                          return (
+                            <div key={blockKey} className="border rounded-lg">
+                              {/* Block Header - Always visible, clickable */}
+                              <div 
+                                className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                                onClick={() => {
+                                  const newExpanded = new Set(expandedBlocks);
+                                  if (isBlockExpanded) {
+                                    newExpanded.delete(blockKey);
+                                  } else {
+                                    newExpanded.add(blockKey);
+                                  }
+                                  setExpandedBlocks(newExpanded);
+                                }}
+                              >
+                                <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full text-sm font-medium">
+                                  {blockIndex + 1}
+                                </div>
+                                <h3 className="text-lg font-semibold flex-1">{formatBlockName(block.type, block.part, block.totalParts)} Block</h3>
+                                <div className="flex items-center gap-2">
+                                  {selectedInBlock > 0 && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      {selectedInBlock}/{block.nodes.length} selected
+                                    </Badge>
+                                  )}
+                                  <Badge variant="outline" className="text-xs">
+                                    {block.nodes.length} node(s)
+                                  </Badge>
+                                  <ChevronDown 
+                                    className={`w-4 h-4 transition-transform ${isBlockExpanded ? 'rotate-180' : ''}`}
+                                  />
+                                </div>
                               </div>
-                              <h3 className="text-lg font-semibold">{formatBlockName(block.type, block.part, block.totalParts)} Block</h3>
-                              <Badge variant="outline" className="ml-auto">
-                                {block.nodes.length} node(s)
-                              </Badge>
-                            </div>
-                            
-                            <div className="space-y-3">
-                              {block.nodes.map((proposal, nodeIndex) => {
-                                const node = proposal.node_json;
-                                const isSelected = selectedProposals.has(proposal.id);
-                                
-                                return (
-                                  <div 
-                                    key={proposal.id} 
-                                    className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                                      isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                                    }`}
-                                    onClick={() => {
-                                      const newSelected = new Set(selectedProposals);
-                                      if (isSelected) {
-                                        newSelected.delete(proposal.id);
-                                      } else {
-                                        newSelected.add(proposal.id);
-                                      }
-                                      setSelectedProposals(newSelected);
-                                    }}
-                                  >
-                                    <div className="flex items-start gap-3">
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={isSelected}
-                                          onChange={() => {}} // Handled by parent onClick
-                                          className="mt-1"
-                                        />
-                                        <div className="flex items-center justify-center w-6 h-6 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
-                                          {nodeIndex + 1}
-                                        </div>
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-2">
-                                          <h4 className="font-medium text-sm">{node.title}</h4>
-                                          <Badge 
-                                            variant={proposal.confidence > 0.8 ? 'default' : proposal.confidence > 0.6 ? 'secondary' : 'outline'}
-                                            className="text-xs"
-                                          >
-                                            {Math.round(proposal.confidence * 100)}% confidence
-                                          </Badge>
-                                        </div>
-                                        <p className="text-sm text-muted-foreground mb-3">
-                                          {node.short_summary || node.content?.text?.substring(0, 200) + '...'}
-                                        </p>
-                                        
-                                        {/* Detailed node information */}
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-muted-foreground">📄 Content:</span>
-                                            <span className={node.content?.text ? 'text-green-600' : 'text-red-600'}>
-                                              {node.content?.text ? 'Yes' : 'No'}
-                                            </span>
+                              
+                              {/* Block Content - Only visible when expanded */}
+                              {isBlockExpanded && (
+                                <div className="px-4 pb-4 space-y-3">
+                                  {block.nodes.map((proposal, nodeIndex) => {
+                                    const node = proposal.node_json;
+                                    const isSelected = selectedProposals.has(proposal.id);
+                                    
+                                    return (
+                                      <div 
+                                        key={proposal.id} 
+                                        className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                                          isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                                        }`}
+                                        onClick={() => {
+                                          const newSelected = new Set(selectedProposals);
+                                          if (isSelected) {
+                                            newSelected.delete(proposal.id);
+                                          } else {
+                                            newSelected.add(proposal.id);
+                                          }
+                                          setSelectedProposals(newSelected);
+                                        }}
+                                      >
+                                        <div className="flex items-start gap-3">
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              checked={isSelected}
+                                              onChange={() => {}} // Handled by parent onClick
+                                              className="mt-1"
+                                            />
+                                            <div className="flex items-center justify-center w-6 h-6 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+                                              {nodeIndex + 1}
+                                            </div>
                                           </div>
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-muted-foreground">🔗 Links:</span>
-                                            <span className="font-medium">{node.links?.length || 0}</span>
-                                          </div>
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-muted-foreground">📎 Attachments:</span>
-                                            <span className="font-medium">{node.attachments?.length || 0}</span>
-                                          </div>
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-muted-foreground">🏷️ Tags:</span>
-                                            <span className="font-medium">{node.metadata?.tags?.length || 0}</span>
-                                          </div>
-                                        </div>
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-2">
+                                              <h4 className="font-medium text-sm">{node.title}</h4>
+                                              <div className="flex items-center gap-1">
+                                                <Badge 
+                                                  variant={proposal.confidence > 0.8 ? 'default' : proposal.confidence > 0.6 ? 'secondary' : 'outline'}
+                                                  className="text-xs"
+                                                >
+                                                  {Math.round(proposal.confidence * 100)}% confidence
+                                                </Badge>
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setShowConfidenceInfo(prev => ({
+                                                      ...prev,
+                                                      [proposal.id]: !prev[proposal.id]
+                                                    }));
+                                                  }}
+                                                  className="p-1 hover:bg-gray-100 rounded transition-colors"
+                                                  title="Learn about confidence scores"
+                                                >
+                                                  <Info className="h-3 w-3 text-gray-500" />
+                                                </button>
+                                              </div>
+                                            </div>
 
-                                        {/* Show tags if available */}
-                                        {node.metadata?.tags && node.metadata.tags.length > 0 && (
-                                          <div className="mt-2 flex flex-wrap gap-1">
-                                            {node.metadata.tags.slice(0, 5).map((tag: string, index: number) => (
-                                              <Badge key={index} variant="secondary" className="text-xs">
-                                                {tag}
-                                              </Badge>
-                                            ))}
-                                            {node.metadata.tags.length > 5 && (
-                                              <Badge variant="secondary" className="text-xs">
-                                                +{node.metadata.tags.length - 5} more
-                                              </Badge>
+                                            {showConfidenceInfo[proposal.id] && (
+                                              <div className="mb-3 p-3 bg-blue-50 rounded border border-blue-200 text-xs">
+                                                <p className="font-medium mb-1">About Confidence Scores</p>
+                                                <p className="text-gray-700 mb-2">
+                                                  Confidence indicates how well-supported each proposal is based on source count, structured data, and verification status.
+                                                </p>
+                                                <ul className="space-y-1 text-gray-700">
+                                                  <li><strong>80%+ (Green):</strong> High confidence - multiple sources, structured data</li>
+                                                  <li><strong>60-79% (Yellow):</strong> Medium confidence - decent support, may need review</li>
+                                                  <li><strong>&lt;60% (Red):</strong> Low confidence - limited support, needs verification</li>
+                                                </ul>
+                                              </div>
+                                            )}
+                                            <p className="text-sm text-muted-foreground mb-3">
+                                              {node.short_summary || node.content?.text?.substring(0, 200) + '...'}
+                                            </p>
+                                            
+                                            {/* Clickable Tabs */}
+                                            <div className="flex gap-1 mb-3">
+                                              {node.content?.text && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedDetailView(prev => ({
+                                                      ...prev,
+                                                      [proposal.id]: prev[proposal.id] === "content" ? "" : "content"
+                                                    }));
+                                                  }}
+                                                  className={`px-3 py-1 text-xs rounded transition-colors ${
+                                                    selectedDetailView[proposal.id] === "content"
+                                                      ? 'bg-blue-500 text-white'
+                                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                  }`}
+                                                >
+                                                  📄 Content
+                                                </button>
+                                              )}
+                                              {node.links && node.links.length > 0 && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedDetailView(prev => ({
+                                                      ...prev,
+                                                      [proposal.id]: prev[proposal.id] === "links" ? "" : "links"
+                                                    }));
+                                                  }}
+                                                  className={`px-3 py-1 text-xs rounded transition-colors ${
+                                                    selectedDetailView[proposal.id] === "links"
+                                                      ? 'bg-blue-500 text-white'
+                                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                  }`}
+                                                >
+                                                  🔗 Links ({node.links.length})
+                                                </button>
+                                              )}
+                                              {node.attachments && node.attachments.length > 0 && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedDetailView(prev => ({
+                                                      ...prev,
+                                                      [proposal.id]: prev[proposal.id] === "attachments" ? "" : "attachments"
+                                                    }));
+                                                  }}
+                                                  className={`px-3 py-1 text-xs rounded transition-colors ${
+                                                    selectedDetailView[proposal.id] === "attachments"
+                                                      ? 'bg-blue-500 text-white'
+                                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                  }`}
+                                                >
+                                                  📎 Attachments ({node.attachments.length})
+                                                </button>
+                                              )}
+                                            </div>
+                                            
+                                            {/* Detail View Content */}
+                                            {selectedDetailView[proposal.id] === "content" && node.content?.text && (
+                                              <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                                <h5 className="font-medium text-sm mb-2">Content:</h5>
+                                                <pre className="text-xs whitespace-pre-wrap text-gray-700">
+                                                  {node.content.text}
+                                                </pre>
+                                              </div>
+                                            )}
+
+                                            {selectedDetailView[proposal.id] === "links" && node.links && node.links.length > 0 && (
+                                              <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                                <h5 className="font-medium text-sm mb-2">Links:</h5>
+                                                <div className="space-y-1">
+                                                  {node.links.map((link: any, index: number) => (
+                                                    <div key={index} className="text-xs">
+                                                      <a 
+                                                        href={link.url} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 hover:underline"
+                                                      >
+                                                        {link.title || link.url}
+                                                      </a>
+                                                      {link.type && (
+                                                        <span className="text-gray-500 ml-2">({link.type})</span>
+                                                      )}
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {selectedDetailView[proposal.id] === "attachments" && node.attachments && node.attachments.length > 0 && (
+                                              <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                                <h5 className="font-medium text-sm mb-2">Attachments:</h5>
+                                                <div className="space-y-1">
+                                                  {node.attachments.map((attachment: any, index: number) => (
+                                                    <div key={index} className="text-xs">
+                                                      <span className="font-medium">{attachment.filename || `Attachment ${index + 1}`}</span>
+                                                      {attachment.range && (
+                                                        <span className="text-gray-500 ml-2">({attachment.range})</span>
+                                                      )}
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </div>
                                             )}
                                           </div>
-                                        )}
+                                        </div>
                                       </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     );
                   })()}

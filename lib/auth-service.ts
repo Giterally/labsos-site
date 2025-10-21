@@ -26,7 +26,7 @@ export async function signUp(email: string, password: string, fullName?: string)
       data: {
         name: fullName
       },
-      emailRedirectTo: `${window.location.origin}/auth/callback`
+      emailRedirectTo: `https://labsos-site.vercel.app/auth/callback`
     }
   })
 
