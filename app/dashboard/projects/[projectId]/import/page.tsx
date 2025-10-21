@@ -302,36 +302,7 @@ export default function ImportPage() {
           case 'progress_update':
             console.log('[SSE] Progress update received:', data);
             console.log('[SSE] Current jobId:', currentJobId, 'Message jobId:', data.jobId);
-            // Note: Proposal generation progress now handled via polling, not SSE
-            if (data.jobId === treeBuildJobId) {
-              // Handle tree building progress updates
-              const percentage = data.progress.total > 0 
-                ? Math.round((data.progress.current / data.progress.total) * 100) 
-                : 0;
-              
-              setTreeBuildProgress(percentage);
-              setTreeBuildStatus(data.progress.message || 'Building tree...');
-              
-              // Check if complete
-              if (data.progress.stage === 'complete') {
-                clearStoredTreeJobId(projectId);
-                setBuildingTree(false);
-                setTreeBuildProgress(0);
-                setTreeBuildStatus('');
-                setTreeBuildJobId(null);
-                setSuccess(`Tree created successfully!`);
-                // Refresh data and redirect
-                fetchData();
-                window.location.reload();
-              } else if (data.progress.stage === 'error') {
-                clearStoredTreeJobId(projectId);
-                setBuildingTree(false);
-                setTreeBuildProgress(0);
-                setTreeBuildStatus('');
-                setTreeBuildJobId(null);
-                setError(data.progress.message || 'Tree building failed');
-              }
-            }
+            // Note: Both proposal generation and tree building progress now handled via polling, not SSE
             break;
           
           case 'proposal_deleted':
@@ -512,6 +483,17 @@ export default function ImportPage() {
                 
                 setTreeBuildProgress(percentage);
                 setTreeBuildStatus(progress.message || 'Resuming tree build...');
+                
+                // Resume polling
+                console.log('[IMPORT] Resuming tree build polling...');
+                const pollInterval = setInterval(async () => {
+                  const status = await pollTreeProgress(storedTreeJobId);
+                  if (status === 'complete' || status === 'error') {
+                    clearInterval(pollInterval);
+                  }
+                }, 1000);
+                
+                (window as any).__treeBuildPollInterval = pollInterval;
               }
             } else {
               console.log('[IMPORT] Could not fetch progress for stored tree build job, clearing localStorage');
@@ -542,9 +524,13 @@ export default function ImportPage() {
         eventSource.close();
         setSseConnected(false);
       }
-      // Cleanup polling interval
+      // Cleanup proposal polling interval
       if ((window as any).__progressPollInterval) {
         clearInterval((window as any).__progressPollInterval);
+      }
+      // Cleanup tree build polling interval
+      if ((window as any).__treeBuildPollInterval) {
+        clearInterval((window as any).__treeBuildPollInterval);
       }
     };
   }, [fetchData, connectSSE, projectId]);
@@ -866,6 +852,58 @@ export default function ImportPage() {
     }
   };
 
+  const handleStopTreeBuilding = async () => {
+    if (!treeBuildJobId) {
+      console.error('[STOP_TREE] No current tree build job ID');
+      return;
+    }
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Not authenticated');
+      }
+
+      console.log('[STOP_TREE] Cancelling tree build job:', treeBuildJobId);
+
+      const response = await fetch(`/api/projects/${projectId}/jobs/${treeBuildJobId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to cancel tree building');
+      }
+
+      console.log('[STOP_TREE] Tree building cancelled successfully');
+      
+      // Clear the stored job ID
+      clearStoredTreeJobId(projectId);
+      
+      // Stop polling
+      if ((window as any).__treeBuildPollInterval) {
+        clearInterval((window as any).__treeBuildPollInterval);
+        (window as any).__treeBuildPollInterval = null;
+      }
+      
+      // Reset state
+      setBuildingTree(false);
+      setTreeBuildProgress(0);
+      setTreeBuildStatus('');
+      setTreeBuildJobId(null);
+      
+      setSuccess('Tree building cancelled successfully');
+      
+    } catch (error: any) {
+      console.error('[STOP_TREE] Error cancelling tree building:', error);
+      setError(error.message || 'Failed to cancel tree building');
+    }
+  };
+
   // Poll progress endpoint for updates
   const pollProgress = useCallback(async (jobId: string) => {
     try {
@@ -951,6 +989,115 @@ export default function ImportPage() {
       return 'running'; // Continue polling on error
     }
   }, [projectId, supabase, setGenerationProgress, setGenerationStatus, setGeneratingProposals, setCurrentJobId, setError, setSuccess, setActiveTab, fetchData, clearStoredJobId]);
+
+  const pollTreeProgress = useCallback(async (jobId: string) => {
+    console.log('[TREE_POLL] ===== Starting poll for jobId:', jobId, '=====');
+    
+    try {
+      console.log('[TREE_POLL] Getting session...');
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('[TREE_POLL] Session retrieved:', {
+        hasSession: !!session,
+        hasAccessToken: !!session?.access_token
+      });
+      
+      if (!session?.access_token) {
+        console.warn('[TREE_POLL] No access token, skipping poll');
+        return 'running';
+      }
+
+      const progressUrl = `/api/projects/${projectId}/progress/${jobId}`;
+      console.log('[TREE_POLL] Fetching progress from:', progressUrl);
+      
+      const response = await fetch(progressUrl, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      console.log('[TREE_POLL] Response status:', response.status);
+      console.log('[TREE_POLL] Response ok:', response.ok);
+
+      if (!response.ok) {
+        console.error('[TREE_POLL] Failed to fetch progress, status:', response.status);
+        const errorText = await response.text();
+        console.error('[TREE_POLL] Error response:', errorText);
+        return 'running';
+      }
+
+      const progress = await response.json();
+      console.log('[TREE_POLL] Progress data received:', {
+        stage: progress.stage,
+        current: progress.current,
+        total: progress.total,
+        message: progress.message,
+        timestamp: progress.timestamp
+      });
+
+      // Calculate percentage
+      const percentage = progress.total > 0 
+        ? Math.round((progress.current / progress.total) * 100) 
+        : 0;
+      
+      console.log('[TREE_POLL] Calculated percentage:', percentage);
+      
+      setTreeBuildProgress(percentage);
+      setTreeBuildStatus(progress.message || 'Building tree...');
+      console.log('[TREE_POLL] UI state updated');
+
+      // Check if complete
+      if (progress.stage === 'complete') {
+        console.log('[TREE_POLL] ===== TREE BUILDING COMPLETE =====');
+        setTreeBuildProgress(100);
+        
+        setTimeout(() => {
+          console.log('[TREE_POLL] Cleaning up after completion...');
+          clearStoredTreeJobId(projectId);
+          setBuildingTree(false);
+          setTreeBuildProgress(0);
+          setTreeBuildStatus('');
+          setTreeBuildJobId(null);
+          fetchData();
+          
+          // Get tree ID from result
+          const treeId = progress.result?.treeId || progress.treeId;
+          console.log('[TREE_POLL] Tree ID:', treeId);
+          
+          if (treeId) {
+            console.log('[TREE_POLL] Navigating to tree:', treeId);
+            router.push(`/project/${projectId}/trees/${treeId}`);
+          } else {
+            console.log('[TREE_POLL] No tree ID found, showing success message');
+            setSuccess('Tree created successfully!');
+          }
+        }, 1500);
+        
+        return 'complete';
+      } else if (progress.stage === 'error') {
+        console.error('[TREE_POLL] ===== TREE BUILDING ERROR =====');
+        console.error('[TREE_POLL] Error message:', progress.message);
+        
+        clearStoredTreeJobId(projectId);
+        setBuildingTree(false);
+        setTreeBuildProgress(0);
+        setTreeBuildStatus('');
+        setTreeBuildJobId(null);
+        setError(progress.message || 'Tree building failed');
+        
+        return 'error';
+      }
+      
+      console.log('[TREE_POLL] Still running, will poll again...');
+      return 'running';
+      
+    } catch (error: any) {
+      console.error('[TREE_POLL] ===== ERROR IN POLL =====');
+      console.error('[TREE_POLL] Error type:', error.constructor.name);
+      console.error('[TREE_POLL] Error message:', error.message);
+      console.error('[TREE_POLL] Error stack:', error.stack);
+      return 'running'; // Continue polling on error
+    }
+  }, [projectId, supabase, router, setTreeBuildProgress, setTreeBuildStatus, setBuildingTree, setTreeBuildJobId, setError, setSuccess, clearStoredTreeJobId, fetchData]);
 
   const handleDeleteSource = async (sourceId: string) => {
     if (!confirm('Are you sure you want to delete this file? This action cannot be undone.')) {
@@ -1038,10 +1185,12 @@ export default function ImportPage() {
     setTreeBuildProgress(0);
     setTreeBuildStatus('Starting tree build...');
 
+    // Timeout removed - polling mechanism handles progress updates
+
     try {
       console.log('[DEBUG] Getting Supabase session...');
       const { data: { session } } = await supabase.auth.getSession();
-      console.log('[DEBUG] Session data:', { 
+      console.log('[DEBUG] Session retrieved:', { 
         hasSession: !!session, 
         hasAccessToken: !!session?.access_token,
         tokenLength: session?.access_token?.length 
@@ -1052,32 +1201,40 @@ export default function ImportPage() {
         throw new Error('Not authenticated');
       }
 
-      console.log(`[DEBUG] Building tree with ${selectedProposals.size} proposals...`);
-      
-      // Generate a job ID for tree building progress tracking
+      console.log(`[DEBUG] Generating jobId...`);
       const jobId = crypto.randomUUID();
       console.log('[DEBUG] Generated jobId:', jobId);
-      setTreeBuildJobId(jobId);
       
-      // Store tree build jobId in localStorage for cross-tab persistence
-      console.log('[DEBUG] Storing jobId in localStorage');
+      console.log('[DEBUG] Setting treeBuildJobId state...');
+      setTreeBuildJobId(jobId);
+      console.log('[DEBUG] treeBuildJobId set successfully');
+      
+      console.log('[DEBUG] Storing jobId in localStorage...');
       storeTreeJobId(projectId, jobId);
+      console.log('[DEBUG] jobId stored in localStorage');
 
       const requestBody = {
         action: 'accept',
         proposalIds: Array.from(selectedProposals),
-        jobId, // Pass job ID for progress tracking
+        jobId,
       };
       
-      console.log('[DEBUG] Making API call to:', `/api/projects/${projectId}/proposals`);
-      console.log('[DEBUG] Request body:', requestBody);
+      console.log('[DEBUG] Request body prepared:', {
+        action: requestBody.action,
+        proposalCount: requestBody.proposalIds.length,
+        jobId: requestBody.jobId
+      });
+
+      const apiUrl = `/api/projects/${projectId}/proposals`;
+      console.log('[DEBUG] Making API call to:', apiUrl);
       console.log('[DEBUG] Request headers:', {
         'Authorization': `Bearer ${session.access_token.substring(0, 20)}...`,
         'Content-Type': 'application/json',
       });
 
       // Start the tree building request
-      const responsePromise = fetch(`/api/projects/${projectId}/proposals`, {
+      console.log('[DEBUG] Calling fetch...');
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -1086,84 +1243,87 @@ export default function ImportPage() {
         body: JSON.stringify(requestBody),
       });
 
-      console.log('[DEBUG] Fetch promise created, waiting for response...');
-      console.log('[BUILD TREE] Tree building started with jobId:', jobId);
-      console.log('[BUILD TREE] Progress tracking now handled via SSE - no polling needed');
-
-      // Wait for the response
-      const response = await responsePromise;
-      console.log('[DEBUG] Response received!');
+      console.log('[DEBUG] Fetch completed!');
       console.log('[DEBUG] Response status:', response.status);
       console.log('[DEBUG] Response ok:', response.ok);
       console.log('[DEBUG] Response headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
-        console.log('[DEBUG] Response not ok, parsing error data...');
-        const errorData = await response.json();
-        console.log('[DEBUG] Error data:', errorData);
+        console.log('[DEBUG] Response not ok, parsing error...');
+        const errorText = await response.text();
+        console.log('[DEBUG] Error response text:', errorText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+          console.log('[DEBUG] Parsed error data:', errorData);
+        } catch (e) {
+          console.error('[DEBUG] Failed to parse error response:', e);
+          errorData = { error: errorText };
+        }
+        
         throw new Error(errorData.error || 'Failed to build tree');
       }
 
-      console.log('[DEBUG] Response ok, parsing JSON...');
+      console.log('[DEBUG] Parsing success response...');
       const result = await response.json();
-      console.log('[DEBUG] Success result:', result);
-      console.log('[BUILD TREE] Tree created successfully:', result);
+      console.log('[DEBUG] Success response:', result);
       
-      // Clear tree build state
-      console.log('[DEBUG] Clearing tree build state...');
-      clearStoredTreeJobId(projectId);
-      setTreeBuildJobId(null);
-      setBuildingTree(false);
-      setTreeBuildProgress(0);
-      setTreeBuildStatus('');
-      
-      console.log('[DEBUG] Setting success message...');
-      setSuccess(`Experiment tree created successfully with ${result.nodesCreated || selectedProposals.size} nodes! Redirecting...`);
-      
-      // Clear selection (won't see this since we're navigating away, but good cleanup)
-      setSelectedProposals(new Set());
+      const returnedJobId = result.jobId;
+      console.log('[BUILD TREE] Tree building started with jobId:', returnedJobId);
 
-      // Navigate directly to the newly created tree (no delays, no reloads!)
-      if (result.treeId) {
-        console.log('[DEBUG] ===== NAVIGATION START =====');
-        console.log('[DEBUG] Navigating to newly created tree:', result.treeId);
-        console.log('[DEBUG] Tree URL:', `/project/${projectId}/trees/${result.treeId}`);
-        console.log('[DEBUG] Current location before nav:', window.location.href);
-        console.log('[DEBUG] ProjectId:', projectId);
-        console.log('[DEBUG] Timestamp:', new Date().toISOString());
-        
-        router.push(`/project/${projectId}/trees/${result.treeId}`);
-        
-        console.log('[DEBUG] Navigation command issued');
-        console.log('[DEBUG] ===== NAVIGATION END =====');
-      } else {
-        console.error('[DEBUG] ===== NO TREE ID IN RESPONSE =====');
-        console.error('[DEBUG] Response data:', result);
-        console.warn('[DEBUG] No treeId in response, reloading page as fallback');
-        window.location.reload();
-      }
+      // Start polling for progress
+      console.log('[DEBUG] Starting polling interval...');
+      const pollInterval = setInterval(async () => {
+        console.log('[TREE_POLL] Polling for jobId:', returnedJobId);
+        const status = await pollTreeProgress(returnedJobId);
+        console.log('[TREE_POLL] Poll status:', status);
+        if (status === 'complete' || status === 'error') {
+          console.log('[TREE_POLL] Stopping polling, status:', status);
+          clearInterval(pollInterval);
+        }
+      }, 1000);
+
+      // Store interval reference for cleanup
+      (window as any).__treeBuildPollInterval = pollInterval;
+      console.log('[DEBUG] Polling interval started and stored');
+      
+      // Timeout removed - no cleanup needed
     } catch (error: any) {
-      console.log('[DEBUG] ===== ERROR CAUGHT =====');
-      console.error('[DEBUG] Build tree error:', error);
-      console.log('[DEBUG] Error type:', typeof error);
-      console.log('[DEBUG] Error message:', error.message);
-      console.log('[DEBUG] Error stack:', error.stack);
-      setError(error.message || 'Failed to build tree');
+      console.log('[DEBUG] ===== ERROR CAUGHT IN CATCH BLOCK =====');
+      console.error('[DEBUG] Error type:', error.constructor.name);
+      console.error('[DEBUG] Error message:', error.message);
+      console.error('[DEBUG] Error stack:', error.stack);
+      console.error('[DEBUG] Full error object:', error);
+      
+      // Timeout removed - no cleanup needed
+      
+      // Detect specific error types
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        console.error('[BUILD_TREE] Network error detected');
+        setError('Network error: Unable to connect to server');
+      } else if (error.name === 'AbortError') {
+        console.error('[BUILD_TREE] Request was aborted');
+        setError('Request was cancelled');
+      } else {
+        console.error('[BUILD_TREE] Unknown error:', error);
+        setError(error.message || 'An unknown error occurred');
+      }
+      
+      // Clear stored job ID on error
+      console.log('[DEBUG] Clearing stored tree job ID due to error');
+      clearStoredTreeJobId(projectId);
+      
+      // Reset state
+      console.log('[DEBUG] Resetting buildingTree state');
+      setBuildingTree(false);
       setTreeBuildProgress(0);
       setTreeBuildStatus('');
-      // Clear stored tree build jobId on error
-      clearStoredTreeJobId(projectId);
+      setTreeBuildJobId(null);
     } finally {
-      console.log('[DEBUG] ===== FINALLY BLOCK =====');
-      console.log('[DEBUG] Setting buildingTree to false');
-      setBuildingTree(false);
-      // Clear progress after a delay
-      setTimeout(() => {
-        console.log('[DEBUG] Clearing progress state after delay');
-        setTreeBuildProgress(0);
-        setTreeBuildStatus('');
-        setTreeBuildJobId(null);
-      }, 3000);
+      console.log('[DEBUG] ===== handleBuildTree finally block =====');
+      console.log('[DEBUG] buildingTree state:', buildingTree);
+      console.log('[DEBUG] treeBuildJobId:', treeBuildJobId);
     }
   };
 
@@ -1999,24 +2159,26 @@ export default function ImportPage() {
                       >
                         Clear Selection
                       </Button>
-                      <Button
-                        onClick={handleBuildTree}
-                        disabled={selectedProposals.size === 0 || buildingTree}
-                        style={{ backgroundColor: '#1B5E20' }}
-                        className="hover:opacity-90"
-                      >
-                        {buildingTree ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Building Tree...
-                          </>
-                        ) : (
-                          <>
-                        <ArrowRight className="h-4 w-4 mr-2" />
-                        Build Tree ({selectedProposals.size})
-                          </>
-                        )}
-                      </Button>
+                      {buildingTree ? (
+                        <Button
+                          onClick={handleStopTreeBuilding}
+                          variant="outline"
+                          className="border-red-300 text-red-600 hover:bg-red-50"
+                        >
+                          <Square className="h-4 w-4 mr-2 fill-current" />
+                          Stop Building
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={handleBuildTree}
+                          disabled={selectedProposals.size === 0}
+                          style={{ backgroundColor: '#1B5E20' }}
+                          className="hover:opacity-90"
+                        >
+                          <ArrowRight className="h-4 w-4 mr-2" />
+                          Build Tree ({selectedProposals.size})
+                        </Button>
+                      )}
                     </div>
                   </div>
                   

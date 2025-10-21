@@ -345,6 +345,9 @@ Node name (topic-oriented):`;
 // Format content properly with good grammar and presentation
 export async function formatNodeContent(rawContent: string): Promise<string> {
   const aiProvider = getAIProviderInstance();
+  const startTime = Date.now();
+  
+  console.log('[FORMAT_CONTENT] Starting content formatting, length:', rawContent.length);
   
   const prompt = `Format this research content into well-structured, readable text with proper grammar, paragraphs, and presentation. Make it natural and professional:
 
@@ -353,17 +356,33 @@ ${rawContent}
 Formatted content:`;
   
   try {
-    const response = await aiProvider.generateText(prompt);
+    // Import withTimeout from provider
+    const { withTimeout } = require('./provider');
+    
+    // Add 5-second timeout to AI formatting
+    const response = await withTimeout(
+      aiProvider.generateText(prompt),
+      5000,
+      'Content formatting'
+    );
+    
+    console.log('[FORMAT_CONTENT] Formatting successful in', Date.now() - startTime, 'ms');
     return response.trim();
-  } catch (error) {
-    console.error('Content formatting failed:', error);
-    return rawContent; // Return original if formatting fails
+  } catch (error: any) {
+    const elapsed = Date.now() - startTime;
+    console.error('[FORMAT_CONTENT] Formatting failed after', elapsed, 'ms:', error.message);
+    
+    // Return original content if formatting fails or times out
+    return rawContent;
   }
 }
 
 // Generate brief summary for description
 export async function generateBriefSummary(content: string): Promise<string> {
   const aiProvider = getAIProviderInstance();
+  const startTime = Date.now();
+  
+  console.log('[GENERATE_SUMMARY] Starting summary generation, content length:', content.length);
   
   const prompt = `Create a single-sentence summary (max 100 chars) of this content:
 
@@ -372,10 +391,23 @@ ${content.slice(0, 500)}
 Summary:`;
   
   try {
-    const response = await aiProvider.generateText(prompt);
+    // Import withTimeout from provider
+    const { withTimeout } = require('./provider');
+    
+    // Add 5-second timeout to summary generation
+    const response = await withTimeout(
+      aiProvider.generateText(prompt),
+      5000,
+      'Summary generation'
+    );
+    
+    console.log('[GENERATE_SUMMARY] Summary successful in', Date.now() - startTime, 'ms');
     return response.trim();
-  } catch (error) {
-    console.error('Summary generation failed:', error);
+  } catch (error: any) {
+    const elapsed = Date.now() - startTime;
+    console.error('[GENERATE_SUMMARY] Summary failed after', elapsed, 'ms:', error.message);
+    
+    // Return fallback summary if generation fails or times out
     return 'Research protocol step';
   }
 }
