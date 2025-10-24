@@ -576,6 +576,16 @@ async function buildTreeInBackground(
 
     console.log('[BUILD_TREE_BG] Successfully fetched', proposals.length, 'proposals');
 
+    // Sort proposals by the order in proposalIds array to preserve frontend display order
+    const proposalOrderMap = new Map(proposalIds.map((id, index) => [id, index]));
+    const sortedProposals = (proposals || []).sort((a, b) => {
+      const aIndex = proposalOrderMap.get(a.id) ?? 999;
+      const bIndex = proposalOrderMap.get(b.id) ?? 999;
+      return aIndex - bIndex;
+    });
+
+    console.log('[BUILD_TREE_BG] Sorted proposals by frontend order:', sortedProposals.map(p => p.id.substring(0, 8)));
+
         // Create or get experiment tree
     console.log('[BUILD_TREE_BG] Creating or getting experiment tree...');
     await progressTracker.updateWithPersistence(trackingJobId, {
@@ -628,7 +638,7 @@ async function buildTreeInBackground(
           message: 'Analyzing dependencies and organizing nodes...',
         });
         
-      const { blockInserts, nodeBlockMapping, sortedNodes } = await createBlocksFromProposals(proposals, experimentTreeId);
+      const { blockInserts, nodeBlockMapping, sortedNodes } = await createBlocksFromProposals(sortedProposals, experimentTreeId);
 
       console.log('Creating blocks:', blockInserts);
       
@@ -662,22 +672,9 @@ async function buildTreeInBackground(
 
       // Convert proposed nodes to tree nodes, organized by workflow blocks
       const treeNodes: any[] = [];
-      const blockPositionCounters = new Map<string, number>();
       
-      // Initialize position counters for each block
-      generatedToActualBlockId.forEach((actualBlockId) => {
-        blockPositionCounters.set(actualBlockId, 0);
-      });
-      
-      // Process nodes in topological order to maintain dependency sequence
-      const sortedProposals = proposals.sort((a, b) => {
-        const aIndex = sortedNodes.indexOf(a.id);
-        const bIndex = sortedNodes.indexOf(b.id);
-        // If a node is not found in sortedNodes, put it at the end
-        if (aIndex === -1) return 1;
-        if (bIndex === -1) return -1;
-        return aIndex - bIndex;
-      });
+      // Use the proposals already sorted by frontend display order
+      // (sortedProposals was created earlier to preserve frontend order)
       
       // Helper: chunk array into batches for parallel processing
       const chunk = <T,>(arr: T[], size: number): T[][] => {
@@ -756,9 +753,9 @@ async function buildTreeInBackground(
               // Continue with original content
             }
             
-            // Get position for this block
-            const currentPosition = blockPositionCounters.get(actualBlockId) || 0;
-            blockPositionCounters.set(actualBlockId, currentPosition + 1);
+            // Get position based on original order in sortedProposals array
+            const originalIndex = sortedProposals.findIndex(p => p.id === proposal.id);
+            const currentPosition = originalIndex;
             
             const nodeElapsed = Date.now() - nodeStartTime;
             console.log(`[BUILD_TREE] [${nodeId}] Node complete in ${nodeElapsed}ms (position: ${currentPosition})`);
@@ -789,6 +786,12 @@ async function buildTreeInBackground(
               created_by: userId,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
+              provenance: {
+                ...proposal.provenance,
+                proposal_id: proposal.id,  // Store the original proposal ID
+                confidence: proposal.confidence || 0.95
+              },
+              confidence: proposal.confidence || 0.95
             };
           })
         );
@@ -866,7 +869,7 @@ async function buildTreeInBackground(
     const { data: createdTreeNodes, error: nodeInsertError } = await supabaseServer
         .from('tree_nodes')
         .insert(treeNodesToInsert)  // Use type-asserted array
-      .select('id, name, block_id');
+      .select('id, name, block_id, position, provenance');
 
     const insertElapsed = Date.now() - insertStartTime;
 
@@ -891,6 +894,17 @@ async function buildTreeInBackground(
     console.log(`[BUILD_TREE] Successfully inserted ${createdTreeNodes.length} nodes in ${insertElapsed}ms`);
 
     console.log('Created tree nodes:', createdTreeNodes.length);
+    
+    // Debug: Verify fields are present
+    if (createdTreeNodes.length > 0) {
+      console.log('[BUILD_TREE] Sample created node fields:', {
+        id: createdTreeNodes[0].id,
+        name: createdTreeNodes[0].name,
+        block_id: createdTreeNodes[0].block_id,
+        position: createdTreeNodes[0].position,
+        provenance: createdTreeNodes[0].provenance
+      });
+    }
 
     // Update progress
     await progressTracker.updateWithPersistence(trackingJobId, {
@@ -903,13 +917,21 @@ async function buildTreeInBackground(
     // Create content entries for each node
       const contentEntries: any[] = [];
       for (const createdNode of createdTreeNodes) {
-      // Find the matching proposal to get the formatted content
-        const proposal = proposals.find(p => {
-          const blockId = nodeBlockMapping.get(p.id);
-          const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
-        return actualBlockId === createdNode.block_id && 
-               (p.node_json?.title || p.node_json?.name) === createdNode.name;
-        });
+        // Strategy 1: Match by provenance (most reliable)
+        let proposal = createdNode.provenance?.proposal_id 
+          ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
+          : null;
+        
+        // Strategy 2: Match by position within block (fallback)
+        if (!proposal) {
+          proposal = sortedProposals.find(p => {
+            const blockId = nodeBlockMapping.get(p.id);
+            const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
+            const proposalPosition = sortedProposals.findIndex(sp => sp.id === p.id);
+            return actualBlockId === createdNode.block_id && 
+                   proposalPosition === createdNode.position;
+          });
+        }
         
         if (!proposal) {
           console.warn('[BUILD_TREE] Could not find matching proposal for node:', createdNode.name);
@@ -952,28 +974,49 @@ async function buildTreeInBackground(
 
       // Create link entries for each node
       const linkEntries: any[] = [];
+      let matchedCount = 0;
+      let unmatchedCount = 0;
+
       for (const createdNode of createdTreeNodes) {
-        // Find the matching proposal to get the links
-        const proposal = proposals.find(p => {
-          const blockId = nodeBlockMapping.get(p.id);
-          const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
-          return actualBlockId === createdNode.block_id && 
-                 (p.node_json?.title || p.node_json?.name) === createdNode.name;
-        });
+        // Strategy 1: Match by provenance (most reliable)
+        let proposal = createdNode.provenance?.proposal_id 
+          ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
+          : null;
         
-        if (proposal && proposal.node_json?.links && Array.isArray(proposal.node_json.links)) {
-          proposal.node_json.links.forEach((link: any, index: number) => {
-            linkEntries.push({
-              node_id: createdNode.id,
-              name: link.name || 'Untitled Link',
-              url: link.url || '',
-              description: link.description || '',
-              link_type: link.link_type || 'other',
-              position: index
-            });
+        // Strategy 2: Match by position within block (fallback)
+        if (!proposal) {
+          proposal = sortedProposals.find(p => {
+            const blockId = nodeBlockMapping.get(p.id);
+            const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
+            const proposalPosition = sortedProposals.findIndex(sp => sp.id === p.id);
+            return actualBlockId === createdNode.block_id && 
+                   proposalPosition === createdNode.position;
           });
         }
+        
+        if (proposal) {
+          matchedCount++;
+          console.log(`[BUILD_TREE] Matched node "${createdNode.name}" to proposal ${proposal.id.substring(0, 8)}`);
+          
+          if (proposal.node_json?.links && Array.isArray(proposal.node_json.links)) {
+            proposal.node_json.links.forEach((link: any, index: number) => {
+              linkEntries.push({
+                node_id: createdNode.id,
+                name: link.name || 'Untitled Link',
+                url: link.url || '',
+                description: link.description || '',
+                link_type: link.link_type || 'other',
+                position: index
+              });
+            });
+          }
+        } else {
+          unmatchedCount++;
+          console.warn(`[BUILD_TREE] Failed to match node "${createdNode.name}" (position: ${createdNode.position}, block: ${createdNode.block_id})`);
+        }
       }
+
+      console.log(`[BUILD_TREE] Link matching complete: ${matchedCount} matched, ${unmatchedCount} unmatched`);
 
       // Insert node link entries
       if (linkEntries.length > 0) {
@@ -992,29 +1035,50 @@ async function buildTreeInBackground(
 
       // Create attachment entries for each node
       const attachmentEntries: any[] = [];
+      let attachmentMatchedCount = 0;
+      let attachmentUnmatchedCount = 0;
+
       for (const createdNode of createdTreeNodes) {
-        // Find the matching proposal to get the attachments
-        const proposal = proposals.find(p => {
-          const blockId = nodeBlockMapping.get(p.id);
-          const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
-          return actualBlockId === createdNode.block_id && 
-                 (p.node_json?.title || p.node_json?.name) === createdNode.name;
-        });
+        // Strategy 1: Match by provenance (most reliable)
+        let proposal = createdNode.provenance?.proposal_id 
+          ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
+          : null;
         
-        if (proposal && proposal.node_json?.attachments && Array.isArray(proposal.node_json.attachments)) {
-          proposal.node_json.attachments.forEach((attachment: any, index: number) => {
-            attachmentEntries.push({
-              node_id: createdNode.id,
-              name: attachment.name || 'Untitled Attachment',
-              file_type: attachment.file_type || '',
-              file_size: attachment.file_size || 0,
-              file_url: attachment.file_url || '',
-              description: attachment.description || '',
-              position: index
-            });
+        // Strategy 2: Match by position within block (fallback)
+        if (!proposal) {
+          proposal = sortedProposals.find(p => {
+            const blockId = nodeBlockMapping.get(p.id);
+            const actualBlockId = blockId ? generatedToActualBlockId.get(blockId) : null;
+            const proposalPosition = sortedProposals.findIndex(sp => sp.id === p.id);
+            return actualBlockId === createdNode.block_id && 
+                   proposalPosition === createdNode.position;
           });
         }
+        
+        if (proposal) {
+          attachmentMatchedCount++;
+          console.log(`[BUILD_TREE] Matched node "${createdNode.name}" to proposal ${proposal.id.substring(0, 8)} for attachments`);
+          
+          if (proposal.node_json?.attachments && Array.isArray(proposal.node_json.attachments)) {
+            proposal.node_json.attachments.forEach((attachment: any, index: number) => {
+              attachmentEntries.push({
+                node_id: createdNode.id,
+                name: attachment.name || 'Untitled Attachment',
+                file_type: attachment.file_type || '',
+                file_size: attachment.file_size || 0,
+                file_url: attachment.file_url || '',
+                description: attachment.description || '',
+                position: index
+              });
+            });
+          }
+        } else {
+          attachmentUnmatchedCount++;
+          console.warn(`[BUILD_TREE] Failed to match node "${createdNode.name}" (position: ${createdNode.position}, block: ${createdNode.block_id}) for attachments`);
+        }
       }
+
+      console.log(`[BUILD_TREE] Attachment matching complete: ${attachmentMatchedCount} matched, ${attachmentUnmatchedCount} unmatched`);
 
       // Insert node attachment entries
       if (attachmentEntries.length > 0) {

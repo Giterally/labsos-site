@@ -221,8 +221,37 @@ export default function ImportPage() {
       
       if (proposalsResponse.ok) {
         const proposalsData = await proposalsResponse.json();
-        setProposals(proposalsData.proposals || []);
-        setProposalsStats(proposalsData.stats || null);
+        const fetchedProposals = proposalsData.proposals || [];
+        setProposals(fetchedProposals);
+        
+        // Calculate stats on frontend since API doesn't provide them
+        if (fetchedProposals.length > 0) {
+          // Group proposals by node type
+          const groupedProposals: Record<string, any[]> = {};
+          fetchedProposals.forEach((proposal: any) => {
+            const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
+            const blockType = rawType.toLowerCase();
+            if (!groupedProposals[blockType]) {
+              groupedProposals[blockType] = [];
+            }
+            groupedProposals[blockType].push(proposal);
+          });
+
+          // Calculate total blocks (split large blocks same as rendering logic)
+          const MAX_NODES_PER_BLOCK = 15;
+          let totalBlocks = 0;
+          Object.values(groupedProposals).forEach((nodes: any[]) => {
+            totalBlocks += Math.ceil(nodes.length / MAX_NODES_PER_BLOCK);
+          });
+
+          setProposalsStats({
+            totalNodes: fetchedProposals.length,
+            totalBlocks,
+            blockBreakdown: []
+          });
+        } else {
+          setProposalsStats(null);
+        }
       } else {
         console.error('Failed to fetch proposals:', proposalsResponse.status);
         setProposals([]);
@@ -1219,9 +1248,14 @@ export default function ImportPage() {
       storeTreeJobId(projectId, jobId);
       console.log('[DEBUG] jobId stored in localStorage');
 
+      // Get proposal IDs in display order (same order as shown in UI)
+      const orderedProposalIds = proposals
+        .filter(p => selectedProposals.has(p.id))
+        .map(p => p.id);
+
       const requestBody = {
         action: 'accept',
-        proposalIds: Array.from(selectedProposals),
+        proposalIds: orderedProposalIds, // Now in display order
         jobId,
       };
       
