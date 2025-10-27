@@ -29,6 +29,7 @@ import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useUser } from "@/lib/user-context"
+import { KnowledgeNodesBackground } from "@/components/KnowledgeNodesBackground"
 
 function ContactDialogHandler({ 
   showContactDialog, 
@@ -176,8 +177,9 @@ export default function KnowledgeCaptureLanding() {
       </header>
 
       {/* Hero Section */}
-      <section className="py-20 px-4">
-        <div className="container mx-auto max-w-6xl">
+      <section className="py-20 px-4 relative pb-32">
+        <KnowledgeNodesBackground className="absolute inset-0" />
+        <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
               <div className="space-y-4">
