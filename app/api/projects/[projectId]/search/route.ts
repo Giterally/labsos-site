@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '../../../../../lib/supabase-client';
-import { generateEmbedding, findSimilarEmbeddings } from '../../../../../lib/ai/embeddings';
+import { generateEmbedding, findSimilarChunks } from '../../../../../lib/ai/embeddings';
 
 export async function GET(
   request: NextRequest,
@@ -37,49 +37,24 @@ export async function GET(
     // Generate embedding for query
     const queryEmbedding = await generateEmbedding(query);
 
-    // Get all chunks with embeddings for this project
-    const { data: chunks, error: chunksError } = await supabase
-      .from('chunks')
-      .select('id, text, embedding, source_type, metadata')
-      .eq('project_id', projectId)
-      .not('embedding', 'is', null);
-
-    if (chunksError) {
-      console.error('Error fetching chunks:', chunksError);
-      return NextResponse.json({ 
-        error: 'Failed to fetch chunks' 
-      }, { status: 500 });
-    }
-
-    if (!chunks || chunks.length === 0) {
-      return NextResponse.json({
-        matches: [],
-        total: 0,
-        query,
-      });
-    }
-
-    // Find similar chunks
-    const similarChunks = findSimilarEmbeddings(
-      queryEmbedding.embedding,
-      chunks.map(c => ({ id: c.id, embedding: c.embedding })),
+    // Find similar chunks using the database function
+    const similarChunks = await findSimilarChunks(
+      projectId,
+      queryEmbedding,
       limit,
       threshold
     );
 
     // Get detailed chunk information for matches
-    const chunkMatches = similarChunks.map(match => {
-      const chunk = chunks.find(c => c.id === match.id);
-      return {
-        type: 'chunk',
-        id: chunk?.id,
-        score: match.similarity,
-        text: chunk?.text,
-        sourceType: chunk?.source_type,
-        metadata: chunk?.metadata,
-        snippet: getSnippet(chunk?.text || '', query),
-      };
-    });
+    const chunkMatches = similarChunks.map(match => ({
+      type: 'chunk',
+      id: match.id,
+      score: match.similarity,
+      text: match.text,
+      sourceType: match.sourceType,
+      metadata: match.metadata,
+      snippet: getSnippet(match.text, query),
+    }));
 
     // Also search in proposed nodes
     const { data: proposedNodes, error: nodesError } = await supabase
