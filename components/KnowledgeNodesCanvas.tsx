@@ -265,16 +265,41 @@ export function KnowledgeNodesCanvas({
     
     const nodes = nodesRef.current
     
-    // Draw connections with varying opacity and colors
+    // Calculate transition zone for performance optimization
+    let transitionStartY = 0
+    let transitionEndY = 0
+    let hasTransition = false
+    
+    if (transitionStart && transitionEnd && containerRef.current) {
+      const viewportHeight = window.innerHeight
+      const startOffset = parseFloat(transitionStart.replace('calc(100vh + ', '').replace('px)', ''))
+      const endOffset = parseFloat(transitionEnd.replace('calc(100vh + ', '').replace('px)', ''))
+      
+      transitionStartY = viewportHeight + startOffset
+      transitionEndY = viewportHeight + endOffset
+      hasTransition = true
+    }
+    
+    // Draw connections with varying opacity and colors (only for interactive sections)
     ctx.lineWidth = 0.8
     ctx.globalAlpha = 0.2
     
     const connectionColors = ['#1B5E20', '#2E7D32', '#4FC3F7', '#81C784']
     
     for (const node of nodes) {
+      // Skip connections for static sections
+      if (hasTransition && node.y > transitionEndY) {
+        continue
+      }
+      
       for (const connectionIndex of node.connections) {
         const connectedNode = nodes[connectionIndex]
         if (connectedNode) {
+          // Skip connections to nodes in static sections
+          if (hasTransition && connectedNode.y > transitionEndY) {
+            continue
+          }
+          
           // Vary connection colors and opacity
           const colorIndex = Math.floor(Math.random() * connectionColors.length)
           ctx.strokeStyle = connectionColors[colorIndex]
@@ -291,15 +316,25 @@ export function KnowledgeNodesCanvas({
       }
     }
     
-    // Draw many more particles flowing along connections
+    // Draw particles flowing along connections (only for interactive sections)
     ctx.globalAlpha = 0.7
     
     for (const node of nodes) {
+      // Skip particles for static sections
+      if (hasTransition && node.y > transitionEndY) {
+        continue
+      }
+      
       for (const connectionIndex of node.connections) {
         const connectedNode = nodes[connectionIndex]
         if (connectedNode) {
-          // Many more particles per connection for maximum density
-          for (let p = 0; p < 8; p++) {
+          // Skip particles for connections to static sections
+          if (hasTransition && connectedNode.y > transitionEndY) {
+            continue
+          }
+          
+          // Fewer particles per connection for better performance
+          for (let p = 0; p < 3; p++) {
             const particleOffset = p * 0.33
             const progress = ((Math.sin(timeRef.current * 0.003 + node.x * 0.01 + particleOffset) + 1) / 2 + particleOffset) % 1
             const particleX = node.x + (connectedNode.x - node.x) * progress
@@ -358,7 +393,7 @@ export function KnowledgeNodesCanvas({
       ctx.arc(node.x, node.y, node.size * 0.6, 0, Math.PI * 2)
       ctx.fill()
     }
-  }, [])
+  }, [transitionStart, transitionEnd, containerRef])
 
   const animate = useCallback((currentTime: number) => {
     const deltaTime = (currentTime - timeRef.current) / 1000

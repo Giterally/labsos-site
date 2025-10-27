@@ -142,15 +142,161 @@ export default function KnowledgeCaptureLanding() {
         />
       </div>
       
-      {/* Blur overlay that starts after hero section */}
+      {/* Ultra-smooth gradient blur overlay */}
       <div 
         className="absolute left-0 w-full z-5 pointer-events-none"
         style={{
-          top: 'calc(100vh + 100px)', // Start lower, after midsection
-          height: 'calc(100% - 100vh - 100px)', // Cover remaining height
+          top: 'calc(100vh + 150px)', // Start much lower
+          height: 'calc(100% - 100vh - 150px)', // Cover remaining height
           background: `linear-gradient(to bottom, 
-            rgba(255, 255, 255, 0.02) 0%, 
-            rgba(255, 255, 255, 0.08) 100%
+            transparent 0%, 
+            transparent 40%, 
+            transparent 60%, 
+            rgba(255, 255, 255, 0.002) 75%, 
+            rgba(255, 255, 255, 0.004) 85%, 
+            rgba(255, 255, 255, 0.006) 95%, 
+            rgba(255, 255, 255, 0.008) 100%
+          )`,
+          backdropFilter: 'blur(0px)',
+          WebkitBackdropFilter: 'blur(0px)'
+        }}
+      />
+      <div 
+        className="absolute left-0 w-full z-5 pointer-events-none"
+        style={{
+          top: 'calc(100vh + 150px)', // Start much lower
+          height: 'calc(100% - 100vh - 150px)', // Cover remaining height
+          background: `linear-gradient(to bottom, 
+            transparent 0%, 
+            transparent 50%, 
+            transparent 70%, 
+            transparent 80%, 
+            rgba(255, 255, 255, 0.001) 88%, 
+            rgba(255, 255, 255, 0.003) 94%, 
+            rgba(255, 255, 255, 0.005) 100%
+          )`,
+          backdropFilter: 'blur(0.5px)',
+          WebkitBackdropFilter: 'blur(0.5px)'
+        }}
+      />
+      <div 
+        className="absolute left-0 w-full z-5 pointer-events-none"
+        style={{
+          top: 'calc(100vh + 150px)', // Start much lower
+          height: 'calc(100% - 100vh - 150px)', // Cover remaining height
+          background: `linear-gradient(to bottom, 
+            transparent 0%, 
+            transparent 60%, 
+            transparent 75%, 
+            transparent 82%, 
+            transparent 88%, 
+            rgba(255, 255, 255, 0.002) 93%, 
+            rgba(255, 255, 255, 0.004) 97%, 
+            rgba(255, 255, 255, 0.006) 100%
+          )`,
+          backdropFilter: 'blur(1px)',
+          WebkitBackdropFilter: 'blur(1px)'
+        }}
+      />
+      <div 
+        className="absolute left-0 w-full z-5 pointer-events-none"
+        style={{
+          top: 'calc(100vh + 150px)', // Start much lower
+          height: 'calc(100% - 100vh - 150px)', // Cover remaining height
+          background: `linear-gradient(to bottom, 
+            transparent 0%, 
+            transparent 70%, 
+            transparent 80%, 
+            transparent 85%, 
+            transparent 90%, 
+            transparent 94%, 
+            rgba(255, 255, 255, 0.003) 97%, 
+            rgba(255, 255, 255, 0.005) 100%
+          )`,
+          backdropFilter: 'blur(2px)',
+          WebkitBackdropFilter: 'blur(2px)'
+        }}
+      />
+      <div 
+        className="absolute left-0 w-full z-5 pointer-events-none"
+        style={{
+          top: 'calc(100vh + 150px)', // Start much lower
+          height: 'calc(100% - 100vh - 150px)', // Cover remaining height
+          background: `linear-gradient(to bottom, 
+            transparent 0%, 
+            transparent 75%, 
+            transparent 82%, 
+            transparent 87%, 
+            transparent 91%, 
+            transparent 94%, 
+            transparent 96%, 
+            rgba(255, 255, 255, 0.004) 98%, 
+            rgba(255, 255, 255, 0.006) 100%
+          )`,
+          backdropFilter: 'blur(3px)',
+          WebkitBackdropFilter: 'blur(3px)'
+        }}
+      />
+      <div 
+        className="absolute left-0 w-full z-5 pointer-events-none"
+        style={{
+          top: 'calc(100vh + 150px)', // Start much lower
+          height: 'calc(100% - 100vh - 150px)', // Cover remaining height
+          background: `linear-gradient(to bottom, 
+            transparent 0%, 
+            transparent 80%, 
+            transparent 85%, 
+            transparent 89%, 
+            transparent 92%, 
+            transparent 94%, 
+            transparent 96%, 
+            transparent 97%, 
+            rgba(255, 255, 255, 0.005) 99%, 
+            rgba(255, 255, 255, 0.007) 100%
+          )`,
+          backdropFilter: 'blur(5px)',
+          WebkitBackdropFilter: 'blur(5px)'
+        }}
+      />
+      <div 
+        className="absolute left-0 w-full z-5 pointer-events-none"
+        style={{
+          top: 'calc(100vh + 150px)', // Start much lower
+          height: 'calc(100% - 100vh - 150px)', // Cover remaining height
+          background: `linear-gradient(to bottom, 
+            transparent 0%, 
+            transparent 85%, 
+            transparent 88%, 
+            transparent 91%, 
+            transparent 93%, 
+            transparent 95%, 
+            transparent 96%, 
+            transparent 97%, 
+            transparent 98%, 
+            rgba(255, 255, 255, 0.006) 99.5%, 
+            rgba(255, 255, 255, 0.008) 100%
+          )`,
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)'
+        }}
+      />
+      <div 
+        className="absolute left-0 w-full z-5 pointer-events-none"
+        style={{
+          top: 'calc(100vh + 150px)', // Start much lower
+          height: 'calc(100% - 100vh - 150px)', // Cover remaining height
+          background: `linear-gradient(to bottom, 
+            transparent 0%, 
+            transparent 90%, 
+            transparent 92%, 
+            transparent 94%, 
+            transparent 95%, 
+            transparent 96%, 
+            transparent 97%, 
+            transparent 98%, 
+            transparent 99%, 
+            rgba(255, 255, 255, 0.007) 99.8%, 
+            rgba(255, 255, 255, 0.01) 100%
           )`,
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)'
