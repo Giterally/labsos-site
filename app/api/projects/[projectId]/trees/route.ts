@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { checkProjectPermission } from '@/lib/permission-utils'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function GET(
   request: NextRequest,
@@ -11,54 +8,30 @@ export async function GET(
 ) {
   try {
     const { projectId } = await params
+    const authContext = await authenticateRequest(request)
+    const { user, supabase } = authContext
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    let userId: string | undefined
+    const permissionService = new PermissionService(supabase, user.id)
+    const access = await permissionService.checkProjectAccess(projectId)
 
-    if (authHeader) {
-      // Extract the token
-      const token = authHeader.replace('Bearer ', '')
-      
-      // Verify the token and get user
-      const supabase = createClient(supabaseUrl, supabaseAnonKey)
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (!authError && user) {
-        userId = user.id
-      }
+    if (!access.canRead) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
     }
 
-    // Check project permissions
-    const permissions = await checkProjectPermission(projectId, userId)
-    
-    if (!permissions.canView) {
-      return NextResponse.json(
-        { message: 'Access denied' },
-        { status: 403 }
-      )
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-    // First, try to find the project by slug or UUID
+    // Get the actual project ID (in case projectId was a slug)
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
     let actualProjectId = projectId
     
-    // Check if projectId is a slug (not a UUID format)
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
-    
     if (!isUUID) {
-      // It's a slug, find the actual project ID
-      const { data: project, error: projectError } = await supabase
+      const { data: project } = await supabase
         .from('projects')
         .select('id')
         .eq('slug', projectId)
         .single()
       
-      if (projectError || !project) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+      if (project) {
+        actualProjectId = project.id
       }
-      
-      actualProjectId = project.id
     }
 
     // Get experiment trees for the project
@@ -79,7 +52,6 @@ export async function GET(
 
     if (treesError) {
       console.error('Error fetching experiment trees:', treesError)
-      console.error('Project ID:', projectId)
       return NextResponse.json({ 
         error: 'Failed to fetch experiment trees',
         details: treesError.message 
@@ -88,6 +60,9 @@ export async function GET(
 
     return NextResponse.json({ trees })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode })
+    }
     console.error('Error in GET /api/projects/[projectId]/trees:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -95,64 +70,40 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId } = params
+    const { projectId } = await params
     const body = await request.json()
     const { name, description, category, status } = body
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
+    const authContext = await authenticateRequest(request)
+    const { user, supabase } = authContext
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    const permissionService = new PermissionService(supabase, user.id)
+    const access = await permissionService.checkProjectAccess(projectId)
 
-    // Check project permissions - only members can create trees
-    const permissions = await checkProjectPermission(projectId, user.id)
-    
-    if (!permissions.canEdit) {
+    if (!access.canWrite) {
       return NextResponse.json(
         { message: 'You do not have permission to create experiment trees in this project' },
         { status: 403 }
       )
     }
 
-    // First, try to find the project by slug or UUID
+    // Get the actual project ID (in case projectId was a slug)
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
     let actualProjectId = projectId
     
-    // Check if projectId is a slug (not a UUID format)
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
-    
     if (!isUUID) {
-      // It's a slug, find the actual project ID
-      const { data: project, error: projectError } = await supabase
+      const { data: project } = await supabase
         .from('projects')
         .select('id')
         .eq('slug', projectId)
         .single()
       
-      if (projectError || !project) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+      if (project) {
+        actualProjectId = project.id
       }
-      
-      actualProjectId = project.id
     }
 
     // Create the experiment tree
@@ -164,16 +115,14 @@ export async function POST(
         description,
         category,
         status: status || 'draft',
-        node_count: 0
-        // TODO: Add created_by when implementing proper auth
+        node_count: 0,
+        created_by: user.id
       })
       .select()
       .single()
 
     if (treeError) {
       console.error('Error creating experiment tree:', treeError)
-      console.error('Project ID:', projectId)
-      console.error('Tree data:', { name, description, category, status })
       return NextResponse.json({ 
         error: 'Failed to create experiment tree',
         details: treeError.message 
@@ -182,6 +131,9 @@ export async function POST(
 
     return NextResponse.json({ tree: newTree })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode })
+    }
     console.error('Error in POST /api/projects/[projectId]/trees:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

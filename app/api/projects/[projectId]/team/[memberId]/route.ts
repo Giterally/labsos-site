@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function DELETE(
   request: NextRequest,
@@ -11,35 +9,15 @@ export async function DELETE(
   try {
     const { projectId, memberId } = await params
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Create authenticated client
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-    
-    // Verify the token and get user
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !authUser) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
 
     // Check if projectId is a UUID or slug
     let actualProjectId = projectId
     if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       // It's a slug, get the actual UUID
-      const { data: project, error: projectError } = await supabase
+      const { data: project, error: projectError } = await auth.supabase
         .from('projects')
         .select('id')
         .eq('slug', projectId)
@@ -51,24 +29,24 @@ export async function DELETE(
       actualProjectId = project.id
     }
 
-    // Check if the requesting user is a team member with admin access
-    const { data: memberCheck, error: memberError } = await supabase
-      .from('project_members')
-      .select('id, role')
-      .eq('project_id', actualProjectId)
-      .eq('user_id', authUser.id)
-      .is('left_at', null)
-      .single()
-
-    if (memberError || !memberCheck) {
+    // Check project access and permissions
+    const access = await permissions.checkProjectAccess(actualProjectId)
+    if (!access.hasAccess) {
       return NextResponse.json(
-        { message: 'You must be a team member to remove other members' },
+        { message: 'Access denied' },
+        { status: 403 }
+      )
+    }
+
+    if (!access.canManageMembers) {
+      return NextResponse.json(
+        { message: 'Only project owners and admins can remove team members' },
         { status: 403 }
       )
     }
 
     // Remove the team member by setting left_at timestamp
-    const { error: removeError } = await supabase
+    const { error: removeError } = await auth.supabase
       .from('project_members')
       .update({
         left_at: new Date().toISOString()
@@ -86,6 +64,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in DELETE /api/projects/[projectId]/team/[memberId]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

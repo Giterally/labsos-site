@@ -1,11 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { checkProjectPermission } from '@/lib/permission-utils'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function GET(
   request: Request,
@@ -14,17 +9,24 @@ export async function GET(
   try {
     const { projectId } = await params
     
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    let userId: string | undefined
-
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '')
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (!authError && user) {
-        userId = user.id
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
       }
+      return NextResponse.json(
+        { message: 'Authentication failed' },
+        { status: 401 }
+      )
     }
+
+    const { user, supabase } = authContext
 
     // Check if projectId is a UUID or slug/name
     let actualProjectId = projectId
@@ -54,10 +56,13 @@ export async function GET(
       }
     }
 
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
+
     // Check user permissions for this project
-    const permissions = await checkProjectPermission(actualProjectId, userId)
+    const permissions = await permissionService.checkProjectAccess(actualProjectId)
     
-    if (!permissions.canView) {
+    if (!permissions.canRead) {
       return NextResponse.json(
         { message: 'Access denied. This project is private.' },
         { status: 403 }
@@ -128,60 +133,35 @@ export async function PUT(
   try {
     const { projectId } = await params
     
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
       return NextResponse.json(
-        { message: 'No authorization header' },
+        { message: 'Authentication failed' },
         { status: 401 }
       )
     }
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
-    
+    const { user, supabase } = authContext
 
     const body = await request.json()
     const { name, description, institution, department, status, visibility } = body
 
-    // Check if user is creator or team member
-    const { data: projectCheck } = await supabase
-      .from('projects')
-      .select('created_by')
-      .eq('id', projectId)
-      .single()
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
 
-    if (!projectCheck) {
-      return NextResponse.json(
-        { message: 'Project not found' },
-        { status: 404 }
-      )
-    }
-
-    // Check if user is creator
-    const isCreator = projectCheck.created_by === user.id
+    // Check user permissions for this project
+    const permissions = await permissionService.checkProjectAccess(projectId)
     
-    // Check if user is a team member
-    const { data: teamMemberCheck } = await supabase
-      .from('project_members')
-      .select('user_id')
-      .eq('project_id', projectId)
-      .eq('user_id', user.id)
-      .is('left_at', null)
-      .single()
-    
-    const isTeamMember = !!teamMemberCheck
-    
-    if (!isCreator && !isTeamMember) {
+    if (!permissions.canWrite) {
       return NextResponse.json(
         { message: 'You do not have permission to update this project' },
         { status: 403 }
@@ -207,7 +187,7 @@ export async function PUT(
     if (error) {
       if (error.code === 'PGRST116') {
         return NextResponse.json(
-          { message: 'Project not found or you are not the creator' },
+          { message: 'Project not found' },
           { status: 404 }
         )
       }

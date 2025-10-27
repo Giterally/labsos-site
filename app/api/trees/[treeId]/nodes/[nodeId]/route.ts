@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { checkNodePermission } from '@/lib/permission-utils'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function GET(
   request: NextRequest,
@@ -12,33 +9,37 @@ export async function GET(
   try {
     const { treeId, nodeId } = params
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    let userId: string | undefined
-
-    if (authHeader) {
-      // Extract the token
-      const token = authHeader.replace('Bearer ', '')
-      
-      // Verify the token and get user
-      const supabase = createClient(supabaseUrl, supabaseAnonKey)
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (!authError && user) {
-        userId = user.id
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
       }
+      return NextResponse.json(
+        { message: 'Authentication failed' },
+        { status: 401 }
+      )
     }
 
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
+
     // Check node permissions
-    const permissions = await checkNodePermission(nodeId, userId)
+    const permissions = await permissionService.checkNodeAccess(nodeId)
     
-    if (!permissions.canView) {
+    if (!permissions.canRead) {
       return NextResponse.json(
         { message: 'Access denied' },
         { status: 403 }
       )
     }
-
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
     // Get the specific node with its content, attachments, and links
     const { data: node, error: nodeError } = await supabase
@@ -116,32 +117,32 @@ export async function PUT(
     const body = await request.json()
     const { name, description, node_type, position, content, status } = body
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
       return NextResponse.json(
-        { message: 'No authorization header' },
+        { message: 'Authentication failed' },
         { status: 401 }
       )
     }
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
 
     // Check node permissions - only members can edit nodes
-    const permissions = await checkNodePermission(nodeId, user.id)
+    const permissions = await permissionService.checkNodeAccess(nodeId)
     
-    if (!permissions.canEdit) {
+    if (!permissions.canWrite) {
       return NextResponse.json(
         { message: 'You do not have permission to edit this node' },
         { status: 403 }
@@ -220,9 +221,37 @@ export async function DELETE(
   try {
     const { treeId, nodeId } = params
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
+      return NextResponse.json(
+        { message: 'Authentication failed' },
+        { status: 401 }
+      )
+    }
+
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
+
+    // Check node permissions - only members can delete nodes
+    const permissions = await permissionService.checkNodeAccess(nodeId)
+    
+    if (!permissions.canWrite) {
+      return NextResponse.json(
+        { message: 'You do not have permission to delete this node' },
+        { status: 403 }
+      )
+    }
 
     // Delete the node (this will cascade delete content, attachments, and links)
     const { error: nodeError } = await supabase

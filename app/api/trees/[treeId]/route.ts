@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { checkTreePermission } from '@/lib/permission-utils'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function GET(
   request: NextRequest,
@@ -12,36 +9,22 @@ export async function GET(
   try {
     const { treeId } = await params
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    let userId: string | undefined
-
-    if (authHeader) {
-      // Extract the token
-      const token = authHeader.replace('Bearer ', '')
-      
-      // Verify the token and get user
-      const supabase = createClient(supabaseUrl, supabaseAnonKey)
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (!authError && user) {
-        userId = user.id
-      }
-    }
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
 
     // Check tree permissions
-    const permissions = await checkTreePermission(treeId, userId)
+    const access = await permissions.checkTreeAccess(treeId)
     
-    if (!permissions.canView) {
+    if (!access.canRead) {
       return NextResponse.json(
         { message: 'Access denied' },
         { status: 403 }
       )
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
     // Get the experiment tree information
-    const { data, error: treeError } = await supabase
+    const { data, error: treeError } = await auth.supabase
       .from('experiment_trees')
       .select('id, name, description, status, category, node_count, created_at, updated_at')
       .eq('id', treeId)
@@ -58,6 +41,9 @@ export async function GET(
 
     return NextResponse.json({ tree: data })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in GET /api/trees/[treeId]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -77,32 +63,14 @@ export async function PUT(
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
 
     // Check tree permissions - only members can edit trees
-    const permissions = await checkTreePermission(treeId, user.id)
+    const access = await permissions.checkTreeAccess(treeId)
     
-    if (!permissions.canEdit) {
+    if (!access.canWrite) {
       return NextResponse.json(
         { message: 'You do not have permission to edit this experiment tree' },
         { status: 403 }
@@ -110,7 +78,7 @@ export async function PUT(
     }
 
     // Update the experiment tree
-    const { data, error: treeError } = await supabase
+    const { data, error: treeError } = await auth.supabase
       .from('experiment_trees')
       .update({
         name: name.trim(),
@@ -132,6 +100,9 @@ export async function PUT(
 
     return NextResponse.json({ tree: data })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in PUT /api/trees/[treeId]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -144,32 +115,14 @@ export async function DELETE(
   try {
     const { treeId } = await params
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
 
     // Check tree permissions - only members can delete trees
-    const permissions = await checkTreePermission(treeId, user.id)
+    const access = await permissions.checkTreeAccess(treeId)
     
-    if (!permissions.canEdit) {
+    if (!access.canDelete) {
       return NextResponse.json(
         { message: 'You do not have permission to delete this experiment tree' },
         { status: 403 }
@@ -177,7 +130,7 @@ export async function DELETE(
     }
 
     // Delete the experiment tree (this will cascade delete all related nodes, content, attachments, and links)
-    const { error: treeError } = await supabase
+    const { error: treeError } = await auth.supabase
       .from('experiment_trees')
       .delete()
       .eq('id', treeId)
@@ -189,6 +142,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in DELETE /api/trees/[treeId]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

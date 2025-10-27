@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { checkTreePermission } from '@/lib/permission-utils'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function GET(
   request: NextRequest,
@@ -12,36 +9,22 @@ export async function GET(
   try {
     const { treeId } = await params
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    let userId: string | undefined
-
-    if (authHeader) {
-      // Extract the token
-      const token = authHeader.replace('Bearer ', '')
-      
-      // Verify the token and get user
-      const supabase = createClient(supabaseUrl, supabaseAnonKey)
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (!authError && user) {
-        userId = user.id
-      }
-    }
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
 
     // Check tree permissions
-    const permissions = await checkTreePermission(treeId, userId)
+    const access = await permissions.checkTreeAccess(treeId)
     
-    if (!permissions.canView) {
+    if (!access.canRead) {
       return NextResponse.json(
         { message: 'Access denied' },
         { status: 403 }
       )
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
     // Get nodes for the tree with their content, attachments, and links
-    const { data: nodes, error: nodesError } = await supabase
+    const { data: nodes, error: nodesError } = await auth.supabase
       .from('tree_nodes')
       .select(`
         *,
@@ -101,6 +84,9 @@ export async function GET(
 
     return NextResponse.json({ nodes: transformedNodes })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in GET /api/trees/[treeId]/nodes:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -147,32 +133,14 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
 
     // Check tree permissions - only members can create nodes
-    const permissions = await checkTreePermission(treeId, user.id)
+    const access = await permissions.checkTreeAccess(treeId)
     
-    if (!permissions.canEdit) {
+    if (!access.canWrite) {
       return NextResponse.json(
         { message: 'You do not have permission to create nodes in this experiment tree' },
         { status: 403 }
@@ -197,7 +165,7 @@ export async function POST(
       // This is a temporary solution until migration is run
     }
 
-    const { data: newNode, error: nodeError } = await supabase
+    const { data: newNode, error: nodeError } = await auth.supabase
       .from('tree_nodes')
       .insert(nodeData)
       .select()
@@ -231,7 +199,7 @@ export async function POST(
 
     // Create the node content if provided
     if (content) {
-      const { error: contentError } = await supabase
+      const { error: contentError } = await auth.supabase
         .from('node_content')
         .insert({
           node_id: newNode.id,
@@ -247,6 +215,9 @@ export async function POST(
 
     return NextResponse.json({ node: newNode })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in POST /api/trees/[treeId]/nodes:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

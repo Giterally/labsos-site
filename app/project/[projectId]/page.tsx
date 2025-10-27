@@ -1760,7 +1760,7 @@ function EditTreeForm({
   loading: boolean
 }) {
   const [name, setName] = useState(tree.name)
-  const [description, setDescription] = useState(tree.description)
+  const [description, setDescription] = useState(tree.description || '')
   const [category, setCategory] = useState(tree.category)
 
   const handleSubmit = (e: React.FormEvent) => {

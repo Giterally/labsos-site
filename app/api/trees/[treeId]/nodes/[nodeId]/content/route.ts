@@ -1,11 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { checkNodePermission } from '@/lib/permission-utils'
+import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export async function GET(
   req: NextRequest,
@@ -14,25 +10,32 @@ export async function GET(
   try {
     const { treeId, nodeId } = await params
 
-    // Get the authorization header
-    const authHeader = req.headers.get('authorization')
-    let userId: string | undefined
-
-    if (authHeader) {
-      // Extract the token
-      const token = authHeader.replace('Bearer ', '')
-      
-      // Verify the token and get user
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (!authError && user) {
-        userId = user.id
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(req)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
       }
+      return NextResponse.json(
+        { message: 'Authentication failed' },
+        { status: 401 }
+      )
     }
 
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
+
     // Check node permissions
-    const permissions = await checkNodePermission(nodeId, userId)
+    const permissions = await permissionService.checkNodeAccess(nodeId)
     
-    if (!permissions.canView) {
+    if (!permissions.canRead) {
       return NextResponse.json(
         { message: 'Access denied' },
         { status: 403 }
@@ -87,31 +90,32 @@ export async function PUT(
   try {
     const { treeId, nodeId } = await params
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
       return NextResponse.json(
-        { message: 'No authorization header' },
+        { message: 'Authentication failed' },
         { status: 401 }
       )
     }
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
 
     // Check node permissions - only members can edit node content
-    const permissions = await checkNodePermission(nodeId, user.id)
+    const permissions = await permissionService.checkNodeAccess(nodeId)
     
-    if (!permissions.canEdit) {
+    if (!permissions.canWrite) {
       return NextResponse.json(
         { message: 'You do not have permission to edit this node content' },
         { status: 403 }

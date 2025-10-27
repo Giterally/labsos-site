@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase-client'
-import { checkTreePermission } from '@/lib/permission-utils'
+import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function PUT(
   request: NextRequest,
@@ -16,31 +16,32 @@ export async function PUT(
       return NextResponse.json({ error: 'Block order must be an array' }, { status: 400 })
     }
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
       return NextResponse.json(
-        { message: 'No authorization header' },
+        { message: 'Authentication failed' },
         { status: 401 }
       )
     }
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
 
     // Check tree permissions - only members can reorder blocks
-    const permissions = await checkTreePermission(treeId, user.id)
+    const permissions = await permissionService.checkTreeAccess(treeId)
     
-    if (!permissions.canEdit) {
+    if (!permissions.canWrite) {
       return NextResponse.json(
         { message: 'You do not have permission to reorder blocks in this experiment tree' },
         { status: 403 }
@@ -59,7 +60,7 @@ export async function PUT(
       )
 
       const results = await Promise.all(updatePromises)
-      const failedUpdates = results.filter(result => result.error)
+      const failedUpdates = results.filter((result: any) => result.error)
       
       if (failedUpdates.length > 0) {
         console.error('Error updating block positions:', failedUpdates)

@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-// Create a Supabase client with anon key for server-side operations
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { createAuthenticatedClient } from '@/lib/supabase-server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,17 +12,9 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Extract the token
+    // Extract the token and create authenticated client
     const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    const { client: supabase, user } = await createAuthenticatedClient(token)
 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search') || ''
@@ -50,9 +36,17 @@ export async function GET(request: NextRequest) {
       throw new Error(`Failed to search users: ${searchError.message}`)
     }
 
-    // If no projectId provided, return all results
+    // If no projectId provided, return all results without member status
     if (!projectId) {
-      return NextResponse.json({ users: allUsers || [] })
+      const transformedUsers = (allUsers || []).slice(0, limit).map(user => ({
+        id: user.id,
+        name: user.full_name || 'Unknown',
+        email: user.email || 'Unknown',
+        lab_name: user.lab_name || 'Unknown Lab',
+        initials: (user.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+        isMember: false
+      }))
+      return NextResponse.json({ users: transformedUsers })
     }
 
     // Get existing team members for this project
@@ -68,7 +62,15 @@ export async function GET(request: NextRequest) {
       if (slugError || !projectBySlug) {
         console.error('Error fetching project by slug:', slugError)
         // Return all users if we can't get project info
-        return NextResponse.json({ users: allUsers || [] })
+        const transformedUsers = (allUsers || []).slice(0, limit).map(user => ({
+          id: user.id,
+          name: user.full_name || 'Unknown',
+          email: user.email || 'Unknown',
+          lab_name: user.lab_name || 'Unknown Lab',
+          initials: (user.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+          isMember: false
+        }))
+        return NextResponse.json({ users: transformedUsers })
       }
       actualProjectId = projectBySlug.id
     }
@@ -83,20 +85,28 @@ export async function GET(request: NextRequest) {
     if (membersError) {
       console.error('Error fetching existing members:', membersError)
       // Return all users if we can't get member info
-      return NextResponse.json({ users: allUsers || [] })
+      const transformedUsers = (allUsers || []).slice(0, limit).map(user => ({
+        id: user.id,
+        name: user.full_name || 'Unknown',
+        email: user.email || 'Unknown',
+        lab_name: user.lab_name || 'Unknown Lab',
+        initials: (user.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+        isMember: false
+      }))
+      return NextResponse.json({ users: transformedUsers })
     }
 
-    // Filter out existing members
+    // Create a set of existing member IDs for quick lookup
     const existingUserIds = new Set((existingMembers || []).map(member => member.user_id))
-    const filteredUsers = (allUsers || []).filter(user => !existingUserIds.has(user.id)).slice(0, limit)
 
-    // Transform the data
-    const transformedUsers = filteredUsers.map(user => ({
+    // Transform the data with member status (return ALL users, not just non-members)
+    const transformedUsers = (allUsers || []).slice(0, limit).map(user => ({
       id: user.id,
       name: user.full_name || 'Unknown',
       email: user.email || 'Unknown',
       lab_name: user.lab_name || 'Unknown Lab',
-      initials: (user.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase()
+      initials: (user.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+      isMember: existingUserIds.has(user.id)
     }))
 
     return NextResponse.json({ users: transformedUsers })

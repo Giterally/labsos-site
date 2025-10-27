@@ -2103,10 +2103,14 @@ export default function SimpleExperimentTreePage() {
             <AddBlockForm
               onSubmit={async (blockName, blockType) => {
                 try {
+                  // Get session for authentication
+                  const { data: { session } } = await supabase.auth.getSession()
+                  
                   const response = await fetch(`/api/trees/${treeId}/blocks`, {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${session?.access_token}`,
                     },
                     body: JSON.stringify({
                       name: blockName,

@@ -1,5 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 
+/**
+ * @deprecated Use PermissionService from lib/permission-service.ts instead
+ * This file is kept for backward compatibility only
+ */
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
@@ -12,15 +17,17 @@ export interface ProjectPermission {
 
 /**
  * Check if a user has permission to access a project
+ * @param supabase - The Supabase client to use for queries
  * @param projectId - The project ID (UUID or slug)
  * @param userId - The user ID (optional, if not provided will check for authenticated user)
  * @returns ProjectPermission object with permission details
  */
 export async function checkProjectPermission(
-  projectId: string, 
+  supabase: any,
+  projectId: string,
   userId?: string
 ): Promise<ProjectPermission> {
-  const supabase = createClient(supabaseUrl, supabaseAnonKey)
+  console.warn('checkProjectPermission is deprecated. Use PermissionService instead.')
   
   // First, try to find the project by slug or UUID
   let actualProjectId = projectId
@@ -130,15 +137,17 @@ export async function checkProjectPermission(
 
 /**
  * Check if a user has permission to access a tree (inherits from project)
+ * @param supabase - The Supabase client to use for queries
  * @param treeId - The tree ID
  * @param userId - The user ID (optional)
  * @returns ProjectPermission object with permission details
  */
 export async function checkTreePermission(
-  treeId: string, 
+  supabase: any,
+  treeId: string,
   userId?: string
 ): Promise<ProjectPermission> {
-  const supabase = createClient(supabaseUrl, supabaseAnonKey)
+  console.warn('checkTreePermission is deprecated. Use PermissionService instead.')
   
   // Get the project ID for this tree
   const { data: tree, error: treeError } = await supabase
@@ -157,20 +166,22 @@ export async function checkTreePermission(
   }
 
   // Check project permissions
-  return checkProjectPermission(tree.project_id, userId)
+  return checkProjectPermission(supabase, tree.project_id, userId)
 }
 
 /**
  * Check if a user has permission to access a node (inherits from tree/project)
+ * @param supabase - The Supabase client to use for queries
  * @param nodeId - The node ID
  * @param userId - The user ID (optional)
  * @returns ProjectPermission object with permission details
  */
 export async function checkNodePermission(
-  nodeId: string, 
+  supabase: any,
+  nodeId: string,
   userId?: string
 ): Promise<ProjectPermission> {
-  const supabase = createClient(supabaseUrl, supabaseAnonKey)
+  console.warn('checkNodePermission is deprecated. Use PermissionService instead.')
   
   // Get the tree ID for this node
   const { data: node, error: nodeError } = await supabase
@@ -189,5 +200,5 @@ export async function checkNodePermission(
   }
 
   // Check tree permissions (which will check project permissions)
-  return checkTreePermission(node.tree_id, userId)
+  return checkTreePermission(supabase, node.tree_id, userId)
 }

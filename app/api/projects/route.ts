@@ -1,92 +1,106 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-// Create a Supabase client with anon key for server-side operations
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function GET(request: Request) {
   try {
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
     
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // DEBUG: Log to verify the fix is working
+    console.log('DEBUG: API authentication successful for user:', auth.user.email)
 
     // Get user's projects (both owned and team member projects)
     // First get owned projects
-    const { data: ownedProjects, error: ownedError } = await supabase
+    const { data: ownedProjects, error: ownedError } = await auth.supabase
       .from('projects')
       .select('*')
-      .eq('created_by', user.id)
+      .eq('created_by', auth.user.id)
       .order('created_at', { ascending: false })
 
     if (ownedError) {
       throw new Error(`Failed to fetch owned projects: ${ownedError.message}`)
     }
 
-    // Then get projects where user is a team member
-    const { data: memberProjects, error: memberError } = await supabase
+    // Get project IDs where user is a member
+    const { data: memberships, error: membershipError } = await auth.supabase
       .from('project_members')
-      .select(`
-        project_id,
-        role,
-        joined_at,
-        projects!project_members_project_id_fkey (*)
-      `)
-      .eq('user_id', user.id)
+      .select('project_id, role, joined_at')
+      .eq('user_id', auth.user.id)
       .is('left_at', null)
 
-    if (memberError) {
-      throw new Error(`Failed to fetch member projects: ${memberError.message}`)
+    console.log('DEBUG: Memberships for user:', auth.user.email, 'Count:', memberships?.length || 0)
+    console.log('DEBUG: Membership data:', memberships)
+
+    if (membershipError) {
+      throw new Error(`Failed to fetch project memberships: ${membershipError.message}`)
+    }
+
+    // Get all those projects directly
+    const memberProjectIds = memberships?.map(m => m.project_id) || []
+    console.log('DEBUG: Member project IDs:', memberProjectIds)
+    
+    let memberProjects = []
+    let memberProjectsWithRoles = []
+
+    if (memberProjectIds.length > 0) {
+      const { data: memberProjectsData, error: memberError } = await auth.supabase
+        .from('projects')
+        .select('*')
+        .in('id', memberProjectIds)
+
+      console.log('DEBUG: Member projects query result:', memberProjectsData?.length || 0, 'projects')
+      console.log('DEBUG: Member projects data:', memberProjectsData)
+
+      if (memberError) {
+        throw new Error(`Failed to fetch member projects: ${memberError.message}`)
+      }
+
+      memberProjects = memberProjectsData || []
+      
+      // Create a map of project_id to role for easy lookup
+      const roleMap = new Map()
+      memberships?.forEach(membership => {
+        roleMap.set(membership.project_id, membership.role)
+      })
+
+      // Add role information to member projects
+      memberProjectsWithRoles = memberProjects.map(project => ({
+        ...project,
+        user_role: roleMap.get(project.id) || 'Team Member'
+      }))
     }
 
     // Combine and deduplicate projects
     const allProjects = [...(ownedProjects || [])]
-    const memberProjectIds = new Set((ownedProjects || []).map(p => p.id))
-    
-    ;(memberProjects || []).forEach(member => {
-      const project = Array.isArray(member.projects) ? member.projects[0] : member.projects
-      if (project && !memberProjectIds.has(project.id)) {
+    const existingIds = new Set((ownedProjects || []).map(p => p.id))
+
+    console.log('DEBUG: Owned projects count:', ownedProjects?.length || 0)
+    console.log('DEBUG: Member projects count before deduplication:', memberProjectsWithRoles?.length || 0)
+
+    // Add member projects that aren't already included
+    memberProjectsWithRoles?.forEach(project => {
+      if (!existingIds.has(project.id)) {
         allProjects.push(project)
       }
     })
 
     const projects = allProjects
+    console.log('DEBUG: Final combined projects count:', projects.length)
+
+    // DEBUG: Log the projects being returned
+    console.log('DEBUG: Returning projects for user:', auth.user.email, 'Count:', projects.length)
+    console.log('DEBUG: Project names:', projects.map(p => p.name))
 
     // Transform projects to include empty related data and user role
     const transformedProjects = (projects || []).map(project => {
-      const isOwner = project.created_by === user.id
+      const isOwner = project.created_by === auth.user.id
       
-      // Find user's role in member projects
-      let userRole = 'Team Member'
+      // Use the role we already determined, or default to Team Member
+      let userRole = project.user_role || 'Team Member'
       if (isOwner) {
         userRole = 'Lead Researcher'
-      } else {
-        const memberProject = memberProjects?.find(mp => {
-          const proj = Array.isArray(mp.projects) ? mp.projects[0] : mp.projects
-          return proj?.id === project.id
-        })
-        if (memberProject) {
-          userRole = memberProject.role
-        }
       }
       
       return {
@@ -116,6 +130,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ projects: transformedProjects })
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error fetching user projects:', error)
     return NextResponse.json(
       { message: 'Failed to fetch user projects', error: error.message },
@@ -126,35 +143,21 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
     
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // DEBUG: Log to verify the fix is working
+    console.log('DEBUG: API authentication successful for user:', auth.user.email)
 
     const body = await request.json()
     
     // Create the project
-    const { data: project, error } = await supabase
+    const { data: project, error } = await auth.supabase
       .from('projects')
       .insert([{
         ...body,
-        created_by: user.id
+        created_by: auth.user.id
       }])
       .select()
       .single()
@@ -165,13 +168,13 @@ export async function POST(request: Request) {
 
     // Add the creator as a team member with "Lead Researcher" role
     // Use upsert to avoid duplicate key constraint violations
-    const { error: memberError } = await supabase
+    const { error: memberError } = await auth.supabase
       .from('project_members')
       .upsert([{
         project_id: project.id,
-        user_id: user.id,
+        user_id: auth.user.id,
         role: 'Lead Researcher',
-        initials: user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U',
+        initials: auth.user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U',
         left_at: null // Ensure they're active
       }], {
         onConflict: 'project_id,user_id'
@@ -207,6 +210,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ project: transformedProject }, { status: 201 })
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error creating project:', error)
     return NextResponse.json(
       { message: 'Failed to create project', error: error.message },

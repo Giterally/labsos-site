@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase-client'
-import { checkTreePermission } from '@/lib/permission-utils'
+import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function GET(
   request: NextRequest,
@@ -9,25 +9,32 @@ export async function GET(
   try {
     const { treeId } = await params
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    let userId: string | undefined
-
-    if (authHeader) {
-      // Extract the token
-      const token = authHeader.replace('Bearer ', '')
-      
-      // Verify the token and get user
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (!authError && user) {
-        userId = user.id
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
       }
+      return NextResponse.json(
+        { message: 'Authentication failed' },
+        { status: 401 }
+      )
     }
 
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
+
     // Check tree permissions
-    const permissions = await checkTreePermission(treeId, userId)
+    const permissions = await permissionService.checkTreeAccess(treeId)
     
-    if (!permissions.canView) {
+    if (!permissions.canRead) {
       return NextResponse.json(
         { message: 'Access denied' },
         { status: 403 }
@@ -83,31 +90,32 @@ export async function POST(
       return NextResponse.json({ error: 'Name and block type are required' }, { status: 400 })
     }
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
       return NextResponse.json(
-        { message: 'No authorization header' },
+        { message: 'Authentication failed' },
         { status: 401 }
       )
     }
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
 
     // Check tree permissions - only members can create blocks
-    const permissions = await checkTreePermission(treeId, user.id)
+    const permissions = await permissionService.checkTreeAccess(treeId)
     
-    if (!permissions.canEdit) {
+    if (!permissions.canWrite) {
       return NextResponse.json(
         { message: 'You do not have permission to create blocks in this experiment tree' },
         { status: 403 }

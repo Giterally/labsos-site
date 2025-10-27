@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-// Create a Supabase client with anon key for server-side operations
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function GET(
   request: NextRequest,
@@ -14,12 +9,16 @@ export async function GET(
   try {
     const { projectId } = await params
 
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
+
     // Check if projectId is a UUID or slug/name
     let actualProjectId = projectId
     if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       // It's a slug or name, try to find the project
       // First try by slug
-      let { data: projectBySlug, error: slugError } = await supabase
+      let { data: projectBySlug, error: slugError } = await auth.supabase
         .from('projects')
         .select('id')
         .eq('slug', projectId)
@@ -27,7 +26,7 @@ export async function GET(
 
       // If not found by slug, try by name
       if (slugError || !projectBySlug) {
-        const { data: projectByName, error: nameError } = await supabase
+        const { data: projectByName, error: nameError } = await auth.supabase
           .from('projects')
           .select('id')
           .eq('name', projectId)
@@ -42,54 +41,9 @@ export async function GET(
       }
     }
 
-    // Check if project exists and get its visibility
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('created_by, visibility')
-      .eq('id', actualProjectId)
-      .single()
-
-    if (projectError || !project) {
-      return NextResponse.json(
-        { message: 'Project not found' },
-        { status: 404 }
-      )
-    }
-
-    // Get the authorization header (optional for public projects)
-    const authHeader = request.headers.get('authorization')
-    let user = null
-    let isOwner = false
-    let isTeamMember = false
-
-    if (authHeader) {
-      // Extract the token
-      const token = authHeader.replace('Bearer ', '')
-      
-      // Verify the token and get user
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token)
-      if (!authError && authUser) {
-        user = authUser
-        
-        // Check if user is project owner or team member
-        isOwner = project.created_by === user.id
-
-        if (!isOwner) {
-          const { data: membership, error: membershipError } = await supabase
-            .from('project_members')
-            .select('*')
-            .eq('project_id', actualProjectId)
-            .eq('user_id', user.id)
-            .is('left_at', null)
-            .single()
-
-          isTeamMember = !membershipError && !!membership
-        }
-      }
-    }
-
-    // For private projects, require authentication and membership
-    if (project.visibility === 'private' && (!user || (!isOwner && !isTeamMember))) {
+    // Check project access
+    const access = await permissions.checkProjectAccess(actualProjectId)
+    if (!access.hasAccess) {
       return NextResponse.json(
         { message: 'Access denied' },
         { status: 403 }
@@ -97,7 +51,7 @@ export async function GET(
     }
 
     // Get all team members for this project with profile data
-    const { data: teamMembers, error } = await supabase
+    const { data: teamMembers, error } = await auth.supabase
       .from('project_members')
       .select(`
         id,
@@ -117,7 +71,7 @@ export async function GET(
 
     // Get profile data for all team members
     const userIds = (teamMembers || []).map(member => member.user_id)
-    const { data: profiles, error: profilesError } = await supabase
+    const { data: profiles, error: profilesError } = await auth.supabase
       .from('profiles')
       .select('id, full_name, email, lab_name')
       .in('id', userIds)
@@ -149,11 +103,14 @@ export async function GET(
 
     return NextResponse.json({ 
       members: transformedMembers,
-      isOwner,
-      isTeamMember,
-      isAuthenticated: !!user
+      isOwner: access.isOwner,
+      isTeamMember: access.isMember,
+      isAuthenticated: true
     })
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error fetching team members:', error)
     return NextResponse.json(
       { message: 'Failed to fetch team members', error: error.message },
@@ -167,30 +124,13 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { message: 'No authorization header' },
-        { status: 401 }
-      )
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '')
-    
-    // Verify the token and get user
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !authUser) {
-      return NextResponse.json(
-        { message: 'Invalid token' },
-        { status: 401 }
-      )
-    }
+    // Authenticate request
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
 
     const { projectId } = await params
     const body = await request.json()
-    const { user_id, role = 'Team Member' } = body
+    const { user_id, role = 'Admin' } = body
 
     if (!user_id) {
       return NextResponse.json(
@@ -204,7 +144,7 @@ export async function POST(
     if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       // It's a slug or name, try to find the project
       // First try by slug
-      let { data: projectBySlug, error: slugError } = await supabase
+      let { data: projectBySlug, error: slugError } = await auth.supabase
         .from('projects')
         .select('id')
         .eq('slug', projectId)
@@ -212,7 +152,7 @@ export async function POST(
 
       // If not found by slug, try by name
       if (slugError || !projectBySlug) {
-        const { data: projectByName, error: nameError } = await supabase
+        const { data: projectByName, error: nameError } = await auth.supabase
           .from('projects')
           .select('id')
           .eq('name', projectId)
@@ -227,24 +167,24 @@ export async function POST(
       }
     }
 
-    // Check if the requesting user is a team member with admin access
-    const { data: memberCheck, error: memberError } = await supabase
-      .from('project_members')
-      .select('id, role')
-      .eq('project_id', actualProjectId)
-      .eq('user_id', authUser.id)
-      .is('left_at', null)
-      .single()
-
-    if (memberError || !memberCheck) {
+    // Check project access and permissions
+    const access = await permissions.checkProjectAccess(actualProjectId)
+    if (!access.hasAccess) {
       return NextResponse.json(
-        { message: 'You must be a team member to add other members' },
+        { message: 'Access denied' },
+        { status: 403 }
+      )
+    }
+
+    if (!access.canManageMembers) {
+      return NextResponse.json(
+        { message: 'Only project owners and admins can add team members' },
         { status: 403 }
       )
     }
 
     // Check if the user to be added exists
-    const { data: targetUser, error: userError } = await supabase
+    const { data: targetUser, error: userError } = await auth.supabase
       .from('profiles')
       .select('id, full_name, email, lab_name')
       .eq('id', user_id)
@@ -261,7 +201,7 @@ export async function POST(
     const targetUserProfile = targetUser as { id: string; full_name: string; email: string; lab_name: string }
 
     // Check if user is already an active member
-    const { data: existingActiveMember, error: existingError } = await supabase
+    const { data: existingActiveMember, error: existingError } = await auth.supabase
       .from('project_members')
       .select('*')
       .eq('project_id', actualProjectId)
@@ -277,7 +217,7 @@ export async function POST(
     }
 
     // Check if user was previously a member (has a record with left_at set)
-    const { data: existingInactiveMember, error: inactiveError } = await supabase
+    const { data: existingInactiveMember, error: inactiveError } = await auth.supabase
       .from('project_members')
       .select('*')
       .eq('project_id', actualProjectId)
@@ -290,7 +230,7 @@ export async function POST(
 
     if (existingInactiveMember) {
       // Re-activate the existing member by setting left_at to null
-      const { data: reactivatedMember, error: reactivateError } = await supabase
+      const { data: reactivatedMember, error: reactivateError } = await auth.supabase
         .from('project_members')
         .update({
           left_at: null,
@@ -305,7 +245,7 @@ export async function POST(
       addError = reactivateError
     } else {
       // Add the user as a new team member
-      const { data: insertedMember, error: insertError } = await supabase
+      const { data: insertedMember, error: insertError } = await auth.supabase
         .from('project_members')
         .insert([{
           project_id: actualProjectId,
@@ -346,6 +286,9 @@ export async function POST(
 
     return NextResponse.json({ member: transformedMember }, { status: 201 })
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error adding team member:', error)
     return NextResponse.json(
       { message: 'Failed to add team member', error: error.message },

@@ -62,6 +62,8 @@ export default function ProjectsPage() {
         },
       })
 
+      console.log('DEBUG: API response status:', response.status, response.ok)
+      
       let apiProjects = []
       if (!response.ok) {
         const errorData = await response.json()
@@ -83,6 +85,8 @@ export default function ProjectsPage() {
       } else {
         const { projects } = await response.json()
         apiProjects = projects || []
+        console.log('DEBUG: API returned projects:', apiProjects.length, 'projects')
+        console.log('DEBUG: Project names from API:', apiProjects.map(p => p.name))
       }
 
       // Transform the data to match the expected format

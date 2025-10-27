@@ -15,6 +15,7 @@ interface User {
   email: string
   lab_name: string
   initials: string
+  isMember?: boolean
 }
 
 interface AddTeamMemberFormProps {
@@ -22,13 +23,7 @@ interface AddTeamMemberFormProps {
   onMemberAdded: () => void
 }
 
-const ROLE_OPTIONS = [
-  { value: 'Lead Researcher', label: 'Lead Researcher' },
-  { value: 'PhD Student', label: 'PhD Student' },
-  { value: 'Postdoc', label: 'Postdoc' },
-  { value: 'Collaborator', label: 'Collaborator' },
-  { value: 'Team Member', label: 'Team Member' }
-]
+// Only Admin role is allowed now
 
 export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamMemberFormProps) {
   const [open, setOpen] = useState(false)
@@ -37,7 +32,7 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
   const [searchTerm, setSearchTerm] = useState("")
   const [searchResults, setSearchResults] = useState<User[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
-  const [selectedRole, setSelectedRole] = useState('Team Member')
+  const [selectedRole, setSelectedRole] = useState('Admin')
 
   // Debounced search function
   const debouncedSearch = useCallback(
@@ -120,7 +115,7 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
       // Success! Reset form and close
       setSearchTerm("")
       setSearchResults([])
-      setSelectedRole('Team Member')
+      setSelectedRole('Admin')
       setOpen(false)
       onMemberAdded()
     } catch (err: any) {
@@ -141,7 +136,7 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
     if (!open) {
       setSearchTerm("")
       setSearchResults([])
-      setSelectedRole('Team Member')
+      setSelectedRole('Admin')
       setError(null)
     } else {
       // Clear error when popover opens
@@ -178,21 +173,12 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
               />
             </div>
 
-            {/* Role Selection */}
+            {/* Role is fixed to Admin - no selection needed */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">Role</label>
-              <Select value={selectedRole} onValueChange={setSelectedRole}>
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Select a role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLE_OPTIONS.map((role) => (
-                    <SelectItem key={role.value} value={role.value}>
-                      {role.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="h-10 px-3 py-2 bg-muted rounded-md text-sm text-muted-foreground flex items-center">
+                Admin (Full Access)
+              </div>
             </div>
 
             {/* Search Results */}
@@ -228,8 +214,12 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
                   {searchResults.map((user) => (
                     <div
                       key={user.id}
-                      onClick={() => addTeamMember(user)}
-                      className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
+                      onClick={user.isMember ? undefined : () => addTeamMember(user)}
+                      className={`flex items-center space-x-3 p-3 rounded-lg border transition-colors ${
+                        user.isMember 
+                          ? 'bg-muted cursor-not-allowed opacity-60' 
+                          : 'hover:bg-accent cursor-pointer'
+                      }`}
                     >
                       <Avatar className="h-10 w-10">
                         <AvatarFallback className="text-sm font-medium">
@@ -245,9 +235,15 @@ export default function AddTeamMemberForm({ projectId, onMemberAdded }: AddTeamM
                           {user.lab_name}
                         </div>
                       </div>
-                      <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                        <span>Add</span>
-                        <CheckIcon className="h-3 w-3" />
+                      <div className="flex items-center space-x-1 text-xs">
+                        {user.isMember ? (
+                          <span className="text-green-600 font-medium">Already Added</span>
+                        ) : (
+                          <>
+                            <span className="text-muted-foreground">Add</span>
+                            <CheckIcon className="h-3 w-3 text-muted-foreground" />
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
