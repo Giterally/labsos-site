@@ -131,7 +131,31 @@ export default function KnowledgeCaptureLanding() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative">
+      <div className="absolute inset-0 z-0">
+        <KnowledgeNodesBackground 
+          className="w-full h-full" 
+          interactive={true}
+          animated={true}
+          transitionStart="calc(100vh + 50px)"
+          transitionEnd="calc(100vh + 150px)"
+        />
+      </div>
+      
+      {/* Blur overlay that starts after hero section */}
+      <div 
+        className="absolute left-0 w-full z-5 pointer-events-none"
+        style={{
+          top: 'calc(100vh + 100px)', // Start lower, after midsection
+          height: 'calc(100% - 100vh - 100px)', // Cover remaining height
+          background: `linear-gradient(to bottom, 
+            rgba(255, 255, 255, 0.02) 0%, 
+            rgba(255, 255, 255, 0.08) 100%
+          )`,
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)'
+        }}
+      />
       <Suspense fallback={null}>
         <ContactDialogHandler 
           showContactDialog={showContactDialog} 
@@ -139,7 +163,7 @@ export default function KnowledgeCaptureLanding() {
         />
       </Suspense>
       {/* Header */}
-      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 relative z-20">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <svg className={isAuthenticated ? "h-12 w-12" : "h-8 w-8"} fill="none" viewBox="0 0 24 24">
@@ -177,8 +201,7 @@ export default function KnowledgeCaptureLanding() {
       </header>
 
       {/* Hero Section */}
-      <section className="py-20 px-4 relative pb-32">
-        <KnowledgeNodesBackground className="absolute inset-0" />
+      <section className="py-20 px-4 relative pb-32 z-10">
         <div className="container mx-auto max-w-6xl relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
@@ -212,7 +235,7 @@ export default function KnowledgeCaptureLanding() {
       </section>
 
       {/* Research Projects Discovery */}
-      <section id="labs" className="py-16 px-4 bg-muted/10">
+      <section id="labs" className="py-16 px-4 bg-muted/10 relative z-10">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Researchers and Research Projects</h2>
@@ -349,7 +372,7 @@ export default function KnowledgeCaptureLanding() {
       </section>
 
       {/* Problem Statement */}
-      <section className="py-16 px-4 bg-muted/30">
+      <section className="py-16 px-4 bg-muted/30 relative z-10">
         <div className="container mx-auto max-w-4xl text-center">
           <h2 className="text-3xl font-bold mb-12 text-foreground">The Research Knowledge Crisis</h2>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -370,7 +393,7 @@ export default function KnowledgeCaptureLanding() {
       </section>
 
       {/* Features */}
-      <section id="features" className="py-16 px-4">
+      <section id="features" className="py-16 px-4 relative z-10">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4 text-foreground">How Knowledge Capture Works</h2>
@@ -439,7 +462,7 @@ export default function KnowledgeCaptureLanding() {
       </section>
 
       {/* FAQ Section */}
-      <section id="faq" className="py-16 px-4 bg-muted/10">
+      <section id="faq" className="py-16 px-4 bg-muted/10 relative z-10">
         <div className="container mx-auto max-w-4xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4 text-foreground">Frequently Asked Questions</h2>
@@ -488,7 +511,7 @@ export default function KnowledgeCaptureLanding() {
       </section>
 
       {/* Contact Section */}
-      <section id="contact" className="py-16 px-4">
+      <section id="contact" className="py-16 px-4 relative z-10">
         <div className="container mx-auto max-w-4xl text-center">
           <h2 className="text-3xl font-bold mb-4 text-foreground">Ready to Transform Your Research?</h2>
           <p className="text-lg text-muted-foreground mb-8">
@@ -501,7 +524,7 @@ export default function KnowledgeCaptureLanding() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border bg-muted/30 py-12 px-4">
+      <footer className="border-t border-border bg-muted/30 py-12 px-4 relative z-10">
         <div className="container mx-auto max-w-6xl">
           <div className="grid md:grid-cols-4 gap-8">
             <div className="space-y-4">

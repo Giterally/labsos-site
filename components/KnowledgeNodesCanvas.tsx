@@ -6,6 +6,11 @@ import * as THREE from 'three'
 interface KnowledgeNodesCanvasProps {
   containerRef: React.RefObject<HTMLDivElement>
   className?: string
+  interactive?: boolean
+  animated?: boolean
+  style?: React.CSSProperties
+  transitionStart?: string
+  transitionEnd?: string
 }
 
 interface Node {
@@ -20,7 +25,15 @@ interface Node {
   connections: number[]
 }
 
-export function KnowledgeNodesCanvas({ containerRef, className = "" }: KnowledgeNodesCanvasProps) {
+export function KnowledgeNodesCanvas({ 
+  containerRef, 
+  className = "",
+  interactive = true,
+  animated = true,
+  style,
+  transitionStart,
+  transitionEnd
+}: KnowledgeNodesCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animationRef = useRef<number>()
   const nodesRef = useRef<Node[]>([])
@@ -30,8 +43,8 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
 
   // Configuration
   const config = {
-    nodeCount: isMobile ? 60 : 120, // Much higher density
-    particleCount: isMobile ? 120 : 200,
+    nodeCount: isMobile ? 200 : 400, // Much higher density for full page coverage
+    particleCount: isMobile ? 300 : 600,
     repulsionRadius: 140, // Increased radius for more interaction area
     repulsionStrength: 0.5, // Increased from 0.3 for more responsive movement
     springStrength: 0.08, // Increased from 0.05 for faster return
@@ -40,7 +53,7 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
 
   const generateNodes = useCallback((width: number, height: number): Node[] => {
     const nodes: Node[] = []
-    const minDistance = 35 // Even tighter packing for maximum density
+    const minDistance = 25 // Tighter packing for higher density
     
     // Calculate maximum boundary distance: max node size (10) + max glow (30) = 40px
     const maxNodeSize = 10 // 4 + 6 from size calculation
@@ -89,7 +102,7 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
       for (let j = 0; j < nodes.length; j++) {
         if (i !== j) {
           const distance = Math.sqrt((nodes[i].x - nodes[j].x) ** 2 + (nodes[i].y - nodes[j].y) ** 2)
-          if (distance < 250) { // Increased connection range for more connections
+          if (distance < 300) { // Increased connection range for more connections
             nearbyNodes.push({ index: j, distance })
           }
         }
@@ -97,8 +110,8 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
       
       // Sort by distance and connect to many more nodes
       nearbyNodes.sort((a, b) => a.distance - b.distance)
-      const maxConnections = Math.min(12, nearbyNodes.length) // Up to 12 connections per node
-      const connectionsToMake = Math.min(maxConnections, Math.floor(Math.random() * 6) + 6) // 6-12 connections
+      const maxConnections = Math.min(15, nearbyNodes.length) // Up to 15 connections per node
+      const connectionsToMake = Math.min(maxConnections, Math.floor(Math.random() * 8) + 8) // 8-15 connections
       
       for (let k = 0; k < connectionsToMake; k++) {
         const targetIndex = nearbyNodes[k].index
@@ -117,30 +130,76 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
     const mouse = mouseRef.current
     const time = timeRef.current
     
-    for (const node of nodes) {
-      // Calculate repulsion from mouse
-      const dx = node.x - mouse.x
-      const dy = node.y - mouse.y
-      const distance = Math.sqrt(dx * dx + dy * dy)
+    // Calculate transition zone if provided
+    let transitionStartY = 0
+    let transitionEndY = 0
+    let hasTransition = false
+    
+    if (transitionStart && transitionEnd && containerRef.current) {
+      const containerRect = containerRef.current.getBoundingClientRect()
+      const viewportHeight = window.innerHeight
       
-      if (distance < config.repulsionRadius && distance > 0) {
-        // Use quadratic falloff for more dramatic response near cursor
-        const force = Math.pow((config.repulsionRadius - distance) / config.repulsionRadius, 1.5)
-        const angle = Math.atan2(dy, dx)
+      // Parse CSS calc values - convert viewport height to actual pixels
+      const startOffset = parseFloat(transitionStart.replace('calc(100vh + ', '').replace('px)', ''))
+      const endOffset = parseFloat(transitionEnd.replace('calc(100vh + ', '').replace('px)', ''))
+      
+      transitionStartY = viewportHeight + startOffset
+      transitionEndY = viewportHeight + endOffset
+      hasTransition = true
+    }
+    
+    for (const node of nodes) {
+      // Calculate transition factor based on node position
+      let transitionFactor = 1.0 // Full interactivity/animation by default
+      
+      if (hasTransition) {
+        const nodeY = node.y
+        if (nodeY >= transitionStartY && nodeY <= transitionEndY) {
+          // In transition zone - gradually reduce interactivity/animation
+          transitionFactor = 1.0 - ((nodeY - transitionStartY) / (transitionEndY - transitionStartY))
+        } else if (nodeY > transitionEndY) {
+          // Below transition zone - no interactivity/animation
+          transitionFactor = 0.0
+        }
+        // Above transition zone - keep full interactivity/animation (transitionFactor = 1.0)
+      } else if (!animated) {
+        transitionFactor = 0.0
+      }
+      
+      if (transitionFactor === 0.0) {
+        // If no animation, keep nodes at original positions
+        node.x = node.originalX
+        node.y = node.originalY
+        node.vx = 0
+        node.vy = 0
+        continue
+      }
+      
+      // Calculate repulsion from mouse (only if interactive and in interactive zone)
+      if (interactive && transitionFactor > 0) {
+        const dx = node.x - mouse.x
+        const dy = node.y - mouse.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
         
-        node.vx += Math.cos(angle) * force * config.repulsionStrength * 120 // Even higher multiplier
-        node.vy += Math.sin(angle) * force * config.repulsionStrength * 120
+        if (distance < config.repulsionRadius && distance > 0) {
+          // Use quadratic falloff for more dramatic response near cursor
+          const force = Math.pow((config.repulsionRadius - distance) / config.repulsionRadius, 1.5)
+          const angle = Math.atan2(dy, dx)
+          
+          node.vx += Math.cos(angle) * force * config.repulsionStrength * 120 * transitionFactor
+          node.vy += Math.sin(angle) * force * config.repulsionStrength * 120 * transitionFactor
+        }
       }
       
       // Spring force back to original position
       const springDx = node.originalX - node.x
       const springDy = node.originalY - node.y
       
-      node.vx += springDx * config.springStrength * 120 // Increased from 100
-      node.vy += springDy * config.springStrength * 120
+      node.vx += springDx * config.springStrength * 120 * transitionFactor
+      node.vy += springDy * config.springStrength * 120 * transitionFactor
       
-      // Enhanced ambient movement - always active but reduced near mouse
-      const mouseDistance = Math.sqrt((node.x - mouse.x) ** 2 + (node.y - mouse.y) ** 2)
+      // Enhanced ambient movement - always active but reduced near mouse and in transition
+      const mouseDistance = interactive ? Math.sqrt((node.x - mouse.x) ** 2 + (node.y - mouse.y) ** 2) : config.repulsionRadius + 1
       const ambientStrength = mouseDistance > config.repulsionRadius ? 1.0 : Math.max(0.2, mouseDistance / config.repulsionRadius)
       
       // Multiple wave patterns for complex ambient movement
@@ -152,11 +211,11 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
       const perpWave1 = Math.cos(time * 0.0009 + node.originalX * 0.009) * 0.5
       const perpWave2 = Math.sin(time * 0.0011 + node.originalY * 0.011) * 0.3
       
-      // Apply ambient movement
-      node.vx += (wave1 + wave3) * ambientStrength * 0.4
-      node.vy += (wave2 + perpWave1) * ambientStrength * 0.4
-      node.vx += perpWave2 * ambientStrength * 0.2
-      node.vy += wave1 * ambientStrength * 0.2
+      // Apply ambient movement with transition factor
+      node.vx += (wave1 + wave3) * ambientStrength * 0.4 * transitionFactor
+      node.vy += (wave2 + perpWave1) * ambientStrength * 0.4 * transitionFactor
+      node.vx += perpWave2 * ambientStrength * 0.2 * transitionFactor
+      node.vy += wave1 * ambientStrength * 0.2 * transitionFactor
       
       // Apply damping - reduced for more responsive movement
       node.vx *= 0.82 // Reduced from 0.88
@@ -183,7 +242,7 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
         node.y = Math.max(boundaryDistance, Math.min(paddedHeight - boundaryDistance, node.y))
       }
     }
-  }, [config])
+  }, [config, interactive, animated, transitionStart, transitionEnd, containerRef])
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -240,7 +299,7 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
         const connectedNode = nodes[connectionIndex]
         if (connectedNode) {
           // Many more particles per connection for maximum density
-          for (let p = 0; p < 6; p++) {
+          for (let p = 0; p < 8; p++) {
             const particleOffset = p * 0.33
             const progress = ((Math.sin(timeRef.current * 0.003 + node.x * 0.01 + particleOffset) + 1) / 2 + particleOffset) % 1
             const particleX = node.x + (connectedNode.x - node.x) * progress
@@ -365,24 +424,28 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
     timeRef.current = performance.now()
     animationRef.current = requestAnimationFrame(animate)
 
-    // Add mouse event listeners
-    canvas.addEventListener('mousemove', handleMouseMove, { passive: true })
-    canvas.addEventListener('mouseleave', handleMouseLeave, { passive: true })
-    canvas.addEventListener('mouseenter', handleMouseMove, { passive: true })
-    
-    // Also add to window for better tracking
-    window.addEventListener('mousemove', handleMouseMove, { passive: true })
+    // Add mouse event listeners only if interactive
+    if (interactive) {
+      canvas.addEventListener('mousemove', handleMouseMove, { passive: true })
+      canvas.addEventListener('mouseleave', handleMouseLeave, { passive: true })
+      canvas.addEventListener('mouseenter', handleMouseMove, { passive: true })
+      
+      // Also add to window for better tracking
+      window.addEventListener('mousemove', handleMouseMove, { passive: true })
+    }
 
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current)
       }
-      canvas.removeEventListener('mousemove', handleMouseMove)
-      canvas.removeEventListener('mouseleave', handleMouseLeave)
-      canvas.removeEventListener('mouseenter', handleMouseMove)
-      window.removeEventListener('mousemove', handleMouseMove)
+      if (interactive) {
+        canvas.removeEventListener('mousemove', handleMouseMove)
+        canvas.removeEventListener('mouseleave', handleMouseLeave)
+        canvas.removeEventListener('mouseenter', handleMouseMove)
+        window.removeEventListener('mousemove', handleMouseMove)
+      }
     }
-  }, [containerRef, generateNodes, animate, handleMouseMove, handleMouseLeave, isMobile])
+  }, [containerRef, generateNodes, animate, handleMouseMove, handleMouseLeave, isMobile, interactive, animated, transitionStart, transitionEnd])
 
   return (
     <canvas
@@ -391,7 +454,8 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
       style={{ 
         width: '100%', 
         height: '100%',
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        ...style
       }}
     />
   )

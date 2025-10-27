@@ -5,10 +5,18 @@ import { KnowledgeNodesCanvas } from './KnowledgeNodesCanvas'
 
 interface KnowledgeNodesBackgroundProps {
   className?: string
+  interactive?: boolean
+  animated?: boolean
+  transitionStart?: string
+  transitionEnd?: string
 }
 
 export function KnowledgeNodesBackground({ 
-  className = "" 
+  className = "",
+  interactive = true,
+  animated = true,
+  transitionStart,
+  transitionEnd
 }: KnowledgeNodesBackgroundProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isReady, setIsReady] = useState(false)
@@ -32,7 +40,11 @@ export function KnowledgeNodesBackground({
       {isReady && (
         <KnowledgeNodesCanvas 
           containerRef={containerRef}
-          className="absolute pointer-events-auto z-0"
+          className={`absolute z-0 ${interactive ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          interactive={interactive}
+          animated={animated}
+          transitionStart={transitionStart}
+          transitionEnd={transitionEnd}
           style={{ 
             top: '-40px',
             left: '-40px',
