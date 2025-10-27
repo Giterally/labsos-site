@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '../../../../lib/supabase-client';
 import { sendEvent } from '../../../../lib/inngest/client';
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware';
+import { PermissionService } from '@/lib/permission-service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,51 +14,19 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
-    }
-
-    // Extract the auth token
-    const authToken = authHeader.replace('Bearer ', '');
-
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(authToken);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Resolve project ID - handle both UUID and slug
-    let resolvedProjectId = projectId;
+    // Authenticate request and check permissions
+    const authContext = await authenticateRequest(request);
+    const { user, supabase } = authContext;
     
-    // Check if projectId is a slug (not a UUID format)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(projectId)) {
-      // Look up project by slug
-      const { data: project, error: projectError } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('slug', projectId)
-        .single();
-
-      if (projectError || !project) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-      }
-      
-      resolvedProjectId = project.id;
+    const permissionService = new PermissionService(supabase, user.id);
+    const access = await permissionService.checkProjectAccess(projectId);
+    
+    if (!access.canWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
     }
 
-    const { data: projectMember } = await supabase
-      .from('project_members')
-      .select('id')
-      .eq('project_id', resolvedProjectId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!projectMember) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-    }
+    // Get the resolved project ID from the permission service
+    const resolvedProjectId = access.projectId;
 
     // Validate GitHub URL
     const githubUrlPattern = /^https:\/\/github\.com\/[^\/]+\/[^\/]+(?:\/.*)?$/;
@@ -176,6 +145,9 @@ export async function POST(request: NextRequest) {
     }
 
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error('GitHub import error:', error);
     return NextResponse.json({ 
       error: 'Internal server error' 
@@ -192,51 +164,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No project ID provided' }, { status: 400 });
     }
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
-    }
-
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '');
-
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Resolve project ID - handle both UUID and slug
-    let resolvedProjectId = projectId;
+    // Authenticate request and check permissions
+    const authContext = await authenticateRequest(request);
+    const { user, supabase } = authContext;
     
-    // Check if projectId is a slug (not a UUID format)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(projectId)) {
-      // Look up project by slug
-      const { data: project, error: projectError } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('slug', projectId)
-        .single();
-
-      if (projectError || !project) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-      }
-      
-      resolvedProjectId = project.id;
+    const permissionService = new PermissionService(supabase, user.id);
+    const access = await permissionService.checkProjectAccess(projectId);
+    
+    if (!access.canRead) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
     }
 
-    const { data: projectMember } = await supabase
-      .from('project_members')
-      .select('id')
-      .eq('project_id', resolvedProjectId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!projectMember) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-    }
+    // Get the resolved project ID from the permission service
+    const resolvedProjectId = access.projectId;
 
     // Get GitHub sources for project
     const { data: sources, error } = await supabase
@@ -265,6 +205,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ sources });
 
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error('Get GitHub sources error:', error);
     return NextResponse.json({ 
       error: 'Internal server error' 

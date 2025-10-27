@@ -15,6 +15,7 @@ export interface ProjectAccess {
   isOwner: boolean
   isMember: boolean
   role: ProjectRole | null
+  projectId: string | undefined
   canRead: boolean
   canWrite: boolean
   canDelete: boolean
@@ -54,6 +55,7 @@ export class PermissionService {
         isOwner: true,
         isMember: true,
         role: 'Lead Researcher',
+        projectId: project.id,
         canRead: true,
         canWrite: true,
         canDelete: true,
@@ -80,6 +82,7 @@ export class PermissionService {
         isOwner: false,
         isMember: true,
         role,
+        projectId: project.id,
         canRead: permissions.includes('read'),
         canWrite: permissions.includes('write'),
         canDelete: permissions.includes('delete'),
@@ -95,6 +98,7 @@ export class PermissionService {
         isOwner: false,
         isMember: false,
         role: null,
+        projectId: project.id,
         canRead: true,
         canWrite: false,
         canDelete: false,
@@ -142,6 +146,7 @@ export class PermissionService {
       isOwner: false,
       isMember: false,
       role: null,
+      projectId: undefined,
       canRead: false,
       canWrite: false,
       canDelete: false,

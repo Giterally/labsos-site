@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
+import { AuthError } from '@/lib/auth-middleware';
+import { PermissionService } from '@/lib/permission-service';
 
 export async function GET(
   request: NextRequest,
@@ -21,34 +23,24 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Resolve project ID
-    let resolvedProjectId = projectId;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(projectId)) {
-      const { data: project, error: projectError } = await supabaseServer
-        .from('projects')
-        .select('id')
-        .eq('slug', projectId)
-        .single();
-
-      if (projectError || !project) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    // Create a mock request with the token for PermissionService
+    const mockRequest = new Request(request.url, {
+      method: 'GET',
+      headers: {
+        'authorization': `Bearer ${token}`
       }
-      
-      resolvedProjectId = project.id;
-    }
+    });
 
-    // Check project access
-    const { data: projectMember } = await supabaseServer
-      .from('project_members')
-      .select('id')
-      .eq('project_id', resolvedProjectId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!projectMember) {
+    // Use PermissionService for project access check
+    const permissionService = new PermissionService(supabaseServer, user.id);
+    const access = await permissionService.checkProjectAccess(projectId);
+    
+    if (!access.canRead) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
+
+    // Get the resolved project ID from the permission service
+    const resolvedProjectId = access.projectId;
 
     // Create a readable stream for Server-Sent Events
     const stream = new ReadableStream({
@@ -213,6 +205,9 @@ export async function GET(
     });
 
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error('SSE endpoint error:', error);
     return NextResponse.json({ 
       error: 'Internal server error' 

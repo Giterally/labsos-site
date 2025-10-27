@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware';
+import { PermissionService } from '@/lib/permission-service';
 
 export async function POST(
   request: NextRequest,
@@ -10,48 +12,31 @@ export async function POST(
 
     console.log('[CANCEL_JOB] Cancelling job:', jobId, 'for project:', projectId);
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
+    // Authenticate request and check permissions
+    const authContext = await authenticateRequest(request);
+    const { user, supabase } = authContext;
+    
+    const permissionService = new PermissionService(supabase, user.id);
+    const access = await permissionService.checkProjectAccess(projectId);
+    
+    if (!access.canWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
     }
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '');
-
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabaseServer.auth.getUser(token);
-    if (authError || !user) {
-      console.error('[CANCEL_JOB] Auth error:', authError);
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Verify the job belongs to a project the user has access to
+    // Verify the job belongs to the project
     const { data: job, error: jobError } = await supabaseServer
       .from('jobs')
       .select('project_id, status, progress_current, progress_total')
       .eq('id', jobId)
+      .eq('project_id', access.projectId) // Ensure job belongs to the project
       .single();
 
     if (jobError || !job) {
-      console.error('[CANCEL_JOB] Job not found:', jobError);
+      console.error('[CANCEL_JOB] Job not found or does not belong to project:', jobError);
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
     console.log('[CANCEL_JOB] Job found:', { status: job.status, progress: `${job.progress_current}/${job.progress_total}` });
-
-    // Check project access
-    const { data: projectMember } = await supabaseServer
-      .from('project_members')
-      .select('id')
-      .eq('project_id', job.project_id)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!projectMember) {
-      console.error('[CANCEL_JOB] Access denied for user:', user.id);
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-    }
 
     // Update job status to cancelled
     const { error: updateError } = await supabaseServer
@@ -80,6 +65,9 @@ export async function POST(
     });
 
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error('[CANCEL_JOB] Error:', error);
     return NextResponse.json({ 
       error: 'Internal server error' 

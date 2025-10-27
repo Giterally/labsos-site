@@ -2,60 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { generateProposals } from '@/lib/processing/ai-synthesis-pipeline';
 import { randomUUID } from 'crypto';
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware';
+import { PermissionService } from '@/lib/permission-service';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  // Declare resolvedProjectId outside try block so it's accessible in catch
-  let resolvedProjectId: string;
-  
   try {
     const { projectId } = await params;
 
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json({ error: 'No authorization header' }, { status: 401 });
+    // Authenticate request and check permissions
+    const authContext = await authenticateRequest(request);
+    const { user, supabase } = authContext;
+    
+    const permissionService = new PermissionService(supabase, user.id);
+    const access = await permissionService.checkProjectAccess(projectId);
+    
+    if (!access.canWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
     }
 
-    // Extract the token
-    const token = authHeader.replace('Bearer ', '');
-
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabaseServer.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Resolve project ID
-    resolvedProjectId = projectId;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(projectId)) {
-      const { data: project, error: projectError } = await supabaseServer
-        .from('projects')
-        .select('id')
-        .eq('slug', projectId)
-        .single();
-
-      if (projectError || !project) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-      }
-      
-      resolvedProjectId = project.id;
-    }
-
-    // Check project access
-    const { data: projectMember } = await supabaseServer
-      .from('project_members')
-      .select('id')
-      .eq('project_id', resolvedProjectId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!projectMember) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-    }
+    // Get the resolved project ID from the permission service
+    const resolvedProjectId = access.projectId;
 
     // Check if there are any completed files to generate proposals from
     const { data: completedSources, error: sourcesError } = await supabaseServer
@@ -119,6 +88,10 @@ export async function POST(
     });
 
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
+    
     console.error('[GENERATE_PROPOSALS_API] Error occurred:', error);
     
     // Provide detailed error information
@@ -129,7 +102,6 @@ export async function POST(
     console.error('[GENERATE_PROPOSALS_API] Error details:', {
       message: errorMessage,
       stack: errorStack,
-      projectId: resolvedProjectId,
       timestamp: new Date().toISOString(),
     });
     

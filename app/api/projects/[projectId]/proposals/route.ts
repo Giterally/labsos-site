@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase-client';
 import { supabaseServer } from '@/lib/supabase-server';
 import { generateTreeName, formatNodeContent, generateBriefSummary } from '@/lib/ai/synthesis';
 import { randomUUID } from 'crypto';
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware';
+import { PermissionService } from '@/lib/permission-service';
 
 // NOTE: Removed in-memory proposals cache to avoid stale data across instances
 
@@ -190,52 +192,27 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId: resolvedProjectId } = await params;
+    const { projectId } = await params;
 
-    // Get session from request headers (optional for project creators)
-    const authHeader = request.headers.get('authorization');
+    // Try to authenticate, but allow unauthenticated access (return empty proposals)
     let user = null;
-
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
+    let actualProjectId = projectId;
+    
+    try {
+      const authContext = await authenticateRequest(request);
+      user = authContext.user;
       
-      if (!authError && authUser) {
-        user = authUser;
+      const permissionService = new PermissionService(authContext.supabase, user.id);
+      const access = await permissionService.checkProjectAccess(projectId);
+      
+      if (!access.canRead) {
+        return NextResponse.json({ proposals: [] });
       }
-    }
-
-    // If no authenticated user, return empty proposals
-    if (!user) {
+      
+      actualProjectId = access.projectId;
+    } catch (authError) {
+      // If authentication fails, return empty proposals (public access)
       return NextResponse.json({ proposals: [] });
-    }
-
-    // Check if projectId is a UUID or slug/name and resolve to actual project ID
-    let actualProjectId = resolvedProjectId;
-    if (!resolvedProjectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // It's a slug or name, try to find the project
-      // First try by slug
-      let { data: projectBySlug, error: projectError } = await supabaseServer
-        .from('projects')
-        .select('id')
-        .eq('slug', resolvedProjectId)
-        .single()
-
-      // If not found by slug, try by name
-      if (projectError || !projectBySlug) {
-        const { data: projectByName, error: nameError } = await supabaseServer
-          .from('projects')
-          .select('id')
-          .eq('name', resolvedProjectId)
-          .single()
-
-        if (nameError || !projectByName) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-      }
-        actualProjectId = projectByName.id
-      } else {
-        actualProjectId = projectBySlug.id
-      }
     }
 
     // Check if user is a member of the project
@@ -300,6 +277,9 @@ export async function GET(
     return NextResponse.json({ proposals: proposals || [] });
 
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error('Proposals API error:', error);
     return NextResponse.json({ 
       error: 'Internal server error' 
@@ -312,111 +292,27 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId: resolvedProjectId } = await params;
+    const { projectId } = await params;
     const body = await request.json();
     const { action, proposalIds, treeId, jobId } = body;
-
-    // Check if projectId is a UUID or slug/name and resolve to actual project ID
-    let actualProjectId = resolvedProjectId;
-    if (!resolvedProjectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // It's a slug or name, try to find the project
-      console.log('[PROPOSALS_POST] Resolving non-UUID project identifier:', resolvedProjectId);
-      
-      // First try by slug
-      let { data: projectBySlug, error: projectError } = await supabaseServer
-        .from('projects')
-        .select('id')
-        .eq('slug', resolvedProjectId)
-        .single()
-
-      // If not found by slug, try by name
-      if (projectError || !projectBySlug) {
-        console.log('[PROPOSALS_POST] Not found by slug, trying by name...');
-        const { data: projectByName, error: nameError } = await supabaseServer
-          .from('projects')
-          .select('id')
-          .eq('name', resolvedProjectId)
-          .single()
-
-        if (nameError || !projectByName) {
-          console.error('[PROPOSALS_POST] Project not found by slug or name:', resolvedProjectId);
-          return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-        }
-        actualProjectId = projectByName.id
-        console.log('[PROPOSALS_POST] Resolved by name to UUID:', actualProjectId);
-      } else {
-        actualProjectId = projectBySlug.id
-        console.log('[PROPOSALS_POST] Resolved by slug to UUID:', actualProjectId);
-      }
-    } else {
-      console.log('[PROPOSALS_POST] Already a UUID:', resolvedProjectId);
-    }
 
     if (!action || !proposalIds || !Array.isArray(proposalIds)) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    // Get session from request headers
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const token = authHeader.substring(7);
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    // Authenticate request and check permissions
+    const authContext = await authenticateRequest(request);
+    const { user, supabase } = authContext;
     
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const permissionService = new PermissionService(supabase, user.id);
+    const access = await permissionService.checkProjectAccess(projectId);
+    
+    if (!access.canWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
     }
 
-    // Check if user is a member of the project
-    const { data: projectMember, error: memberError } = await supabaseServer
-      .from('project_members')
-      .select('role')
-      .eq('project_id', actualProjectId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (memberError || !projectMember) {
-      // Check if user is the project creator
-      const { data: project, error: projectError } = await supabaseServer
-        .from('projects')
-        .select('created_by')
-        .eq('id', actualProjectId)
-        .single();
-
-      if (projectError || !project) {
-        console.error('[PROPOSALS_POST] Failed to fetch project:', projectError);
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
-      }
-
-      // If user is the project creator, automatically add them as a member
-      if (project.created_by === user.id) {
-        console.log('[PROPOSALS_POST] Project creator not in members table, adding automatically');
-        
-        const { error: addMemberError } = await supabaseServer
-          .from('project_members')
-          .insert({
-            project_id: actualProjectId,
-            user_id: user.id,
-            role: 'Lead Researcher',
-            initials: user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U',
-            joined_at: new Date().toISOString()
-          });
-
-        if (addMemberError && !addMemberError.message?.includes('duplicate key')) {
-          console.error('[PROPOSALS_POST] Failed to add project creator as member:', addMemberError);
-          return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-        }
-        
-        console.log('[PROPOSALS_POST] Project creator added successfully, continuing with tree build');
-        // Continue - user is now a member
-      } else {
-        // User is neither a member nor the creator
-        console.log('[PROPOSALS_POST] User is neither project member nor creator');
-        return NextResponse.json({ error: 'Access denied' }, { status: 403 });
-      }
-    }
+    // Get the resolved project ID from the permission service
+    const actualProjectId = access.projectId;
 
     if (action === 'accept') {
       console.log('[BUILD_TREE_API] ===== ACCEPT ACTION CALLED =====');
@@ -523,6 +419,9 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
 
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error('Proposal action API error:', error);
     return NextResponse.json({ 
       error: 'Internal server error' 
