@@ -32,7 +32,13 @@ export function KnowledgeNodesBackground({
       {isReady && (
         <KnowledgeNodesCanvas 
           containerRef={containerRef}
-          className="absolute inset-0 pointer-events-auto z-0"
+          className="absolute pointer-events-auto z-0"
+          style={{ 
+            top: '-40px',
+            left: '-40px',
+            width: 'calc(100% + 80px)',
+            height: 'calc(100% + 80px)'
+          }}
         />
       )}
     </div>

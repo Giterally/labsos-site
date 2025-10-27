@@ -42,14 +42,20 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
     const nodes: Node[] = []
     const minDistance = 35 // Even tighter packing for maximum density
     
+    // Calculate maximum boundary distance: max node size (10) + max glow (30) = 40px
+    const maxNodeSize = 10 // 4 + 6 from size calculation
+    const maxGlowSize = 30 // 10 * 3 * 1.0 from glow calculation
+    const boundaryDistance = maxNodeSize + maxGlowSize // 40px total
+    
     for (let i = 0; i < config.nodeCount; i++) {
       let attempts = 0
       let validPosition = false
       let x = 0, y = 0
       
       while (!validPosition && attempts < 50) {
-        x = Math.random() * width
-        y = Math.random() * height
+        // Keep nodes within boundary distance from edges
+        x = Math.random() * (width - 2 * boundaryDistance) + boundaryDistance
+        y = Math.random() * (height - 2 * boundaryDistance) + boundaryDistance
         
         validPosition = true
         for (const node of nodes) {
@@ -70,7 +76,7 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
           originalY: y,
           vx: 0,
           vy: 0,
-          size: 2.5 + Math.random() * 4, // Even smaller for maximum density
+          size: 4 + Math.random() * 6, // Much larger nodes for better visibility
           color: config.colors[Math.floor(Math.random() * config.colors.length)],
           connections: []
         })
@@ -159,6 +165,23 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
       // Update position
       node.x += node.vx * deltaTime
       node.y += node.vy * deltaTime
+      
+      // Boundary constraints - keep nodes within safe distance from edges
+      const maxNodeSize = 10 // 4 + 6 from size calculation
+      const maxGlowSize = 30 // 10 * 3 * 1.0 from glow calculation
+      const boundaryDistance = maxNodeSize + maxGlowSize // 40px total
+      
+      // Get canvas dimensions for boundary checking
+      const canvas = canvasRef.current
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect()
+        const paddedWidth = rect.width + 80
+        const paddedHeight = rect.height + 80
+        
+        // Constrain to boundaries
+        node.x = Math.max(boundaryDistance, Math.min(paddedWidth - boundaryDistance, node.x))
+        node.y = Math.max(boundaryDistance, Math.min(paddedHeight - boundaryDistance, node.y))
+      }
     }
   }, [config])
 
@@ -170,12 +193,16 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
     if (!ctx) return
     
     const rect = canvas.getBoundingClientRect()
-    canvas.width = rect.width * window.devicePixelRatio
-    canvas.height = rect.height * window.devicePixelRatio
+    // Add padding for glow effects (40px on each side)
+    const paddedWidth = rect.width + 80
+    const paddedHeight = rect.height + 80
+    
+    canvas.width = paddedWidth * window.devicePixelRatio
+    canvas.height = paddedHeight * window.devicePixelRatio
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
     
     // Clear canvas
-    ctx.clearRect(0, 0, rect.width, rect.height)
+    ctx.clearRect(0, 0, paddedWidth, paddedHeight)
     
     const nodes = nodesRef.current
     
@@ -237,7 +264,7 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
     for (const node of nodes) {
       // Node glow with pulsing effect
       const pulse = Math.sin(timeRef.current * 0.002 + node.originalX * 0.01) * 0.3 + 0.7
-      const glowSize = node.size * 2 * pulse
+      const glowSize = node.size * 3 * pulse // Increased glow multiplier for larger nodes
       
       const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
       gradient.addColorStop(0, node.color)
@@ -250,7 +277,7 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
       ctx.fill()
       
       // Node core with size variation
-      const coreSize = node.size * (0.8 + Math.sin(timeRef.current * 0.001 + node.originalY * 0.008) * 0.2)
+      const coreSize = node.size * (1.0 + Math.sin(timeRef.current * 0.001 + node.originalY * 0.008) * 0.2) // Increased base size
       ctx.fillStyle = node.color
       ctx.beginPath()
       ctx.arc(node.x, node.y, coreSize, 0, Math.PI * 2)
@@ -288,9 +315,10 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
     if (!canvasRef.current) return
     
     const rect = canvasRef.current.getBoundingClientRect()
+    // Adjust for padding offset (40px on each side)
     mouseRef.current = {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top
+      x: event.clientX - rect.left + 40,
+      y: event.clientY - rect.top + 40
     }
     
   }, [])
@@ -319,7 +347,10 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
       setTimeout(() => {
         const newRect = container.getBoundingClientRect()
         if (newRect.width > 0 && newRect.height > 0) {
-          nodesRef.current = generateNodes(newRect.width, newRect.height)
+          // Add padding for glow effects (40px on each side)
+          const paddedWidth = newRect.width + 80
+          const paddedHeight = newRect.height + 80
+          nodesRef.current = generateNodes(paddedWidth, paddedHeight)
           timeRef.current = performance.now()
           animationRef.current = requestAnimationFrame(animate)
         }
@@ -327,7 +358,10 @@ export function KnowledgeNodesCanvas({ containerRef, className = "" }: Knowledge
       return
     }
 
-    nodesRef.current = generateNodes(rect.width, rect.height)
+    // Add padding for glow effects (40px on each side)
+    const paddedWidth = rect.width + 80
+    const paddedHeight = rect.height + 80
+    nodesRef.current = generateNodes(paddedWidth, paddedHeight)
     timeRef.current = performance.now()
     animationRef.current = requestAnimationFrame(animate)
 
