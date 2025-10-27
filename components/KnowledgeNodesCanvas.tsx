@@ -60,7 +60,25 @@ export function KnowledgeNodesCanvas({
     const maxGlowSize = 30 // 10 * 3 * 1.0 from glow calculation
     const boundaryDistance = maxNodeSize + maxGlowSize // 40px total
     
-    for (let i = 0; i < config.nodeCount; i++) {
+    // Calculate transition zone for density variation
+    let transitionStartY = 0
+    let transitionEndY = 0
+    let hasTransition = false
+    
+    if (transitionStart && transitionEnd && containerRef.current) {
+      const viewportHeight = window.innerHeight
+      const startOffset = parseFloat(transitionStart.replace('calc(100vh + ', '').replace('px)', ''))
+      const endOffset = parseFloat(transitionEnd.replace('calc(100vh + ', '').replace('px)', ''))
+      
+      transitionStartY = viewportHeight + startOffset
+      transitionEndY = viewportHeight + endOffset
+      hasTransition = true
+    }
+    
+    // Generate high density nodes for top section (interactive area)
+    const topSectionNodes = Math.floor(config.nodeCount * 0.175) // 17.5% of nodes in top section (quarter density)
+    
+    for (let i = 0; i < topSectionNodes; i++) {
       let attempts = 0
       let validPosition = false
       let x = 0, y = 0
@@ -70,10 +88,62 @@ export function KnowledgeNodesCanvas({
         x = Math.random() * (width - 2 * boundaryDistance) + boundaryDistance
         y = Math.random() * (height - 2 * boundaryDistance) + boundaryDistance
         
+        // Only place nodes in top section (before transition zone)
+        if (hasTransition && y > transitionStartY) {
+          attempts++
+          continue
+        }
+        
         validPosition = true
         for (const node of nodes) {
           const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2)
           if (distance < minDistance) {
+            validPosition = false
+            break
+          }
+        }
+        attempts++
+      }
+      
+      if (validPosition) {
+        nodes.push({
+          x,
+          y,
+          originalX: x,
+          originalY: y,
+          vx: 0,
+          vy: 0,
+          size: 4 + Math.random() * 6, // Much larger nodes for better visibility
+          color: config.colors[Math.floor(Math.random() * config.colors.length)],
+          connections: []
+        })
+      }
+    }
+    
+    // Generate low density nodes for bottom section (static/blurred area)
+    const bottomSectionNodes = Math.floor(config.nodeCount * 0.2) // 20% of total nodes in bottom section
+    const bottomMinDistance = 120 // Much larger spacing for bottom section
+    
+    for (let i = 0; i < bottomSectionNodes; i++) {
+      let attempts = 0
+      let validPosition = false
+      let x = 0, y = 0
+      
+      while (!validPosition && attempts < 50) {
+        // Keep nodes within boundary distance from edges
+        x = Math.random() * (width - 2 * boundaryDistance) + boundaryDistance
+        y = Math.random() * (height - 2 * boundaryDistance) + boundaryDistance
+        
+        // Only place nodes in bottom section (after transition zone)
+        if (hasTransition && y < transitionEndY) {
+          attempts++
+          continue
+        }
+        
+        validPosition = true
+        for (const node of nodes) {
+          const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2)
+          if (distance < bottomMinDistance) {
             validPosition = false
             break
           }
