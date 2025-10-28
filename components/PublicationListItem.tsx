@@ -79,7 +79,7 @@ export function PublicationListItem({
   }
 
   return (
-    <Card className={`hover:shadow-md transition-all duration-200 ${isSelected ? 'ring-2 ring-primary bg-primary/5' : ''}`}>
+    <Card className={`hover:shadow-md transition-all duration-200 ${isSelected ? 'ring-2 ring-primary bg-blue-50 dark:bg-blue-950/20' : ''}`}>
       <CardContent className="p-4">
         <div className="flex items-start space-x-3">
           {showCheckbox && (
