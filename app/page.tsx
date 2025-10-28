@@ -31,6 +31,57 @@ import { useSearchParams } from "next/navigation"
 import { useUser } from "@/lib/user-context"
 import { KnowledgeNodesBackground } from "@/components/KnowledgeNodesBackground"
 
+// Animated Word Component
+const AnimatedWord = ({ words }: { words: string[] }) => {
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [isTyping, setIsTyping] = useState(true)
+  const [displayedText, setDisplayedText] = useState("")
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  useEffect(() => {
+    const currentWord = words[currentIndex]
+    
+    if (isDeleting) {
+      // Untyping animation
+      if (displayedText.length > 0) {
+        const timeout = setTimeout(() => {
+          setDisplayedText(currentWord.substring(0, displayedText.length - 1))
+        }, 50)
+        return () => clearTimeout(timeout)
+      } else {
+        // Move to next word
+        setIsDeleting(false)
+        setCurrentIndex((prev) => (prev + 1) % words.length)
+      }
+    } else {
+      // Typing animation
+      if (displayedText.length < currentWord.length) {
+        const timeout = setTimeout(() => {
+          setDisplayedText(currentWord.substring(0, displayedText.length + 1))
+        }, 100)
+        return () => clearTimeout(timeout)
+      } else {
+        // Wait 2 seconds before starting to delete
+        const timeout = setTimeout(() => {
+          setIsDeleting(true)
+        }, 2000)
+        return () => clearTimeout(timeout)
+      }
+    }
+  }, [displayedText, isDeleting, currentIndex, words])
+
+  return (
+    <span className="inline-block text-primary font-bold" style={{
+      textShadow: '0 0 20px rgba(34, 197, 94, 0.5), 0 0 40px rgba(34, 197, 94, 0.3)',
+      minWidth: '220px', // Significantly increased to prevent text wrapping
+      textAlign: 'left'
+    }}>
+      {displayedText}
+      <span className="animate-pulse">|</span>
+    </span>
+  )
+}
+
 function ContactDialogHandler({ 
   showContactDialog, 
   setShowContactDialog 
@@ -208,10 +259,10 @@ export default function KnowledgeCaptureLanding() {
             <div className="space-y-8">
               <div className="space-y-4">
                 <h1 className="text-5xl font-bold tracking-tight text-foreground">
-                  Capture & Organize Your Research Knowledge With Olvaro
+                  <AnimatedWord words={["Capture", "Organise", "Manage"]} /> Your Research Knowledge With Olvaro
                 </h1>
-                <p className="text-xl text-muted-foreground leading-relaxed">
-                  Transform scattered experiments and pieces of information into organized knowledge trees. Preserve tacit knowledge, streamline handovers, and make your research reproducible.
+                <p className="text-xl text-muted-foreground leading-relaxed p-6 rounded-lg backdrop-blur-sm bg-background/80 border border-border/50">
+                  Transform scattered research into organized knowledge trees. Make your work reproducible and preserve team knowledge.
                 </p>
               </div>
               <div className="flex space-x-4">
@@ -235,129 +286,88 @@ export default function KnowledgeCaptureLanding() {
         </div>
       </section>
 
+      {/* Problem Statement */}
+      <section id="crisis" className="py-16 px-4 relative z-10">
+        <div className="container mx-auto max-w-6xl">
+          <h2 className="text-3xl font-bold mb-12 text-foreground text-center">The Research Knowledge Crisis</h2>
+          <div className="grid md:grid-cols-3 gap-8">
+            {/* Capture Box */}
+            <Card className="p-8 text-center hover:shadow-lg transition-all duration-200">
+              <CardContent className="space-y-6">
+                <div className="flex justify-center">
+                  <div className="p-4 bg-primary/10 rounded-full">
+                    <DocumentTextIcon className="h-12 w-12 text-primary" />
+                  </div>
+                </div>
+                <h3 className="text-2xl font-bold text-foreground">Capture</h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border-l-4 border-red-500">
+                    <p className="text-sm text-red-700 dark:text-red-300 font-medium">Problem</p>
+                    <p className="text-sm text-red-600 dark:text-red-400">Experiments and data scattered across Dropbox, Sharepoint, and forgotten folders</p>
+                  </div>
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border-l-4 border-green-500">
+                    <p className="text-sm text-green-700 dark:text-green-300 font-medium">Solution</p>
+                    <p className="text-sm text-green-600 dark:text-green-400">Olvaro centralizes all experiments and data into organized knowledge trees</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Organise Box */}
+            <Card className="p-8 text-center hover:shadow-lg transition-all duration-200">
+              <CardContent className="space-y-6">
+                <div className="flex justify-center">
+                  <div className="p-4 bg-primary/10 rounded-full">
+                    <FolderIcon className="h-12 w-12 text-primary" />
+                  </div>
+                </div>
+                <h3 className="text-2xl font-bold text-foreground">Organise</h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border-l-4 border-red-500">
+                    <p className="text-sm text-red-700 dark:text-red-300 font-medium">Problem</p>
+                    <p className="text-sm text-red-600 dark:text-red-400">Documentation missing or not presented in context, making research irreproducible</p>
+                  </div>
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border-l-4 border-green-500">
+                    <p className="text-sm text-green-700 dark:text-green-300 font-medium">Solution</p>
+                    <p className="text-sm text-green-600 dark:text-green-400">Olvaro links everything contextually, making your research fully reproducible</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Manage Box */}
+            <Card className="p-8 text-center hover:shadow-lg transition-all duration-200">
+              <CardContent className="space-y-6">
+                <div className="flex justify-center">
+                  <div className="p-4 bg-primary/10 rounded-full">
+                    <UserGroupIcon className="h-12 w-12 text-primary" />
+                  </div>
+                </div>
+                <h3 className="text-2xl font-bold text-foreground">Manage</h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border-l-4 border-red-500">
+                    <p className="text-sm text-red-700 dark:text-red-300 font-medium">Problem</p>
+                    <p className="text-sm text-red-600 dark:text-red-400">Tacit knowledge walks out when team members leave, causing work duplication</p>
+                  </div>
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border-l-4 border-green-500">
+                    <p className="text-sm text-green-700 dark:text-green-300 font-medium">Solution</p>
+                    <p className="text-sm text-green-600 dark:text-green-400">Olvaro preserves team knowledge and streamlines handovers</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
       {/* Research Projects Discovery */}
       <section id="labs" className="py-16 px-4 bg-muted/10 relative z-10">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Researchers and Research Projects</h2>
+            <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Researchers and Research Projects Using Olvaro</h2>
             <p className="text-lg text-muted-foreground">Explore public research projects and see how researchers are organising their work</p>
           </div>
 
-          <div className="max-w-2xl mx-auto mb-8">
-            <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input placeholder="Search projects, universities, or research areas..." className="pl-12 h-12 text-base" />
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[
-              {
-                name: "Bioengineering Lab",
-                university: "Stanford University",
-                members: 12,
-                field: "Synthetic Biology",
-                projects: ["Protein Expression", "Cell Culture", "Data Analysis"],
-                avatar: "BL",
-                trees: 8,
-              },
-              {
-                name: "Computational Biology Group",
-                university: "MIT",
-                members: 15,
-                field: "Bioinformatics",
-                projects: ["RNA-seq Analysis", "Protein Structure", "GWAS Pipeline"],
-                avatar: "CB",
-                trees: 12,
-              },
-              {
-                name: "Materials Science Lab",
-                university: "University of Cambridge",
-                members: 8,
-                field: "Materials Engineering",
-                projects: ["Nanomaterials", "Battery Research", "Solar Cells"],
-                avatar: "MS",
-                trees: 6,
-              },
-              {
-                name: "Quantum Computing Lab",
-                university: "University of Oxford",
-                members: 6,
-                field: "Quantum Physics",
-                projects: ["Quantum Algorithms", "Error Correction", "Hardware Design"],
-                avatar: "QC",
-                trees: 4,
-              },
-              {
-                name: "Climate Modeling Group",
-                university: "Imperial College London",
-                members: 10,
-                field: "Environmental Science",
-                projects: ["Climate Simulations", "Weather Prediction", "Ocean Models"],
-                avatar: "CM",
-                trees: 7,
-              },
-              {
-                name: "Genomics Research Lab",
-                university: "Harvard University",
-                members: 18,
-                field: "Genetics",
-                projects: ["Genome Assembly", "Variant Analysis", "Population Genetics"],
-                avatar: "GR",
-                trees: 15,
-              },
-            ].map((lab, index) => (
-              <Card key={index} className="p-6 hover:shadow-lg transition-all duration-200 cursor-pointer group">
-                <CardContent className="space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Avatar className="h-12 w-12">
-                        <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
-                          {lab.avatar}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                          {lab.name}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">{lab.university}</p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className="text-xs">
-                      {lab.field}
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                    <div className="flex items-center space-x-1">
-                      <UserGroupIcon className="h-4 w-4" />
-                      <span>{lab.members} members</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <FolderIcon className="h-4 w-4" />
-                      <span>{lab.trees} trees</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-foreground">Recent Projects:</p>
-                    <div className="flex flex-wrap gap-1">
-                      {lab.projects.slice(0, 2).map((project, projectIndex) => (
-                        <Badge key={projectIndex} variant="outline" className="text-xs">
-                          {project}
-                        </Badge>
-                      ))}
-                      {lab.projects.length > 2 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{lab.projects.length - 2} more
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
 
           <div className="text-center mt-12">
             <Link href="/labs">
@@ -372,26 +382,6 @@ export default function KnowledgeCaptureLanding() {
         </div>
       </section>
 
-      {/* Problem Statement */}
-      <section className="py-16 px-4 bg-muted/30 relative z-10">
-        <div className="container mx-auto max-w-4xl text-center">
-          <h2 className="text-3xl font-bold mb-12 text-foreground">The Research Knowledge Crisis</h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              "Code and Files scattered across Dropbox, Sharepoint, etc.",
-              "Documentation missing or not presented in context",
-              "Videos and details lost in forgotten folders",
-              "Knowledge walks out the door and work is duplicated",
-            ].map((problem, index) => (
-              <Card key={index} className="p-6 text-center">
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">{problem}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* Features */}
       <section id="features" className="py-16 px-4 relative z-10">
