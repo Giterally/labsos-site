@@ -78,8 +78,22 @@ export function PublicationListItem({
   }
 
   return (
-    <Card className={`hover:shadow-md transition-all duration-200 ${isSelected ? 'ring-2 ring-primary bg-blue-50 dark:bg-blue-950/20' : ''}`}>
+    <Card className={`hover:shadow-md transition-all duration-200 relative ${isSelected ? 'ring-2 ring-primary bg-blue-50 dark:bg-blue-950/20' : ''}`}>
       <CardContent className="p-4">
+        {/* ORCID Logo - Top Right */}
+        {publication.source === 'orcid' && (
+          <div className="absolute top-3 right-3">
+            <Image
+              src="/orcid-logo.svg"
+              alt="ORCID"
+              width={16}
+              height={16}
+              className="flex-shrink-0"
+              title="Imported from ORCID"
+            />
+          </div>
+        )}
+        
         <div className="flex items-start space-x-3">
           {showCheckbox && (
             <Checkbox
@@ -93,20 +107,10 @@ export function PublicationListItem({
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center space-x-2 mb-2">
+                <div className="mb-2">
                   <h3 className="font-semibold text-foreground line-clamp-2">
                     {publication.title}
                   </h3>
-                  {publication.source === 'orcid' && (
-                    <Image
-                      src="/orcid-logo.svg"
-                      alt="ORCID"
-                      width={16}
-                      height={16}
-                      className="flex-shrink-0"
-                      title="Imported from ORCID"
-                    />
-                  )}
                 </div>
                 
                 <div className="text-sm text-muted-foreground space-y-1">
