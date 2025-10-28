@@ -112,16 +112,20 @@ async function importPublications(
   const existingTitles = new Set(existingPubs?.map(p => p.title?.toLowerCase()).filter(Boolean))
   const existingPutCodes = new Set(existingPubs?.map(p => p.orcid_put_code).filter(Boolean))
 
+  // Track publications in current import session to detect duplicates with different date precision
+  const importSessionTracker = new Map<string, {
+    work: any,
+    dateSpecificity: number // 1=year, 2=year+month, 3=year+month+day
+  }>()
+
   for (const group of worksData.group || []) {
     for (const work of group['work-summary'] || []) {
-      // Extract data from ORCID work
       const doi = orcidService.extractDOI(work)
       const title = work.title?.title?.value
       const putCode = work['put-code']?.toString()
-      const journalTitle = work['journal-title']?.value
       const publicationDate = work['publication-date']
       
-      // Skip if duplicate (by DOI, title, or put-code)
+      // Skip if already exists in database
       if (
         (doi && existingDOIs.has(doi.toLowerCase())) ||
         (title && existingTitles.has(title.toLowerCase())) ||
@@ -130,47 +134,83 @@ async function importPublications(
         continue
       }
 
-      // Extract publication date components
-      const year = publicationDate?.year?.value ? parseInt(publicationDate.year.value) : null
-      const month = publicationDate?.month?.value ? parseInt(publicationDate.month.value) : null
-      const day = publicationDate?.day?.value ? parseInt(publicationDate.day.value) : null
+      // Calculate date specificity for this work
+      const hasYear = !!publicationDate?.year?.value
+      const hasMonth = !!publicationDate?.month?.value
+      const hasDay = !!publicationDate?.day?.value
+      const dateSpecificity = hasYear ? (hasDay ? 3 : (hasMonth ? 2 : 1)) : 0
 
-      // Create publication date JSONB
-      const publicationDateJson = publicationDate ? {
-        year: publicationDate.year?.value || null,
-        month: publicationDate.month?.value || null,
-        day: publicationDate.day?.value || null
-      } : null
-
-      // Extract external IDs
-      const externalIds = work['external-ids']?.['external-id'] || []
-
-      // Insert publication
-      const { error } = await supabase
-        .from('publications')
-        .insert({
-          profile_id: profileId,
-          user_id: profileId, // Keep for compatibility
-          title: title || 'Untitled',
-          type: orcidService.mapWorkType(work.type || 'OTHER'),
-          journal_title: journalTitle || null,
-          publication_date: publicationDateJson,
-          doi: doi || null,
-          url: doi ? `https://doi.org/${doi}` : null,
-          external_ids: externalIds,
-          authors: null, // ORCID summary doesn't include authors - can be filled manually later
-          orcid_put_code: putCode,
-          source: 'orcid',
-          year,
-          month,
-          day
-        })
-
-      if (!error) {
-        importedCount++
-      } else {
-        console.error('Error inserting publication:', error)
+      // Create unique key for this publication (DOI takes precedence, fallback to title)
+      const uniqueKey = doi ? doi.toLowerCase() : (title ? title.toLowerCase() : null)
+      
+      if (uniqueKey) {
+        // Check if we've already seen this publication in current import
+        const existing = importSessionTracker.get(uniqueKey)
+        
+        if (existing) {
+          // Duplicate found in current import session
+          if (dateSpecificity > existing.dateSpecificity) {
+            // This version is more specific, replace the previous one
+            importSessionTracker.set(uniqueKey, { work, dateSpecificity })
+          }
+          // Otherwise skip this less specific version
+          continue
+        } else {
+          // First time seeing this publication
+          importSessionTracker.set(uniqueKey, { work, dateSpecificity })
+        }
       }
+    }
+  }
+
+  // Now import the deduplicated publications
+  for (const { work } of importSessionTracker.values()) {
+    const doi = orcidService.extractDOI(work)
+    const title = work.title?.title?.value
+    const putCode = work['put-code']?.toString()
+    const journalTitle = work['journal-title']?.value
+    const publicationDate = work['publication-date']
+    
+    // Extract publication date components
+    const year = publicationDate?.year?.value ? parseInt(publicationDate.year.value) : null
+    const month = publicationDate?.month?.value ? parseInt(publicationDate.month.value) : null
+    const day = publicationDate?.day?.value ? parseInt(publicationDate.day.value) : null
+
+    // Create publication date JSONB
+    const publicationDateJson = publicationDate ? {
+      year: publicationDate.year?.value || null,
+      month: publicationDate.month?.value || null,
+      day: publicationDate.day?.value || null
+    } : null
+
+    // Extract external IDs
+    const externalIds = work['external-ids']?.['external-id'] || []
+
+    // Insert publication
+    const { error } = await supabase
+      .from('publications')
+      .insert({
+        profile_id: profileId,
+        user_id: profileId, // Keep for compatibility
+        title: title || 'Untitled',
+        type: orcidService.mapWorkType(work.type || 'OTHER'),
+        journal_title: journalTitle || null,
+        publication_date: publicationDateJson,
+        doi: doi || null,
+        url: doi ? `https://doi.org/${doi}` : null,
+        external_ids: externalIds,
+        authors: null, // ORCID summary doesn't include authors - can be filled manually later
+        orcid_put_code: putCode,
+        source: 'orcid',
+        year,
+        month,
+        day
+      })
+
+    if (!error) {
+      importedCount++
+    } else {
+      console.error('Error inserting publication:', error)
     }
   }
 
