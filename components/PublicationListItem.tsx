@@ -79,11 +79,12 @@ export function PublicationListItem({
   }
 
   return (
-    <Card className={`hover:shadow-md transition-shadow ${isSelected ? 'ring-2 ring-primary' : ''}`}>
+    <Card className={`hover:shadow-md transition-all duration-200 ${isSelected ? 'ring-2 ring-primary bg-primary/5' : ''}`}>
       <CardContent className="p-4">
         <div className="flex items-start space-x-3">
           {showCheckbox && (
             <Checkbox
+              id={`publication-${publication.id}`}
               checked={isSelected}
               onCheckedChange={() => onSelect(publication.id)}
               className="mt-1"

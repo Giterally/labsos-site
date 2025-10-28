@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
 import { 
   TrashIcon, 
   CheckIcon,
@@ -67,19 +68,23 @@ export function BulkActionsToolbar({
 
   return (
     <>
-      <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border">
+      <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border shadow-sm">
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2">
             <Checkbox
+              id="select-all"
               checked={allSelected}
               ref={(el) => {
                 if (el) el.indeterminate = someSelected
               }}
               onCheckedChange={handleSelectAll}
             />
-            <span className="text-sm font-medium">
+            <Label 
+              htmlFor="select-all" 
+              className="text-sm font-medium cursor-pointer hover:text-primary"
+            >
               {allSelected ? 'Deselect All' : 'Select All'}
-            </span>
+            </Label>
           </div>
           
           {selectedCount > 0 && (
@@ -95,20 +100,20 @@ export function BulkActionsToolbar({
               variant="outline"
               size="sm"
               onClick={onDeselectAll}
-              className="text-xs"
+              className="text-xs h-8"
             >
               <XMarkIcon className="h-3 w-3 mr-1" />
-              Clear Selection
+              Clear
             </Button>
             
             <Button
               variant="destructive"
               size="sm"
               onClick={() => setShowDeleteDialog(true)}
-              className="text-xs"
+              className="text-xs h-8"
             >
               <TrashIcon className="h-3 w-3 mr-1" />
-              Delete Selected ({selectedCount})
+              Delete ({selectedCount})
             </Button>
           </div>
         )}
