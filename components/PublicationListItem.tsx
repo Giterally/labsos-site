@@ -13,6 +13,7 @@ import {
   LinkIcon,
   DocumentTextIcon
 } from '@heroicons/react/24/outline'
+import { Linkedin } from 'lucide-react'
 import { Publication } from '@/lib/types'
 import Image from 'next/image'
 
@@ -54,6 +55,10 @@ export function PublicationListItem({
   const formatAuthors = (authors: string[]) => {
     if (authors.length <= 3) return authors.join(', ')
     return `${authors.slice(0, 3).join(', ')} et al.`
+  }
+
+  const isLinkedInUrl = (url: string) => {
+    return url.includes('linkedin.com')
   }
 
   const formatDate = () => {
@@ -151,14 +156,18 @@ export function PublicationListItem({
 
                   {publication.url && (
                     <div className="flex items-center space-x-1">
-                      <LinkIcon className="h-3 w-3" />
+                      {isLinkedInUrl(publication.url) ? (
+                        <Linkedin className="h-3 w-3 text-blue-600" />
+                      ) : (
+                        <LinkIcon className="h-3 w-3" />
+                      )}
                       <a
                         href={publication.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-blue-600 hover:underline"
                       >
-                        View Paper
+                        {isLinkedInUrl(publication.url) ? 'View on LinkedIn' : 'View Paper'}
                       </a>
                     </div>
                   )}
