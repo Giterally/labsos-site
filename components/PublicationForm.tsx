@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { Publication } from '@/lib/types'
+import { supabase } from '@/lib/supabase-client'
 
 interface PublicationFormProps {
   publication?: Publication
@@ -71,6 +72,12 @@ export function PublicationForm({ publication, profileId, onSave, onCancel }: Pu
     setLoading(true)
 
     try {
+      // Get session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('Not authenticated')
+      }
+
       const authors = formData.authors
         .split(',')
         .map(author => author.trim())
@@ -90,6 +97,7 @@ export function PublicationForm({ publication, profileId, onSave, onCancel }: Pu
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
           },
           body: JSON.stringify(publicationData),
         })
@@ -107,6 +115,7 @@ export function PublicationForm({ publication, profileId, onSave, onCancel }: Pu
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
             profileId,

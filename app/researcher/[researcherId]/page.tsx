@@ -35,6 +35,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { getCurrentUser } from "@/lib/auth-service"
 import { useUser } from "@/lib/user-context"
+import { supabase } from "@/lib/supabase-client"
 import { ORCIDImport } from "@/components/ORCIDImport"
 import { PublicationSearch } from "@/components/PublicationSearch"
 import { PublicationForm } from "@/components/PublicationForm"
@@ -322,10 +323,17 @@ export default function ResearcherProfilePage() {
     if (selectedIds.size === 0) return
 
     try {
+      // Get session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('Not authenticated')
+      }
+
       const response = await fetch('/api/publications/bulk-delete', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ publicationIds: Array.from(selectedIds) }),
       })
@@ -346,8 +354,17 @@ export default function ResearcherProfilePage() {
 
   const handleDeletePublication = async (id: string) => {
     try {
+      // Get session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('Not authenticated')
+      }
+
       const response = await fetch(`/api/publications/${id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
       })
 
       if (!response.ok) {

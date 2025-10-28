@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { cookies } from 'next/headers'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError, AuthContext } from '@/lib/auth-middleware'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,21 +9,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Publication IDs array is required' }, { status: 400 })
     }
 
-    // Create authenticated Supabase client with user session
-    const cookieStore = cookies()
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    })
-
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Authenticate request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: error.statusCode }
+        )
+      }
+      return NextResponse.json(
+        { error: 'Authentication failed' },
+        { status: 401 }
+      )
     }
+
+    const { user, supabase } = authContext
 
     // Verify all publications exist and belong to the authenticated user
     const { data: existingPubs, error: fetchError } = await supabase

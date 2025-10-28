@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { cookies } from 'next/headers'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError, AuthContext } from '@/lib/auth-middleware'
 
 export async function PUT(
   request: NextRequest,
@@ -35,21 +31,24 @@ export async function PUT(
       return NextResponse.json({ error: 'Valid year is required' }, { status: 400 })
     }
 
-    // Create authenticated Supabase client with user session
-    const cookieStore = cookies()
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    })
-
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Authenticate request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: error.statusCode }
+        )
+      }
+      return NextResponse.json(
+        { error: 'Authentication failed' },
+        { status: 401 }
+      )
     }
+
+    const { user, supabase } = authContext
 
     // Verify publication exists and belongs to authenticated user
     const { data: existingPub, error: fetchError } = await supabase
@@ -109,21 +108,24 @@ export async function DELETE(
   try {
     const { publicationId } = await params
 
-    // Create authenticated Supabase client with user session
-    const cookieStore = cookies()
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    })
-
-    // Get authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Authenticate request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: error.statusCode }
+        )
+      }
+      return NextResponse.json(
+        { error: 'Authentication failed' },
+        { status: 401 }
+      )
     }
+
+    const { user, supabase } = authContext
 
     // Verify publication exists and belongs to authenticated user
     const { data: existingPub, error: fetchError } = await supabase

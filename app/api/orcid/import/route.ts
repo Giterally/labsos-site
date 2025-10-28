@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ORCIDService } from '@/lib/orcid-service'
+import { authenticateRequest, AuthError, AuthContext } from '@/lib/auth-middleware'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -19,10 +20,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid ORCID ID format' }, { status: 400 })
     }
 
-    // Initialize Supabase
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Authenticate request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: error.statusCode }
+        )
+      }
+      return NextResponse.json(
+        { error: 'Authentication failed' },
+        { status: 401 }
+      )
+    }
 
-    // Verify profile exists
+    const { user, supabase } = authContext
+
+    // Verify profile exists and belongs to authenticated user
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id')
@@ -31,6 +48,12 @@ export async function POST(request: NextRequest) {
 
     if (profileError || !profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    // Verify ownership - user can only import to their own profile
+    // Note: profiles.id is the foreign key to auth.users.id, so they're the same value
+    if (profile.id !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized to import to this profile' }, { status: 403 })
     }
 
     // Fetch data from ORCID API
@@ -135,7 +158,7 @@ async function importPublications(
           doi: doi || null,
           url: doi ? `https://doi.org/${doi}` : null,
           external_ids: externalIds,
-          authors: [], // ORCID summary doesn't include authors
+          authors: null, // ORCID summary doesn't include authors - can be filled manually later
           orcid_put_code: putCode,
           source: 'orcid',
           year,

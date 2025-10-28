@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2 } from 'lucide-react'
 import Image from 'next/image'
+import { supabase } from '@/lib/supabase-client'
 
 interface ORCIDImportProps {
   profileId: string
@@ -31,9 +32,18 @@ export function ORCIDImport({ profileId, currentORCID, onImportComplete }: ORCID
     setSuccess(null)
 
     try {
+      // Get session token for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('Not authenticated')
+      }
+
       const response = await fetch('/api/orcid/import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ orcidId: orcidId.trim(), profileId })
       })
 

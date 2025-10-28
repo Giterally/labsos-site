@@ -18,7 +18,7 @@ export interface Publication {
     type: string
     value: string
   }>
-  authors: string[]
+  authors: string[] | null
   orcid_put_code: string | null
   source: 'manual' | 'orcid'
   year: number | null

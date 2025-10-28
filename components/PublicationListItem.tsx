@@ -52,7 +52,6 @@ export function PublicationListItem({
   }
 
   const formatAuthors = (authors: string[]) => {
-    if (!authors || authors.length === 0) return 'Unknown authors'
     if (authors.length <= 3) return authors.join(', ')
     return `${authors.slice(0, 3).join(', ')} et al.`
   }
@@ -111,7 +110,9 @@ export function PublicationListItem({
                 </div>
                 
                 <div className="text-sm text-muted-foreground space-y-1">
-                  <p className="font-medium">{formatAuthors(publication.authors || [])}</p>
+                  {publication.authors && publication.authors.length > 0 && (
+                    <p className="font-medium">{formatAuthors(publication.authors)}</p>
+                  )}
                   
                   <div className="flex items-center space-x-2 flex-wrap">
                     {publication.journal_title && (
