@@ -231,12 +231,15 @@ export default function LoginPage() {
               </div>
             )}
             {error && (
-              <div className={`text-sm p-3 rounded-md ${
-                error.includes("successfully") 
-                  ? "text-green-600 bg-green-50" 
-                  : "text-red-600 bg-red-50"
-              }`}>
-                {error}
+              <div className="text-sm p-3 rounded-md bg-red-50 border border-red-200">
+                <p className="text-red-600 font-medium">
+                  {error}
+                </p>
+                {error.includes("verification email") && (
+                  <p className="text-red-500 text-xs mt-2">
+                    Didn't receive it? Please wait 24 hours and try signing up again.
+                  </p>
+                )}
               </div>
             )}
             <Button type="submit" className="w-full" disabled={isLoading}>

@@ -17,8 +17,53 @@ export interface AuthState {
   error: string | null
 }
 
+// Check if email already exists in auth.users
+export async function checkEmailExists(email: string): Promise<{
+  exists: boolean
+  isVerified: boolean | null
+  confirmationSentAt: string | null
+}> {
+  try {
+    const { data, error } = await supabase.rpc('check_email_status', {
+      email_to_check: email.toLowerCase()
+    })
+    
+    if (error) {
+      console.log('Error checking email:', error)
+      return { exists: false, isVerified: null, confirmationSentAt: null }
+    }
+    
+    return data || { exists: false, isVerified: null, confirmationSentAt: null }
+  } catch (error) {
+    console.log('Error checking email:', error)
+    return { exists: false, isVerified: null, confirmationSentAt: null }
+  }
+}
+
 // Sign up with email and password
 export async function signUp(email: string, password: string, fullName?: string) {
+  // Check if email already exists
+  const emailStatus = await checkEmailExists(email)
+  
+  if (emailStatus.exists) {
+    if (emailStatus.isVerified) {
+      // Confirmed account exists
+      return { 
+        error: { 
+          message: "An account with this email already exists and is verified. Please sign in instead." 
+        } 
+      }
+    } else {
+      // Unverified account exists
+      return { 
+        error: { 
+          message: "A verification email has already been sent to this address. Please check your inbox and spam folder (verification links expire after 24 hours)." 
+        } 
+      }
+    }
+  }
+
+  // Proceed with signup if email doesn't exist
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -31,12 +76,7 @@ export async function signUp(email: string, password: string, fullName?: string)
   })
 
   if (error) {
-    console.error('Signup error:', error)
-    console.log('Supabase error details:', {
-      message: error.message,
-      status: error.status,
-      code: error.code
-    })
+    console.log('Signup error:', error)
     return { error }
   }
 
