@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-// Create a Supabase client with anon key for server-side operations
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export async function GET(
   req: NextRequest,
@@ -13,6 +11,12 @@ export async function GET(
 ) {
   try {
     const { researcherId } = await params
+
+    // Create Supabase client - use service role for public profile queries
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const supabase = supabaseServiceKey 
+      ? createClient(supabaseUrl, supabaseServiceKey)
+      : createClient(supabaseUrl, supabaseAnonKey)
 
     // Get the user's profile data
     const { data: profile, error: profileError } = await supabase
@@ -35,7 +39,6 @@ export async function GET(
       .eq('user_id', researcherId)
       .is('left_at', null)
 
-    console.log('Current project members query result:', { currentProjectMembers, currentProjectsError })
 
     // Get project details for current projects
     let currentProjects = []
@@ -46,13 +49,19 @@ export async function GET(
         .select('id, name, description, created_at')
         .in('id', projectIds)
 
-      console.log('Projects query result:', { projects, projectsError })
-
       currentProjects = currentProjectMembers.map(member => {
         const project = projects?.find(p => p.id === member.project_id)
         return {
-          ...member,
-          projects: project
+          id: member.id,
+          name: project?.name || 'Unknown Project',
+          description: project?.description || 'No description available',
+          status: 'active',
+          role: member.role,
+          startDate: member.joined_at ? new Date(member.joined_at).toISOString().split('T')[0] : 'Unknown',
+          project: {
+            id: project?.id,
+            name: project?.name || 'Unknown Project'
+          }
         }
       })
     }
@@ -76,8 +85,17 @@ export async function GET(
       pastProjects = pastProjectMembers.map(member => {
         const project = pastProjectDetails?.find(p => p.id === member.project_id)
         return {
-          ...member,
-          projects: project
+          id: member.id,
+          name: project?.name || 'Unknown Project',
+          description: project?.description || 'No description available',
+          status: 'completed',
+          role: member.role,
+          startDate: member.joined_at ? new Date(member.joined_at).toISOString().split('T')[0] : 'Unknown',
+          endDate: member.left_at ? new Date(member.left_at).toISOString().split('T')[0] : 'Unknown',
+          project: {
+            id: project?.id,
+            name: project?.name || 'Unknown Project'
+          }
         }
       })
     }
@@ -106,37 +124,8 @@ export async function GET(
       orcid: profile.orcid || null,
       joinedDate: profile.created_at ? new Date(profile.created_at).toISOString().split('T')[0] : 'Unknown',
       lastActive: profile.updated_at ? new Date(profile.updated_at).toISOString().split('T')[0] : 'Unknown',
-      currentProjects: (currentProjects || []).map(member => {
-        const project = member.projects
-        return {
-          id: member.id,
-          name: project?.name || 'Unknown Project',
-          description: project?.description || 'No description available',
-          status: 'active',
-          role: member.role,
-          startDate: member.joined_at ? new Date(member.joined_at).toISOString().split('T')[0] : 'Unknown',
-          project: {
-            id: project?.id,
-            name: project?.name || 'Unknown Project'
-          }
-        }
-      }),
-      pastProjects: (pastProjects || []).map(member => {
-        const project = member.projects
-        return {
-          id: member.id,
-          name: project?.name || 'Unknown Project',
-          description: project?.description || 'No description available',
-          status: 'completed',
-          role: member.role,
-          startDate: member.joined_at ? new Date(member.joined_at).toISOString().split('T')[0] : 'Unknown',
-          endDate: member.left_at ? new Date(member.left_at).toISOString().split('T')[0] : 'Unknown',
-          project: {
-            id: project?.id,
-            name: project?.name || 'Unknown Project'
-          }
-        }
-      }),
+      currentProjects: currentProjects || [],
+      pastProjects: pastProjects || [],
       publications: (publications || []).map(pub => ({
         id: pub.id,
         title: pub.title,

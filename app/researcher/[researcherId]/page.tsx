@@ -426,7 +426,6 @@ export default function ResearcherProfilePage() {
             </Button>
             <Separator orientation="vertical" className="h-6" />
             <div className="flex items-center space-x-2">
-              <BeakerIcon className="h-6 w-6 text-primary" />
               <span className="text-lg font-semibold text-foreground">
                 {isOwnProfile ? "My Profile" : "Researcher Profile"}
               </span>
