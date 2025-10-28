@@ -215,7 +215,7 @@ export default function KnowledgeCaptureLanding() {
         />
       </Suspense>
       {/* Header */}
-      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 relative z-20">
+      <header className={`border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky z-20 ${isAuthenticated ? 'top-16' : 'top-0'}`}>
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <svg className={isAuthenticated ? "h-12 w-12" : "h-8 w-8"} fill="none" viewBox="0 0 24 24">

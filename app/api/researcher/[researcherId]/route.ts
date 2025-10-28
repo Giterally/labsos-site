@@ -29,39 +29,66 @@ export async function GET(
     }
 
     // Get the user's current projects (where they are active team members)
-    const { data: currentProjects, error: currentProjectsError } = await supabase
+    const { data: currentProjectMembers, error: currentProjectsError } = await supabase
       .from('project_members')
-      .select(`
-        id,
-        role,
-        joined_at,
-        projects!project_members_project_id_fkey (
-          id,
-          name,
-          description,
-          created_at
-        )
-      `)
+      .select('id, role, joined_at, project_id')
       .eq('user_id', researcherId)
       .is('left_at', null)
 
+    console.log('Current project members query result:', { currentProjectMembers, currentProjectsError })
+
+    // Get project details for current projects
+    let currentProjects = []
+    if (currentProjectMembers && currentProjectMembers.length > 0) {
+      const projectIds = currentProjectMembers.map(member => member.project_id)
+      const { data: projects, error: projectsError } = await supabase
+        .from('projects')
+        .select('id, name, description, created_at')
+        .in('id', projectIds)
+
+      console.log('Projects query result:', { projects, projectsError })
+
+      currentProjects = currentProjectMembers.map(member => {
+        const project = projects?.find(p => p.id === member.project_id)
+        return {
+          ...member,
+          projects: project
+        }
+      })
+    }
+
     // Get the user's past projects (where they have left_at set)
-    const { data: pastProjects, error: pastProjectsError } = await supabase
+    const { data: pastProjectMembers, error: pastProjectsError } = await supabase
       .from('project_members')
-      .select(`
-        id,
-        role,
-        joined_at,
-        left_at,
-        projects!project_members_project_id_fkey (
-          id,
-          name,
-          description,
-          created_at
-        )
-      `)
+      .select('id, role, joined_at, left_at, project_id')
       .eq('user_id', researcherId)
       .not('left_at', 'is', null)
+
+    // Get project details for past projects
+    let pastProjects = []
+    if (pastProjectMembers && pastProjectMembers.length > 0) {
+      const projectIds = pastProjectMembers.map(member => member.project_id)
+      const { data: pastProjectDetails, error: pastProjectsDetailsError } = await supabase
+        .from('projects')
+        .select('id, name, description, created_at')
+        .in('id', projectIds)
+
+      pastProjects = pastProjectMembers.map(member => {
+        const project = pastProjectDetails?.find(p => p.id === member.project_id)
+        return {
+          ...member,
+          projects: project
+        }
+      })
+    }
+
+    // Get publications
+    const { data: publications, error: pubError } = await supabase
+      .from('publications')
+      .select('*')
+      .eq('profile_id', researcherId)
+      .order('year', { ascending: false })
+      .order('created_at', { ascending: false })
 
     // Transform the data to match the expected format
     const researcher = {
@@ -80,7 +107,7 @@ export async function GET(
       joinedDate: profile.created_at ? new Date(profile.created_at).toISOString().split('T')[0] : 'Unknown',
       lastActive: profile.updated_at ? new Date(profile.updated_at).toISOString().split('T')[0] : 'Unknown',
       currentProjects: (currentProjects || []).map(member => {
-        const project = Array.isArray(member.projects) ? member.projects[0] : member.projects
+        const project = member.projects
         return {
           id: member.id,
           name: project?.name || 'Unknown Project',
@@ -95,7 +122,7 @@ export async function GET(
         }
       }),
       pastProjects: (pastProjects || []).map(member => {
-        const project = Array.isArray(member.projects) ? member.projects[0] : member.projects
+        const project = member.projects
         return {
           id: member.id,
           name: project?.name || 'Unknown Project',
@@ -110,14 +137,24 @@ export async function GET(
           }
         }
       }),
-      publications: [], // TODO: Implement publications table
+      publications: (publications || []).map(pub => ({
+        id: pub.id,
+        title: pub.title,
+        authors: pub.authors || [],
+        journal: pub.journal_title || '',
+        year: pub.year || 0,
+        doi: pub.doi || undefined,
+        url: pub.url || undefined,
+        type: pub.type || 'other',
+        source: pub.source || 'manual'
+      })),
       skills: profile.skills || [],
       interests: profile.interests || [],
       stats: {
         totalProjects: (currentProjects?.length || 0) + (pastProjects?.length || 0),
         activeProjects: currentProjects?.length || 0,
         completedProjects: pastProjects?.length || 0,
-        publications: 0, // TODO: Implement publications count
+        publications: publications?.length || 0,
         collaborations: (currentProjects?.length || 0) + (pastProjects?.length || 0)
       }
     }

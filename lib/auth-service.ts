@@ -71,7 +71,7 @@ export async function signUp(email: string, password: string, fullName?: string)
       data: {
         name: fullName
       },
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/callback`
+      emailRedirectTo: 'https://olvaro.net/auth/callback'
     }
   })
 

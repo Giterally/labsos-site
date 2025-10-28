@@ -35,6 +35,12 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { getCurrentUser } from "@/lib/auth-service"
 import { useUser } from "@/lib/user-context"
+import { ORCIDImport } from "@/components/ORCIDImport"
+import { PublicationSearch } from "@/components/PublicationSearch"
+import { PublicationForm } from "@/components/PublicationForm"
+import { PublicationListItem } from "@/components/PublicationListItem"
+import { BulkActionsToolbar } from "@/components/BulkActionsToolbar"
+import { Publication } from "@/lib/types"
 
 interface ResearcherProfile {
   id: string
@@ -77,15 +83,7 @@ interface ResearcherProfile {
       name: string
     }
   }>
-  publications: Array<{
-    id: string
-    title: string
-    authors: string[]
-    journal: string
-    year: number
-    doi?: string
-    url?: string
-  }>
+  publications: Publication[]
   skills: string[]
   interests: string[]
   stats: {
@@ -112,6 +110,12 @@ export default function ResearcherProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
   const [editData, setEditData] = useState<Partial<ResearcherProfile>>({})
   const [saving, setSaving] = useState(false)
+  
+  // Publication management state
+  const [filteredPublications, setFilteredPublications] = useState<Publication[]>([])
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showPublicationForm, setShowPublicationForm] = useState(false)
+  const [editingPublication, setEditingPublication] = useState<Publication | null>(null)
 
   useEffect(() => {
     // Check if this is the user's own profile
@@ -124,31 +128,31 @@ export default function ResearcherProfilePage() {
     setAuthLoading(false)
   }, [currentUser, researcherId])
 
-  useEffect(() => {
-    const fetchResearcher = async () => {
-      try {
-        const response = await fetch(`/api/researcher/${researcherId}`)
-        
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError('Researcher profile not found')
-          } else {
-            setError('Failed to load researcher profile')
-          }
-          setLoading(false)
-          return
+  const fetchResearcher = async () => {
+    try {
+      const response = await fetch(`/api/researcher/${researcherId}`)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError('Researcher profile not found')
+        } else {
+          setError('Failed to load researcher profile')
         }
-
-        const data = await response.json()
-        setResearcher(data.researcher)
         setLoading(false)
-      } catch (err) {
-        console.error('Error fetching researcher:', err)
-        setError('Failed to load researcher profile')
-        setLoading(false)
+        return
       }
-    }
 
+      const data = await response.json()
+      setResearcher(data.researcher)
+      setLoading(false)
+    } catch (err) {
+      console.error('Error fetching researcher:', err)
+      setError('Failed to load researcher profile')
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
     if (researcherId) {
       fetchResearcher()
     }
@@ -170,6 +174,9 @@ export default function ResearcherProfilePage() {
         skills: [...researcher.skills],
         interests: [...researcher.interests],
       })
+      
+      // Initialize filtered publications
+      setFilteredPublications(researcher.publications || [])
     }
   }, [researcher])
 
@@ -282,6 +289,85 @@ export default function ResearcherProfilePage() {
   const removeArrayItem = (field: 'skills' | 'interests', index: number) => {
     const currentArray = editData[field] || []
     handleArrayFieldChange(field, currentArray.filter((_, i) => i !== index))
+  }
+
+  // Publication management handlers
+  const handleSearch = (filtered: Publication[]) => {
+    setFilteredPublications(filtered)
+    // Clear selection when search results change
+    setSelectedIds(new Set())
+  }
+
+  const handleSelectPublication = (id: string) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredPublications.length && filteredPublications.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredPublications.map(p => p.id)))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+
+    try {
+      const response = await fetch('/api/publications/bulk-delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ publicationIds: Array.from(selectedIds) }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete publications')
+      }
+
+      // Refresh data
+      await fetchResearcher()
+      setSelectedIds(new Set())
+    } catch (error: any) {
+      console.error('Error deleting publications:', error)
+      alert(error.message || 'Failed to delete publications')
+    }
+  }
+
+  const handleDeletePublication = async (id: string) => {
+    try {
+      const response = await fetch(`/api/publications/${id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete publication')
+      }
+
+      // Refresh data
+      await fetchResearcher()
+    } catch (error: any) {
+      console.error('Error deleting publication:', error)
+      alert(error.message || 'Failed to delete publication')
+    }
+  }
+
+  const handleSavePublication = async (publication: Publication) => {
+    // Refresh data to get updated publications
+    await fetchResearcher()
+    setShowPublicationForm(false)
+    setEditingPublication(null)
   }
 
   const getStatusColor = (status: string) => {
@@ -455,6 +541,14 @@ export default function ResearcherProfilePage() {
                           onChange={(e) => handleInputChange('orcid', e.target.value)}
                           placeholder="ORCID ID"
                           className="text-sm"
+                        />
+                      </div>
+                      {/* ORCID Import Component */}
+                      <div className="mt-4 p-4 border rounded-lg bg-muted/50">
+                        <ORCIDImport 
+                          profileId={researcherId}
+                          currentORCID={editData.orcid || ''}
+                          onImportComplete={fetchResearcher}
                         />
                       </div>
                     </div>
@@ -794,32 +888,93 @@ export default function ResearcherProfilePage() {
               </TabsContent>
 
               <TabsContent value="publications" className="space-y-4">
-                {researcher.publications.map((publication) => (
-                  <Card key={publication.id} className="hover:shadow-lg transition-shadow">
-                    <CardContent className="p-6">
-                      <div className="space-y-3">
-                        <h3 className="font-semibold text-foreground">{publication.title}</h3>
-                        <div className="text-sm text-muted-foreground">
-                          <p className="mb-1">{publication.authors.join(", ")}</p>
-                          <p className="mb-2">{publication.journal}, {publication.year}</p>
-                          {publication.doi && (
-                            <p className="text-xs">DOI: {publication.doi}</p>
-                          )}
-                        </div>
-                        <div className="flex space-x-2">
-                          {publication.url && (
-                            <Button variant="outline" size="sm" asChild>
-                              <a href={publication.url} target="_blank" rel="noopener noreferrer">
-                                <LinkIcon className="h-4 w-4 mr-2" />
-                                View Paper
-                              </a>
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                {/* ORCID Import for profile owners */}
+                {isOwnProfile && (
+                  <div className="mb-6 p-4 border rounded-lg bg-muted/50">
+                    <h3 className="text-lg font-semibold mb-2">Import Publications</h3>
+                    <ORCIDImport 
+                      profileId={researcherId}
+                      currentORCID={researcher.orcid || ''}
+                      onImportComplete={fetchResearcher}
+                    />
+                  </div>
+                )}
+
+                {/* Publication Management Tools for profile owners */}
+                {isOwnProfile && researcher.publications.length > 0 && (
+                  <>
+                    <PublicationSearch 
+                      publications={researcher.publications} 
+                      onFilteredResults={handleSearch} 
+                    />
+                    <BulkActionsToolbar 
+                      selectedCount={selectedIds.size}
+                      totalCount={filteredPublications.length}
+                      onSelectAll={handleSelectAll}
+                      onDeselectAll={() => setSelectedIds(new Set())}
+                      onDeleteSelected={handleBulkDelete}
+                    />
+                    <div className="flex justify-between items-center">
+                      <Button 
+                        onClick={() => setShowPublicationForm(true)}
+                        className="mb-4"
+                      >
+                        <PlusIcon className="h-4 w-4 mr-2" />
+                        Add Publication
+                      </Button>
+                    </div>
+                  </>
+                )}
+                
+                {/* Publication Form Modal */}
+                {showPublicationForm && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-background rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                      <PublicationForm
+                        publication={editingPublication}
+                        profileId={researcherId}
+                        onSave={handleSavePublication}
+                        onCancel={() => { 
+                          setShowPublicationForm(false); 
+                          setEditingPublication(null); 
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+                
+                {/* Publications List */}
+                {filteredPublications.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <DocumentTextIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>
+                      {researcher.publications.length === 0 
+                        ? "No publications found" 
+                        : "No publications match your search"
+                      }
+                    </p>
+                    {isOwnProfile && researcher.publications.length === 0 && (
+                      <p className="text-sm mt-2">Add your ORCID ID above to import your publications</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredPublications.map((publication) => (
+                      <PublicationListItem
+                        key={publication.id}
+                        publication={publication}
+                        isSelected={selectedIds.has(publication.id)}
+                        showCheckbox={isOwnProfile}
+                        onSelect={handleSelectPublication}
+                        onEdit={(pub) => { 
+                          setEditingPublication(pub); 
+                          setShowPublicationForm(true); 
+                        }}
+                        onDelete={handleDeletePublication}
+                      />
+                    ))}
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </div>
