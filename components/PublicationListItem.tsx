@@ -87,7 +87,7 @@ export function PublicationListItem({
               id={`publication-${publication.id}`}
               checked={isSelected}
               onCheckedChange={() => onSelect(publication.id)}
-              className="mt-1 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+              className="mt-1 border-2 border-gray-400 hover:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             />
           )}
           
