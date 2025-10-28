@@ -355,6 +355,7 @@ export function KnowledgeNodesCanvas({
     ctx.globalAlpha = 0.2
     
     const connectionColors = ['#1B5E20', '#2E7D32', '#4FC3F7', '#81C784']
+    const mouse = mouseRef.current
     
     for (const node of nodes) {
       // Skip connections for static sections
@@ -370,18 +371,41 @@ export function KnowledgeNodesCanvas({
             continue
           }
           
+          // Calculate cursor proximity for glow effect (optimized)
+          const dx = (node.x + connectedNode.x) / 2 - mouse.x
+          const dy = (node.y + connectedNode.y) / 2 - mouse.y
+          const cursorDistanceSquared = dx * dx + dy * dy
+          const glowRadiusSquared = 80 * 80 // Reduced radius for better performance
+          
           // Vary connection colors and opacity
           const colorIndex = Math.floor(Math.random() * connectionColors.length)
           ctx.strokeStyle = connectionColors[colorIndex]
           
           // Add subtle pulsing to connections
           const pulse = Math.sin(timeRef.current * 0.001 + node.x * 0.01) * 0.1 + 0.2
-          ctx.globalAlpha = pulse
+          
+          // Enhanced glow when cursor is nearby (subtle)
+          if (cursorDistanceSquared < glowRadiusSquared) {
+            const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 80)
+            ctx.globalAlpha = pulse + (glowIntensity * 0.15) // Subtle opacity increase
+            ctx.lineWidth = 0.8 + (glowIntensity * 0.4) // Subtle line thickness increase
+            
+            // Subtle glow effect
+            ctx.shadowColor = connectionColors[colorIndex]
+            ctx.shadowBlur = glowIntensity * 6 // Reduced shadow blur
+          } else {
+            ctx.globalAlpha = pulse
+            ctx.lineWidth = 0.8
+            ctx.shadowBlur = 0
+          }
           
           ctx.beginPath()
           ctx.moveTo(node.x, node.y)
           ctx.lineTo(connectedNode.x, connectedNode.y)
           ctx.stroke()
+          
+          // Reset shadow
+          ctx.shadowBlur = 0
         }
       }
     }
@@ -410,13 +434,40 @@ export function KnowledgeNodesCanvas({
             const particleX = node.x + (connectedNode.x - node.x) * progress
             const particleY = node.y + (connectedNode.y - node.y) * progress
             
+            // Calculate cursor proximity for particle glow (optimized)
+            const pDx = particleX - mouse.x
+            const pDy = particleY - mouse.y
+            const cursorDistanceSquared = pDx * pDx + pDy * pDy
+            const glowRadiusSquared = 60 * 60 // Reduced radius for better performance
+            
             // Vary particle colors
             const colors = ['#4FC3F7', '#81C784', '#A5D6A7', '#66BB6A']
-            ctx.fillStyle = colors[p % colors.length]
+            const particleColor = colors[p % colors.length]
+            ctx.fillStyle = particleColor
             
-            ctx.beginPath()
-            ctx.arc(particleX, particleY, 1 + Math.sin(timeRef.current * 0.005 + particleX * 0.02) * 0.3, 0, Math.PI * 2) // Smaller particles
-            ctx.fill()
+            // Enhanced glow when cursor is nearby (subtle)
+            if (cursorDistanceSquared < glowRadiusSquared) {
+              const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 60)
+              
+              // Subtle glow effect
+              ctx.shadowColor = particleColor
+              ctx.shadowBlur = glowIntensity * 4 // Reduced shadow blur
+              
+              // Slightly larger particles near cursor
+              const baseSize = 1 + Math.sin(timeRef.current * 0.005 + particleX * 0.02) * 0.3
+              const enhancedSize = baseSize + (glowIntensity * 0.5) // Reduced size increase
+              
+              ctx.beginPath()
+              ctx.arc(particleX, particleY, enhancedSize, 0, Math.PI * 2)
+              ctx.fill()
+              
+              // Reset shadow
+              ctx.shadowBlur = 0
+            } else {
+              ctx.beginPath()
+              ctx.arc(particleX, particleY, 1 + Math.sin(timeRef.current * 0.005 + particleX * 0.02) * 0.3, 0, Math.PI * 2)
+              ctx.fill()
+            }
           }
         }
       }
@@ -426,9 +477,27 @@ export function KnowledgeNodesCanvas({
     ctx.globalAlpha = 0.9
     
     for (const node of nodes) {
+      // Calculate cursor proximity for enhanced glow (optimized)
+      const nDx = node.x - mouse.x
+      const nDy = node.y - mouse.y
+      const cursorDistanceSquared = nDx * nDx + nDy * nDy
+      const glowRadiusSquared = 70 * 70 // Reduced radius for better performance
+      
       // Node glow with pulsing effect
       const pulse = Math.sin(timeRef.current * 0.002 + node.originalX * 0.01) * 0.3 + 0.7
-      const glowSize = node.size * 3 * pulse // Increased glow multiplier for larger nodes
+      let glowSize = node.size * 3 * pulse // Base glow size
+      
+      // Enhanced glow when cursor is nearby (subtle)
+      if (cursorDistanceSquared < glowRadiusSquared) {
+        const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 70)
+        glowSize += glowIntensity * node.size * 1.5 // Subtle glow increase
+        
+        // Subtle shadow glow effect
+        ctx.shadowColor = node.color
+        ctx.shadowBlur = glowIntensity * 8 // Reduced shadow blur
+      } else {
+        ctx.shadowBlur = 0
+      }
       
       const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
       gradient.addColorStop(0, node.color)
@@ -440,8 +509,18 @@ export function KnowledgeNodesCanvas({
       ctx.arc(node.x, node.y, glowSize, 0, Math.PI * 2)
       ctx.fill()
       
+      // Reset shadow for core
+      ctx.shadowBlur = 0
+      
       // Node core with size variation
-      const coreSize = node.size * (1.0 + Math.sin(timeRef.current * 0.001 + node.originalY * 0.008) * 0.2) // Increased base size
+      let coreSize = node.size * (1.0 + Math.sin(timeRef.current * 0.001 + node.originalY * 0.008) * 0.2) // Base core size
+      
+      // Enhanced core size when cursor is nearby (subtle)
+      if (cursorDistanceSquared < glowRadiusSquared) {
+        const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 70)
+        coreSize += glowIntensity * node.size * 0.2 // Subtle core size increase
+      }
+      
       ctx.fillStyle = node.color
       ctx.beginPath()
       ctx.arc(node.x, node.y, coreSize, 0, Math.PI * 2)
@@ -452,9 +531,19 @@ export function KnowledgeNodesCanvas({
       const highlightX = node.x - node.size * (0.3 + highlightOffset)
       const highlightY = node.y - node.size * (0.3 + highlightOffset)
       
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
+      // Enhanced highlight when cursor is nearby (subtle)
+      let highlightOpacity = 0.4
+      let highlightSize = node.size * 0.25
+      
+      if (cursorDistanceSquared < glowRadiusSquared) {
+        const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 70)
+        highlightOpacity += glowIntensity * 0.15 // Subtle highlight brightness increase
+        highlightSize += glowIntensity * node.size * 0.1 // Subtle highlight size increase
+      }
+      
+      ctx.fillStyle = `rgba(255, 255, 255, ${highlightOpacity})`
       ctx.beginPath()
-      ctx.arc(highlightX, highlightY, node.size * 0.25, 0, Math.PI * 2)
+      ctx.arc(highlightX, highlightY, highlightSize, 0, Math.PI * 2)
       ctx.fill()
       
       // Add subtle inner glow
