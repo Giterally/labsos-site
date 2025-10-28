@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -34,17 +35,36 @@ export async function PUT(
       return NextResponse.json({ error: 'Valid year is required' }, { status: 400 })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Create authenticated Supabase client with user session
+    const cookieStore = cookies()
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    })
 
-    // Verify publication exists and get profile_id for ownership check
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify publication exists and belongs to authenticated user
     const { data: existingPub, error: fetchError } = await supabase
       .from('publications')
-      .select('profile_id')
+      .select('user_id')
       .eq('id', publicationId)
       .single()
 
     if (fetchError || !existingPub) {
       return NextResponse.json({ error: 'Publication not found' }, { status: 404 })
+    }
+
+    // Verify ownership
+    if (existingPub.user_id !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized to update this publication' }, { status: 403 })
     }
 
     // Update publication
@@ -89,17 +109,36 @@ export async function DELETE(
   try {
     const { publicationId } = await params
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Create authenticated Supabase client with user session
+    const cookieStore = cookies()
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    })
 
-    // Verify publication exists
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify publication exists and belongs to authenticated user
     const { data: existingPub, error: fetchError } = await supabase
       .from('publications')
-      .select('id')
+      .select('user_id')
       .eq('id', publicationId)
       .single()
 
     if (fetchError || !existingPub) {
       return NextResponse.json({ error: 'Publication not found' }, { status: 404 })
+    }
+
+    // Verify ownership
+    if (existingPub.user_id !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized to delete this publication' }, { status: 403 })
     }
 
     // Delete publication

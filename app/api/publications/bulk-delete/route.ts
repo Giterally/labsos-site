@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -12,12 +13,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Publication IDs array is required' }, { status: 400 })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Create authenticated Supabase client with user session
+    const cookieStore = cookies()
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    })
 
-    // Verify all publications exist
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify all publications exist and belong to the authenticated user
     const { data: existingPubs, error: fetchError } = await supabase
       .from('publications')
-      .select('id')
+      .select('id, user_id')
       .in('id', publicationIds)
 
     if (fetchError) {
@@ -27,6 +42,12 @@ export async function POST(request: NextRequest) {
 
     if (existingPubs.length !== publicationIds.length) {
       return NextResponse.json({ error: 'Some publications not found' }, { status: 404 })
+    }
+
+    // Verify ownership - all publications must belong to the authenticated user
+    const unauthorizedPubs = existingPubs.filter(pub => pub.user_id !== user.id)
+    if (unauthorizedPubs.length > 0) {
+      return NextResponse.json({ error: 'Unauthorized to delete some publications' }, { status: 403 })
     }
 
     // Delete all publications

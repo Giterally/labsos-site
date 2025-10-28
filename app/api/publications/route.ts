@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -35,17 +36,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Valid year is required' }, { status: 400 })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Create authenticated Supabase client with user session
+    const cookieStore = cookies()
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    })
 
-    // Verify profile exists
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify profile exists and belongs to authenticated user
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, user_id')
       .eq('id', profileId)
       .single()
 
     if (profileError || !profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    // Verify ownership
+    if (profile.user_id !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized to add publication to this profile' }, { status: 403 })
     }
 
     // Create publication
