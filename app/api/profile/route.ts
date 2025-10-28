@@ -18,6 +18,7 @@ export async function PUT(req: NextRequest) {
       location, 
       website, 
       linkedin, 
+      github, 
       orcid, 
       skills, 
       interests 
@@ -41,6 +42,7 @@ export async function PUT(req: NextRequest) {
         location: location || null,
         website: website || null,
         linkedin: linkedin || null,
+        github: github || null,
         orcid: orcid || null,
         skills: skills || [],
         interests: interests || [],

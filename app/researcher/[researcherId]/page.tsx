@@ -30,6 +30,7 @@ import {
   XMarkIcon,
   PlusIcon,
 } from "@heroicons/react/24/outline"
+import { Linkedin, Github } from 'lucide-react'
 import { useRouter, useParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import Link from "next/link"
@@ -55,6 +56,7 @@ interface ResearcherProfile {
   location: string
   website?: string
   linkedin?: string
+  github?: string
   orcid?: string
   joinedDate: string
   lastActive: string
@@ -171,6 +173,7 @@ export default function ResearcherProfilePage() {
         location: researcher.location,
         website: researcher.website,
         linkedin: researcher.linkedin,
+        github: researcher.github,
         orcid: researcher.orcid,
         skills: [...researcher.skills],
         interests: [...researcher.interests],
@@ -194,6 +197,7 @@ export default function ResearcherProfilePage() {
           location: researcher.location,
           website: researcher.website,
           linkedin: researcher.linkedin,
+          github: researcher.github,
           orcid: researcher.orcid,
           skills: [...researcher.skills],
           interests: [...researcher.interests],
@@ -222,6 +226,7 @@ export default function ResearcherProfilePage() {
           location: editData.location,
           website: editData.website,
           linkedin: editData.linkedin,
+          github: editData.github,
           orcid: editData.orcid,
           skills: editData.skills,
           interests: editData.interests,
@@ -533,7 +538,7 @@ export default function ResearcherProfilePage() {
                   {isEditing ? (
                     <div className="space-y-2">
                       <div className="flex items-center space-x-2">
-                        <EnvelopeIcon className="h-4 w-4 text-muted-foreground" />
+                        <GlobeAltIcon className="h-4 w-4 text-muted-foreground" />
                         <Input
                           value={editData.website || ''}
                           onChange={(e) => handleInputChange('website', e.target.value)}
@@ -542,11 +547,20 @@ export default function ResearcherProfilePage() {
                         />
                       </div>
                       <div className="flex items-center space-x-2">
-                        <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                        <Linkedin className="h-4 w-4 text-muted-foreground" />
                         <Input
                           value={editData.linkedin || ''}
                           onChange={(e) => handleInputChange('linkedin', e.target.value)}
                           placeholder="LinkedIn URL"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Github className="h-4 w-4 text-muted-foreground" />
+                        <Input
+                          value={editData.github || ''}
+                          onChange={(e) => handleInputChange('github', e.target.value)}
+                          placeholder="GitHub URL"
                           className="text-sm"
                         />
                       </div>
@@ -587,7 +601,14 @@ export default function ResearcherProfilePage() {
                       {researcher.linkedin && (
                         <Button variant="outline" size="sm" asChild>
                           <a href={researcher.linkedin} target="_blank" rel="noopener noreferrer">
-                            <LinkIcon className="h-4 w-4" />
+                            <Linkedin className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                      {researcher.github && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={researcher.github} target="_blank" rel="noopener noreferrer">
+                            <Github className="h-4 w-4" />
                           </a>
                         </Button>
                       )}
