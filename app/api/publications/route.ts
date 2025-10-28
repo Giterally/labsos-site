@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
         day: day ? parseInt(day) : null,
         doi: doi?.trim() || null,
         url: url?.trim() || null,
-        type: type || 'other',
+        type: type === 'None' ? null : (type || 'other'),
         abstract: abstract?.trim() || null,
         source: 'manual'
       })

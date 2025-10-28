@@ -19,6 +19,7 @@ interface PublicationFormProps {
 }
 
 const publicationTypes = [
+  'None',
   'journal-article',
   'book-chapter',
   'conference-paper',
@@ -38,7 +39,7 @@ export function PublicationForm({ publication, profileId, onSave, onCancel }: Pu
     day: '',
     doi: '',
     url: '',
-    type: 'journal-article',
+    type: 'None',
     abstract: ''
   })
   const [loading, setLoading] = useState(false)
@@ -54,7 +55,7 @@ export function PublicationForm({ publication, profileId, onSave, onCancel }: Pu
         day: publication.day?.toString() || '',
         doi: publication.doi || '',
         url: publication.url || '',
-        type: publication.type || 'journal-article',
+        type: publication.type || 'None',
         abstract: publication.abstract || ''
       })
     }

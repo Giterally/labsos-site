@@ -121,7 +121,7 @@ export function PublicationListItem({
                     {formatDate() && (
                       <span>• {formatDate()}</span>
                     )}
-                    {publication.type && publication.type !== 'other' && (
+                    {publication.type && publication.type !== 'other' && publication.type !== 'None' && publication.type !== null && (
                       <Badge 
                         variant="secondary" 
                         className={`text-xs ${getTypeColor(publication.type)}`}

@@ -78,7 +78,7 @@ export async function PUT(
         day: day ? parseInt(day) : null,
         doi: doi?.trim() || null,
         url: url?.trim() || null,
-        type: type || 'other',
+        type: type === 'None' ? null : (type || 'other'),
         abstract: abstract?.trim() || null,
         updated_at: new Date().toISOString()
       })
