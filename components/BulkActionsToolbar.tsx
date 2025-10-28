@@ -78,6 +78,7 @@ export function BulkActionsToolbar({
                 if (el) el.indeterminate = someSelected
               }}
               onCheckedChange={handleSelectAll}
+              className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
             />
             <Label 
               htmlFor="select-all" 
