@@ -32,6 +32,11 @@ export async function signUp(email: string, password: string, fullName?: string)
 
   if (error) {
     console.error('Signup error:', error)
+    console.log('Supabase error details:', {
+      message: error.message,
+      status: error.status,
+      code: error.code
+    })
     return { error }
   }
 

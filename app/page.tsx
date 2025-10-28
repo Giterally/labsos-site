@@ -246,7 +246,7 @@ export default function KnowledgeCaptureLanding() {
               className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold px-8 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
               onClick={() => (window.location.href = "/login")}
             >
-              Sign In
+              Get Started
             </Button>
           )}
         </div>

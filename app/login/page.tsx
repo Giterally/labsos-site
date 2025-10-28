@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { BeakerIcon } from "@heroicons/react/24/outline"
+import { BeakerIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { signIn, signUp } from "@/lib/auth-service"
@@ -20,7 +20,9 @@ export default function LoginPage() {
   const [fieldOfStudy, setFieldOfStudy] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [isSignUp, setIsSignUp] = useState(true)
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const router = useRouter()
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -59,27 +61,46 @@ export default function LoginPage() {
       return
     }
 
-    try {
-      if (isSignUp) {
-        // Store additional profile data for after email verification
-        const profileData = {
-          full_name: fullName,
-          institution: institution,
-          field_of_study: fieldOfStudy
-        }
-        localStorage.setItem('pendingProfileData', JSON.stringify(profileData))
-        
-        await signUp(email, password, fullName)
-        router.push("/verify-email-sent")
-      } else {
-        await signIn(email, password)
-        router.push("/dashboard")
-      }
-    } catch (err: any) {
-      setError(err.message || "Authentication failed. Please try again.")
-    } finally {
+    if (isSignUp && password !== confirmPassword) {
+      setError("Passwords do not match")
       setIsLoading(false)
+      return
     }
+
+    if (isSignUp) {
+      // Store additional profile data for after email verification
+      const profileData = {
+        full_name: fullName,
+        institution: institution,
+        field_of_study: fieldOfStudy
+      }
+      localStorage.setItem('pendingProfileData', JSON.stringify(profileData))
+      
+      const { error: signUpError } = await signUp(email, password, fullName)
+      
+      console.log('SignUp result:', { signUpError, email })
+      
+      if (signUpError) {
+        console.log('SignUp error details:', signUpError)
+        setError(signUpError.message || "Failed to create account. Please try again.")
+        setIsLoading(false)
+        return
+      }
+      
+      router.push("/verify-email-sent")
+    } else {
+      const { error: signInError } = await signIn(email, password)
+      
+      if (signInError) {
+        setError(signInError.message || "Failed to sign in. Please check your credentials.")
+        setIsLoading(false)
+        return
+      }
+      
+      router.push("/dashboard")
+    }
+
+    setIsLoading(false)
   }
 
   return (
@@ -159,21 +180,56 @@ export default function LoginPage() {
                 type="email"
                 placeholder="jane.smith@university.edu"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                setEmail(e.target.value)
+                setError(null)
+              }}
                 required
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    setError(null)
+                  }}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary transition-colors"
+                >
+                  {showPassword ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+                </button>
+              </div>
             </div>
+            {isSignUp && (
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Confirm your password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                {confirmPassword && (
+                  <p className={`text-sm ${password === confirmPassword ? 'text-green-600' : 'text-red-600'}`}>
+                    {password === confirmPassword ? '✓ Passwords match' : '✗ Passwords do not match'}
+                  </p>
+                )}
+              </div>
+            )}
             {error && (
               <div className={`text-sm p-3 rounded-md ${
                 error.includes("successfully") 
@@ -190,7 +246,10 @@ export default function LoginPage() {
           <div className="mt-6 text-center">
             <button
               type="button"
-              onClick={() => setIsSignUp(!isSignUp)}
+              onClick={() => {
+                setIsSignUp(!isSignUp)
+                setError(null)
+              }}
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
