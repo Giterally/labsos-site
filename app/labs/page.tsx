@@ -16,6 +16,7 @@ import {
 } from "@heroicons/react/24/outline"
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth-service"
 import { supabase } from "@/lib/supabase-client"
@@ -239,12 +240,13 @@ export default function PublicProjectsPage() {
         <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="container mx-auto px-4 py-4 flex items-center justify-between">
             <Link href="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
-              <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.5 16C11.5 16 11 18 11 20V22H13V20C13 18 12.5 16 12.5 16" fill="#1B5E20" stroke="#1B5E20" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2C8 6 6 10 6 14C6 16 8 16 10 14C10 12 11 10 12 8C13 10 14 12 14 14C16 16 18 16 18 14C18 10 16 6 12 2Z" fill="#1B5E20" stroke="#1B5E20" />
-                <path strokeLinecap="round" strokeWidth={1.5} d="M10 22C9 21 8 20 7 19" fill="#1B5E20" stroke="#1B5E20" />
-                <path strokeLinecap="round" strokeWidth={1.5} d="M14 22C15 21 16 20 17 19" fill="#1B5E20" stroke="#1B5E20" />
-              </svg>
+              <Image
+                src="/olvaro-fin.png"
+                alt="Olvaro Logo"
+                width={32}
+                height={32}
+                className="h-8 w-8"
+              />
               <span className="text-2xl font-bold text-foreground">Olvaro</span>
             </Link>
             <Link href="/login">

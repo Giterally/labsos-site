@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -56,22 +57,23 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4">
-        <div className="flex h-16 items-center justify-between">
+        <div className="flex h-20 items-center justify-between">
           {/* Left side - Logo/Brand */}
           <div className="flex items-center space-x-4">
             <Button
               variant="ghost"
-              size="sm"
+              size="lg"
               onClick={() => router.push("/")}
-              className="flex items-center space-x-2"
+              className="flex items-center space-x-3 px-4 py-3"
             >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.5 16C11.5 16 11 18 11 20V22H13V20C13 18 12.5 16 12.5 16" fill="#1B5E20" stroke="#1B5E20" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2C8 6 6 10 6 14C6 16 8 16 10 14C10 12 11 10 12 8C13 10 14 12 14 14C16 16 18 16 18 14C18 10 16 6 12 2Z" fill="#1B5E20" stroke="#1B5E20" />
-                <path strokeLinecap="round" strokeWidth={1.5} d="M10 22C9 21 8 20 7 19" fill="#1B5E20" stroke="#1B5E20" />
-                <path strokeLinecap="round" strokeWidth={1.5} d="M14 22C15 21 16 20 17 19" fill="#1B5E20" stroke="#1B5E20" />
-              </svg>
-              <span className="font-bold text-lg">Olvaro</span>
+              <Image
+                src="/olvaro-fin.png"
+                alt="Olvaro Logo"
+                width={64}
+                height={64}
+                className="h-16 w-16"
+              />
+              <span className="font-bold text-xl">Olvaro</span>
             </Button>
             
             {/* Navigation breadcrumb */}
@@ -106,17 +108,6 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                 <span>Projects</span>
               </Button>
             </div>
-
-            {/* Settings button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSettingsClick}
-              className="flex items-center space-x-1"
-            >
-              <CogIcon className="h-4 w-4" />
-              <span className="hidden sm:inline">Settings</span>
-            </Button>
 
             {/* User profile dropdown */}
             <DropdownMenu>
@@ -163,9 +154,9 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                   <UserIcon className="mr-2 h-4 w-4" />
                   <span>Profile</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push("/dashboard/projects")}>
-                  <FolderIcon className="mr-2 h-4 w-4" />
-                  <span>My Projects</span>
+                <DropdownMenuItem onClick={handleSettingsClick}>
+                  <CogIcon className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut}>
