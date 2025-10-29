@@ -1302,6 +1302,12 @@ export default function SimpleExperimentTreePage() {
                       <Badge variant="outline">
                         {treeInfo.category}
                       </Badge>
+                      <Badge variant="secondary">
+                        {allBlockTypes.length} Blocks
+                      </Badge>
+                      <Badge variant="secondary">
+                        {experimentNodes.length} Nodes
+                      </Badge>
                     </div>
                   </div>
                 </div>
@@ -1336,7 +1342,8 @@ export default function SimpleExperimentTreePage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
+                <div className="max-h-[60vh] overflow-y-auto">
+                  <div className="space-y-3">
                   {allBlockTypes.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <p>No experiment steps yet.</p>
@@ -1523,38 +1530,11 @@ export default function SimpleExperimentTreePage() {
                       )
                     })
                   )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Tree Overview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Status:</span>
-                    <Badge className={
-                      treeInfo?.status === 'active' ? 'bg-green-100 text-green-800' :
-                      treeInfo?.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                      treeInfo?.status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                      'bg-orange-100 text-orange-800'
-                    }>
-                      {treeInfo?.status || 'Unknown'}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Category:</span>
-                    <Badge variant="outline">{treeInfo?.category || 'Unknown'}</Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Steps:</span>
-                    <span>{experimentNodes.length}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
           {/* Right Column - Node Details */}

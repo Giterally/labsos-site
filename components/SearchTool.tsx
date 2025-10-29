@@ -315,7 +315,13 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
         <div className="relative">
           <div className="flex items-center space-x-2">
             <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              {loading ? (
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-gray-600"></div>
+                </div>
+              ) : (
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              )}
         <Input
           ref={inputRef}
           value={query}
@@ -342,12 +348,6 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
                 <XMarkIcon className="h-4 w-4" />
               </Button>
             </div>
-            {loading && (
-              <div className="flex items-center text-sm text-gray-500">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
-                Searching...
-              </div>
-            )}
           </div>
         </div>
       )}
