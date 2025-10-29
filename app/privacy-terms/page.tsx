@@ -43,7 +43,7 @@ export default function PrivacyTermsPage() {
           <div className="text-center">
             <h1 className="text-4xl font-bold text-foreground mb-4">Privacy Policy & Terms of Service</h1>
             <p className="text-lg text-muted-foreground">
-              Last updated: December 2024
+              Last updated: October 2025
             </p>
           </div>
 
@@ -53,6 +53,21 @@ export default function PrivacyTermsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
+                <h3 className="text-lg font-semibold mb-3">Data Storage and Security</h3>
+                <p className="text-muted-foreground mb-4">
+                  Your data is stored securely using <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:underline">Supabase</a>, which provides enterprise-grade security 
+                  including encryption at rest and in transit. We implement Row Level Security (RLS) 
+                  policies to ensure you can only access your own data.
+                </p>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground">
+                  <li>All data is encrypted using industry-standard encryption</li>
+                  <li>Access controls ensure only authorized users can view your content</li>
+                  <li>Regular security audits and monitoring</li>
+                  <li>Data is stored in secure, compliant data centers</li>
+                </ul>
+              </div>
+
+              <div>
                 <h3 className="text-lg font-semibold mb-3">Information We Collect</h3>
                 <p className="text-muted-foreground mb-4">
                   We collect information you provide directly to us, such as when you create an account, 
@@ -61,7 +76,6 @@ export default function PrivacyTermsPage() {
                 <ul className="list-disc list-inside space-y-2 text-muted-foreground">
                   <li>Account information (name, email address, university affiliation)</li>
                   <li>Research project data and content you choose to store</li>
-                  <li>Usage data to improve our services</li>
                   <li>Communication data when you contact us</li>
                 </ul>
               </div>
@@ -74,21 +88,6 @@ export default function PrivacyTermsPage() {
                   <li>Communicate with you about your account and our services</li>
                   <li>Improve our platform and develop new features</li>
                   <li>Ensure security and prevent abuse</li>
-                </ul>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Data Storage and Security</h3>
-                <p className="text-muted-foreground mb-4">
-                  Your data is stored securely using Supabase, which provides enterprise-grade security 
-                  including encryption at rest and in transit. We implement Row Level Security (RLS) 
-                  policies to ensure you can only access your own data.
-                </p>
-                <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                  <li>All data is encrypted using industry-standard encryption</li>
-                  <li>Access controls ensure only authorized users can view your content</li>
-                  <li>Regular security audits and monitoring</li>
-                  <li>Data is stored in secure, compliant data centers</li>
                 </ul>
               </div>
 
@@ -135,7 +134,6 @@ export default function PrivacyTermsPage() {
                   <li>You own all content you upload to Olvaro</li>
                   <li>You can export your data at any time</li>
                   <li>You control who can access your projects</li>
-                  <li>We may use anonymized, aggregated data to improve our services</li>
                 </ul>
               </div>
 
@@ -168,9 +166,7 @@ export default function PrivacyTermsPage() {
                 </p>
                 <ul className="list-disc list-inside space-y-2 text-muted-foreground">
                   <li>You can delete your account through your profile settings</li>
-                  <li>We will provide reasonable notice before terminating accounts</li>
                   <li>You can export your data before account deletion</li>
-                  <li>Some data may be retained for legal or security purposes</li>
                 </ul>
               </div>
 
