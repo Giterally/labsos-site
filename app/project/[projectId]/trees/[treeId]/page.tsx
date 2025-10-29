@@ -1292,6 +1292,9 @@ export default function SimpleExperimentTreePage() {
       const positionChanged = selectedNode.position !== newPosition
       const typeChanged = selectedNode.type !== newType
       
+      // Initialize positionUpdates array
+      let positionUpdates: {nodeId: string, position: number}[] = []
+      
       if (positionChanged || typeChanged) {
         // Get all nodes in the current block (before type change)
         const currentBlockNodes = experimentNodes
@@ -1302,9 +1305,6 @@ export default function SimpleExperimentTreePage() {
         const targetBlockNodes = typeChanged 
           ? experimentNodes.filter(n => n.type === newType).sort((a, b) => a.position - b.position)
           : currentBlockNodes
-        
-        // Calculate new positions for all affected nodes
-        const positionUpdates: {nodeId: string, position: number}[] = []
         
         if (typeChanged) {
           // Moving to different block - remove from old block and add to new block
@@ -2619,6 +2619,17 @@ function MetadataEditForm({
   const [nodeType, setNodeType] = useState(metadata.type)
   const [position, setPosition] = useState(metadata.position)
   const [nodeStatus, setNodeStatus] = useState(status)
+  
+  // Calculate max position based on current block type
+  const maxPosition = experimentNodes.filter(n => n.type === nodeType).length
+
+  // Update position when node type changes
+  useEffect(() => {
+    const newMaxPosition = experimentNodes.filter(n => n.type === nodeType).length
+    if (position > newMaxPosition) {
+      setPosition(newMaxPosition)
+    }
+  }, [nodeType, position])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -2642,12 +2653,13 @@ function MetadataEditForm({
       </div>
       
       <div>
-        <label className="block text-sm font-medium mb-2">Position</label>
+        <label className="block text-sm font-medium mb-2">Position (1-{maxPosition})</label>
         <input
           type="number"
           value={position}
           onChange={(e) => setPosition(parseInt(e.target.value) || 1)}
           min="1"
+          max={maxPosition}
           className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </div>
