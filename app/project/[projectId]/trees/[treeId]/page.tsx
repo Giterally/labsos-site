@@ -104,7 +104,6 @@ export default function SimpleExperimentTreePage() {
   // Custom block names and ordering state
   const [blockNames, setBlockNames] = useState<Record<string, string>>({})
   const [customBlocks, setCustomBlocks] = useState<Array<{id: string, name: string, block_type: string, position: number}>>([])
-  const [nodeOrder, setNodeOrder] = useState<Record<string, string[]>>({})
   
   // Drag and drop state
   const [draggedItem, setDraggedItem] = useState<{type: 'block' | 'node', id: string, blockType?: string} | null>(null)
@@ -156,16 +155,18 @@ export default function SimpleExperimentTreePage() {
     const treeBlock = customBlocks.find(block => block.id === nodeType)
     
     if (treeBlock) {
-      // Infer type from block name
-      const blockName = treeBlock.name.toLowerCase()
-      if (blockName.includes('protocol') || blockName.includes('method')) return '📋'
-      if (blockName.includes('analysis') || blockName.includes('processing')) return '🔬'
-      if (blockName.includes('data') || blockName.includes('collection')) return '📊'
-      if (blockName.includes('result') || blockName.includes('finding')) return '📈'
-      return '📄' // default for custom blocks
+      // Use the actual block_type from the database
+      switch (treeBlock.block_type) {
+        case 'protocol': return '📋'
+        case 'analysis': return '🔬'
+        case 'data_creation': return '📊'
+        case 'results': return '📈'
+        case 'custom': return '📄'
+        default: return '📄'
+      }
     }
     
-    // Regular node types
+    // Regular node types (fallback for non-custom blocks)
     switch (nodeType) {
       case 'protocol': return '📋'
       case 'analysis': return '🔬'
@@ -196,9 +197,18 @@ export default function SimpleExperimentTreePage() {
       const isCustomBlock = customBlocks.some(block => block.id === blockType)
       
       if (isCustomBlock) {
+        // Get the current session token
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          throw new Error('No authentication token available')
+        }
+        
         // Delete custom block from Supabase
         const response = await fetch(`/api/trees/${treeId}/blocks/${blockType}`, {
           method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
         })
 
         if (!response.ok) {
@@ -206,7 +216,11 @@ export default function SimpleExperimentTreePage() {
         }
 
         // Refresh blocks from API instead of updating local state
-        const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
+        const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
         if (blocksResponse.ok) {
           const blocksData = await blocksResponse.json()
           setCustomBlocks(blocksData.treeBlocks || [])
@@ -419,34 +433,92 @@ export default function SimpleExperimentTreePage() {
 
 
 
+  // Helper function to update multiple node positions
+  const updateNodePositions = async (positionUpdates: {nodeId: string, position: number}[]) => {
+    try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
+      // Use batch update API for better performance and atomicity
+      const response = await fetch(`/api/trees/${treeId}/nodes/batch-update`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ positionUpdates })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to update node positions')
+      }
+    } catch (error) {
+      console.error('Error updating node positions:', error)
+      throw error
+    }
+  }
+
   // Node reordering within same block
   const handleNodeReorder = async (draggedNodeId: string, targetNodeId: string, blockType: string) => {
-    const currentOrder = nodeOrder[blockType] || []
-    const draggedIndex = currentOrder.indexOf(draggedNodeId)
-    const targetIndex = currentOrder.indexOf(targetNodeId)
-    
-    if (draggedIndex === -1 || targetIndex === -1) return
-    
-    // Remove dragged item and insert at target position
-    const [draggedItem] = currentOrder.splice(draggedIndex, 1)
-    currentOrder.splice(targetIndex, 0, draggedItem)
-    
-    // Update local state
-    setNodeOrder(prev => ({
-      ...prev,
-      [blockType]: currentOrder
-    }))
-    
-    // TODO: Save to Supabase when node ordering API is implemented
+    try {
+      // Get all nodes in this block, sorted by position
+      const nodesInBlock = experimentNodes
+        .filter(n => n.type === blockType)
+        .sort((a, b) => a.position - b.position)
+      
+      const draggedNode = nodesInBlock.find(n => n.id === draggedNodeId)
+      const targetNode = nodesInBlock.find(n => n.id === targetNodeId)
+      
+      if (!draggedNode || !targetNode) return
+      
+      const draggedIndex = nodesInBlock.findIndex(n => n.id === draggedNodeId)
+      const targetIndex = nodesInBlock.findIndex(n => n.id === targetNodeId)
+      
+      if (draggedIndex === -1 || targetIndex === -1) return
+      
+      // Create new order by moving the dragged node to target position
+      const newOrder = [...nodesInBlock]
+      const [movedNode] = newOrder.splice(draggedIndex, 1)
+      newOrder.splice(targetIndex, 0, movedNode)
+      
+      // Calculate new positions (1-indexed)
+      const positionUpdates = newOrder.map((node, index) => ({
+        nodeId: node.id,
+        position: index + 1
+      }))
+      
+      // Update positions in database
+      await updateNodePositions(positionUpdates)
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => {
+        const update = positionUpdates.find(u => u.nodeId === node.id)
+        return update ? { ...node, position: update.position } : node
+      }))
+      
+    } catch (error) {
+      console.error('Error reordering nodes:', error)
+    }
   }
 
   // Move node to different block
   const handleNodeMoveToBlock = async (nodeId: string, targetBlockType: string) => {
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           node_type: targetBlockType
@@ -463,15 +535,7 @@ export default function SimpleExperimentTreePage() {
         const nodesData = await nodesResponse.json()
         setExperimentNodes(nodesData.nodes)
         
-        // Update node order
-        const newNodeOrder: Record<string, string[]> = {}
-        nodesData.nodes.forEach((node: ExperimentNode) => {
-          if (!newNodeOrder[node.type]) {
-            newNodeOrder[node.type] = []
-          }
-          newNodeOrder[node.type].push(node.id)
-        })
-        setNodeOrder(newNodeOrder)
+        // Node order is now handled by position field, no need for nodeOrder state
       }
     } catch (err) {
       console.error('Error moving node:', err)
@@ -706,15 +770,7 @@ export default function SimpleExperimentTreePage() {
         const data = await response.json()
         setExperimentNodes(data.nodes)
         
-        // Initialize node order for each block type
-        const initialNodeOrder: Record<string, string[]> = {}
-        data.nodes.forEach((node: ExperimentNode) => {
-          if (!initialNodeOrder[node.type]) {
-            initialNodeOrder[node.type] = []
-          }
-          initialNodeOrder[node.type].push(node.id)
-        })
-        setNodeOrder(initialNodeOrder)
+        // Node order is now handled by position field, no need for nodeOrder state
         
         // Select the first node if available
         if (data.nodes.length > 0) {
@@ -777,11 +833,17 @@ export default function SimpleExperimentTreePage() {
       // Use target block if specified, otherwise use the provided nodeType
       const actualNodeType = targetBlockForNewNode || nodeType
       
+      // Calculate next position for this specific block
+      const nodesInBlock = experimentNodes.filter(n => n.type === actualNodeType)
+      const nextPosition = nodesInBlock.length > 0 
+        ? Math.max(...nodesInBlock.map(n => n.position)) + 1 
+        : 1
+      
       const requestData = {
         name,
         description,
         node_type: actualNodeType,
-        position: experimentNodes.length + 1, // Add at the end
+        position: nextPosition,
         content: '' // Empty content initially
       }
       
@@ -832,14 +894,7 @@ export default function SimpleExperimentTreePage() {
         setExperimentNodes(nodesData.nodes)
         
         // Initialize node order for each block type
-        const initialNodeOrder: Record<string, string[]> = {}
-        nodesData.nodes.forEach((node: ExperimentNode) => {
-          if (!initialNodeOrder[node.type]) {
-            initialNodeOrder[node.type] = []
-          }
-          initialNodeOrder[node.type].push(node.id)
-        })
-        setNodeOrder(initialNodeOrder)
+        // Node order is now handled by position field, no need for nodeOrder state
         
         // Select the new node
         setSelectedNodeId(data.node.id)
@@ -856,20 +911,26 @@ export default function SimpleExperimentTreePage() {
   }
 
   // Edit node
-  const editNode = async (nodeId: string, name: string, description: string, nodeType: string, content?: string) => {
+  const editNode = async (nodeId: string, name: string, description: string, nodeType: string) => {
     try {
       setEditing(true)
+      
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
       
       const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim(),
-          node_type: nodeType,
-          content: content || ''
+          node_type: nodeType
         })
       })
       
@@ -881,7 +942,7 @@ export default function SimpleExperimentTreePage() {
       // Refresh the nodes list by updating the state
       setExperimentNodes(prev => prev.map(node => 
         node.id === nodeId 
-          ? { ...node, title: name, description, type: nodeType, content: content || '' }
+          ? { ...node, title: name, description, type: nodeType }
           : node
       ))
       setShowEditForm(false)
@@ -910,10 +971,17 @@ export default function SimpleExperimentTreePage() {
     if (!selectedNode) return
     
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           name: selectedNode.title,
@@ -948,10 +1016,17 @@ export default function SimpleExperimentTreePage() {
     if (!selectedNode) return
     
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/attachments`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           name,
@@ -984,10 +1059,17 @@ export default function SimpleExperimentTreePage() {
     if (!selectedNode) return
     
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/attachments/${attachmentId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           name,
@@ -1025,8 +1107,17 @@ export default function SimpleExperimentTreePage() {
     if (!selectedNode) return
     
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/attachments/${attachmentId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
       })
       
       if (!response.ok) {
@@ -1053,10 +1144,17 @@ export default function SimpleExperimentTreePage() {
     if (!selectedNode) return
     
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/links`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           name,
@@ -1088,10 +1186,17 @@ export default function SimpleExperimentTreePage() {
     if (!selectedNode) return
     
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/links/${linkId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           name,
@@ -1128,8 +1233,17 @@ export default function SimpleExperimentTreePage() {
     if (!selectedNode) return
     
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/links/${linkId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
       })
       
       if (!response.ok) {
@@ -1168,10 +1282,70 @@ export default function SimpleExperimentTreePage() {
     if (!selectedNode) return
     
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
+      // Check if position changed and handle repositioning
+      const positionChanged = selectedNode.position !== newPosition
+      const typeChanged = selectedNode.type !== newType
+      
+      if (positionChanged || typeChanged) {
+        // Get all nodes in the current block (before type change)
+        const currentBlockNodes = experimentNodes
+          .filter(n => n.type === selectedNode.type)
+          .sort((a, b) => a.position - b.position)
+        
+        // If type changed, also get nodes in the new block
+        const targetBlockNodes = typeChanged 
+          ? experimentNodes.filter(n => n.type === newType).sort((a, b) => a.position - b.position)
+          : currentBlockNodes
+        
+        // Calculate new positions for all affected nodes
+        const positionUpdates: {nodeId: string, position: number}[] = []
+        
+        if (typeChanged) {
+          // Moving to different block - remove from old block and add to new block
+          
+          // Re-index old block (remove gaps)
+          currentBlockNodes
+            .filter(n => n.id !== selectedNode.id)
+            .forEach((node, index) => {
+              positionUpdates.push({ nodeId: node.id, position: index + 1 })
+            })
+          
+          // Add to new block at specified position
+          const newBlockWithNode = [...targetBlockNodes]
+          newBlockWithNode.splice(Math.max(0, newPosition - 1), 0, selectedNode)
+          
+          // Re-index new block
+          newBlockWithNode.forEach((node, index) => {
+            positionUpdates.push({ nodeId: node.id, position: index + 1 })
+          })
+        } else {
+          // Same block, just repositioning
+          const nodesWithoutSelected = currentBlockNodes.filter(n => n.id !== selectedNode.id)
+          const newOrder = [...nodesWithoutSelected]
+          newOrder.splice(Math.max(0, newPosition - 1), 0, selectedNode)
+          
+          // Re-index all nodes in the block
+          newOrder.forEach((node, index) => {
+            positionUpdates.push({ nodeId: node.id, position: index + 1 })
+          })
+        }
+        
+        // Update all positions in database
+        await updateNodePositions(positionUpdates)
+      }
+      
+      // Update the main node data
       const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           name: selectedNode.title,
@@ -1188,22 +1362,29 @@ export default function SimpleExperimentTreePage() {
       }
       
       // Update local state
-      setExperimentNodes(prev => prev.map(node => 
-        node.id === selectedNode.id 
-          ? { 
-              ...node, 
+      setExperimentNodes(prev => prev.map(node => {
+        const positionUpdate = positionChanged || typeChanged 
+          ? positionUpdates.find(u => u.nodeId === node.id)
+          : null
+        
+        if (node.id === selectedNode.id) {
+          return {
+            ...node,
+            type: newType,
+            status: newStatus,
+            position: newPosition,
+            metadata: {
+              ...node.metadata,
               type: newType,
-              status: newStatus,
               position: newPosition,
-              metadata: {
-                ...node.metadata,
-                type: newType,
-                position: newPosition,
-                updated: new Date().toISOString()
-              }
+              updated: new Date().toISOString()
             }
-          : node
-      ))
+          }
+        } else if (positionUpdate) {
+          return { ...node, position: positionUpdate.position }
+        }
+        return node
+      }))
       
       setEditingMetadata(false)
       setTempMetadata(null)
@@ -1220,8 +1401,17 @@ export default function SimpleExperimentTreePage() {
     }
 
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
       const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
       })
 
       if (!response.ok) {
@@ -1355,10 +1545,10 @@ export default function SimpleExperimentTreePage() {
                     )}
                     <div className="flex items-center space-x-4">
                       <Badge variant="outline" className={
-                        treeInfo.status === 'active' ? 'bg-green-100 text-green-800' :
-                        treeInfo.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                        treeInfo.status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                        'bg-orange-100 text-orange-800'
+                        treeInfo.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                        treeInfo.status === 'completed' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                        treeInfo.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200' :
+                        'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
                       }>
                         {treeInfo.status}
                       </Badge>
@@ -1421,7 +1611,7 @@ export default function SimpleExperimentTreePage() {
                           case 'completed': return 'bg-green-500'
                           case 'in-progress': return 'bg-orange-500'
                           case 'pending': return 'bg-gray-400'
-                          default: return 'bg-blue-500'
+                          default: return 'bg-blue-500 dark:bg-blue-400'
                         }
                       }
                       
@@ -1441,7 +1631,7 @@ export default function SimpleExperimentTreePage() {
                           } ${
                             draggedItem?.type === 'block' && draggedItem.id === nodeType ? 'opacity-50' : ''
                           } ${
-                            dragOverItem?.type === 'block' && dragOverItem.id === nodeType ? 'border-blue-500 bg-blue-50' : ''
+                            dragOverItem?.type === 'block' && dragOverItem.id === nodeType ? 'border-primary bg-primary/10' : ''
                           }`}
                         >
                           {/* Block Header */}
@@ -1514,10 +1704,10 @@ export default function SimpleExperimentTreePage() {
                           {/* Block Content */}
                           {!isCollapsed && (
                             <div className="p-3 space-y-2">
-                              {(nodeOrder[nodeType] ? 
-                                nodeOrder[nodeType].map(nodeId => nodes.find(n => n.id === nodeId)).filter((node): node is ExperimentNode => node !== undefined) :
-                                nodes
-                              ).map((node) => {
+                              {nodes
+                                .filter(node => node.type === nodeType)
+                                .sort((a, b) => a.position - b.position)
+                                .map((node) => {
                                 const isSelected = selectedNodeId === node.id
                                 
                                 return (
@@ -1537,7 +1727,7 @@ export default function SimpleExperimentTreePage() {
                                     } ${
                                       draggedItem?.type === 'node' && draggedItem.id === node.id ? 'opacity-50' : ''
                                     } ${
-                                      dragOverItem?.type === 'node' && dragOverItem.id === node.id ? 'border-blue-500 bg-blue-50' : ''
+                                      dragOverItem?.type === 'node' && dragOverItem.id === node.id ? 'border-primary bg-primary/10' : ''
                                     }`}
                                   >
                                     <div className="flex items-center justify-between">
@@ -1560,6 +1750,7 @@ export default function SimpleExperimentTreePage() {
                                             className="h-6 w-6 p-0"
                                             onClick={(e) => {
                                               e.stopPropagation()
+                                              setSelectedNodeId(node.id)
                                               setShowEditForm(true)
                                             }}
                                             title="Edit Node"
@@ -2026,8 +2217,8 @@ export default function SimpleExperimentTreePage() {
             <h3 className="text-lg font-semibold mb-4">Edit Node</h3>
             <EditNodeForm
               node={selectedNode}
-              onSubmit={(name, description, nodeType, content) => 
-                editNode(selectedNode.id, name, description, nodeType, content)
+              onSubmit={(name, description, nodeType) => 
+                editNode(selectedNode.id, name, description, nodeType)
               }
               onCancel={() => setShowEditForm(false)}
               loading={editing}
@@ -2169,7 +2360,11 @@ export default function SimpleExperimentTreePage() {
                   
                   // Refresh blocks from API instead of updating local state
                   // This prevents duplicates and ensures consistency
-                  const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
+                  const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`, {
+                    headers: {
+                      'Authorization': `Bearer ${session?.access_token}`
+                    }
+                  })
                   if (blocksResponse.ok) {
                     const blocksData = await blocksResponse.json()
                     setCustomBlocks(blocksData.treeBlocks || [])
@@ -2201,17 +2396,26 @@ export default function SimpleExperimentTreePage() {
             <h3 className="text-lg font-semibold mb-4">Edit Block</h3>
             <EditBlockForm
               blockType={editingBlockType}
-              onSubmit={async (newBlockName) => {
+              currentBlock={customBlocks.find(block => block.id === editingBlockType)}
+              onSubmit={async (newBlockName, newBlockType) => {
                 try {
                   if (!editingBlockType) return
+
+                  // Get the current session token
+                  const { data: { session } } = await supabase.auth.getSession()
+                  if (!session?.access_token) {
+                    throw new Error('No authentication token available')
+                  }
 
                   const response = await fetch(`/api/trees/${treeId}/blocks/${editingBlockType}`, {
                     method: 'PUT',
                     headers: {
                       'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${session.access_token}`
                     },
                     body: JSON.stringify({
-                      name: newBlockName
+                      name: newBlockName,
+                      blockType: newBlockType
                     }),
                   })
 
@@ -2220,7 +2424,11 @@ export default function SimpleExperimentTreePage() {
                   }
 
                   // Refresh blocks from API instead of updating local state
-                  const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`)
+                  const blocksResponse = await fetch(`/api/trees/${treeId}/blocks`, {
+                    headers: {
+                      'Authorization': `Bearer ${session?.access_token}`
+                    }
+                  })
                   if (blocksResponse.ok) {
                     const blocksData = await blocksResponse.json()
                     setCustomBlocks(blocksData.treeBlocks || [])
@@ -2307,7 +2515,7 @@ function CreateNodeForm({
         >
           <option value="protocol">Protocol</option>
           <option value="analysis">Analysis</option>
-          <option value="data_collection">Data Collection</option>
+          <option value="data_creation">Data Creation</option>
           <option value="results">Results</option>
         </select>
       </div>
@@ -2331,19 +2539,18 @@ function EditNodeForm({
   loading 
 }: { 
   node: ExperimentNode
-  onSubmit: (name: string, description: string, nodeType: string, content: string) => void
+  onSubmit: (name: string, description: string, nodeType: string) => void
   onCancel: () => void
   loading: boolean
 }) {
   const [name, setName] = useState(node.title)
   const [description, setDescription] = useState(node.description)
   const [nodeType, setNodeType] = useState(node.type)
-  const [content, setContent] = useState(node.content)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (name.trim()) {
-      onSubmit(name.trim(), description.trim(), nodeType, content)
+      onSubmit(name.trim(), description.trim(), nodeType)
     }
   }
 
@@ -2381,20 +2588,9 @@ function EditNodeForm({
         >
           <option value="protocol">Protocol</option>
           <option value="analysis">Analysis</option>
-          <option value="data_collection">Data Collection</option>
+          <option value="data_creation">Data Creation</option>
           <option value="results">Results</option>
         </select>
-      </div>
-      
-      <div>
-        <label className="block text-sm font-medium mb-2">Content</label>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Enter node content"
-          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-          rows={4}
-        />
       </div>
       
       <div className="flex space-x-3 pt-4">
@@ -2440,7 +2636,7 @@ function MetadataEditForm({
         >
           <option value="protocol">Protocol</option>
           <option value="analysis">Analysis</option>
-          <option value="data_collection">Data Collection</option>
+          <option value="data_creation">Data Creation</option>
           <option value="results">Results</option>
         </select>
       </div>
@@ -3036,19 +3232,23 @@ function AddBlockForm({
 // Edit Block Form Component
 function EditBlockForm({ 
   blockType,
+  currentBlock,
   onSubmit, 
   onCancel
 }: { 
   blockType: string
-  onSubmit: (newBlockName: string) => void
+  currentBlock?: { id: string, name: string, block_type: string, position: number }
+  onSubmit: (newBlockName: string, newBlockType: string) => void
   onCancel: () => void
 }) {
-  const [newBlockName, setNewBlockName] = useState('')
+  // Pre-fill form with current block data
+  const [newBlockName, setNewBlockName] = useState(currentBlock?.name || '')
+  const [newBlockType, setNewBlockType] = useState(currentBlock?.block_type || 'custom')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (newBlockName.trim()) {
-      onSubmit(newBlockName.trim())
+      onSubmit(newBlockName.trim(), newBlockType)
     }
   }
 
@@ -3060,10 +3260,25 @@ function EditBlockForm({
           type="text"
           value={newBlockName}
           onChange={(e) => setNewBlockName(e.target.value)}
-          placeholder="Enter new block name"
+          placeholder="Enter block name"
           className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
           required
         />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Block Type</label>
+        <select
+          value={newBlockType}
+          onChange={(e) => setNewBlockType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="protocol">Protocol</option>
+          <option value="analysis">Analysis</option>
+          <option value="data_creation">Data Creation</option>
+          <option value="results">Results</option>
+          <option value="custom">Custom</option>
+        </select>
       </div>
       
       <div className="flex space-x-3 pt-4">

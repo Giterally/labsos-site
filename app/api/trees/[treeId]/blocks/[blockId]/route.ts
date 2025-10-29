@@ -9,7 +9,7 @@ export async function PUT(
   try {
     const { treeId, blockId } = await params
     const body = await request.json()
-    const { name, position } = body
+    const { name, position, blockType } = body
 
     // Authenticate the request
     let authContext: AuthContext
@@ -52,6 +52,10 @@ export async function PUT(
     
     if (position !== undefined) {
       updateData.position = position
+    }
+    
+    if (blockType !== undefined) {
+      updateData.block_type = blockType
     }
 
     const { data: updatedBlock, error: updateError } = await supabase

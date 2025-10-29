@@ -139,6 +139,7 @@ export async function POST(
         tree_id: treeId,
         name,
         description: `${blockType} block`,
+        block_type: blockType,
         position: nextPosition
       })
       .select()

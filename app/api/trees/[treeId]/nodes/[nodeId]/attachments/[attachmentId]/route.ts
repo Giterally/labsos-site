@@ -1,21 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { treeId: string; nodeId: string; attachmentId: string } }
+  { params }: { params: Promise<{ treeId: string; nodeId: string; attachmentId: string }> }
 ) {
   try {
-    const { attachmentId } = params
+    const { treeId, nodeId, attachmentId } = await params
     const body = await request.json()
     const { name, file_type, file_size, file_url, description } = body
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    if (!name || !file_type || !file_url) {
+      return NextResponse.json({ error: 'Name, file type, and file URL are required' }, { status: 400 })
+    }
+
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
+      return NextResponse.json(
+        { message: 'Authentication failed' },
+        { status: 401 }
+      )
+    }
+
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
+
+    // Check tree permissions - only members can edit attachments
+    const permissions = await permissionService.checkTreeAccess(treeId)
+    
+    if (!permissions.canWrite) {
+      return NextResponse.json(
+        { message: 'You do not have permission to edit attachments in this experiment tree' },
+        { status: 403 }
+      )
+    }
 
     // Update the attachment
     const { data: updatedAttachment, error: attachmentError } = await supabase
@@ -46,14 +76,42 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { treeId: string; nodeId: string; attachmentId: string } }
+  { params }: { params: Promise<{ treeId: string; nodeId: string; attachmentId: string }> }
 ) {
   try {
-    const { attachmentId } = params
+    const { treeId, nodeId, attachmentId } = await params
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
+      return NextResponse.json(
+        { message: 'Authentication failed' },
+        { status: 401 }
+      )
+    }
+
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
+
+    // Check tree permissions - only members can delete attachments
+    const permissions = await permissionService.checkTreeAccess(treeId)
+    
+    if (!permissions.canWrite) {
+      return NextResponse.json(
+        { message: 'You do not have permission to delete attachments in this experiment tree' },
+        { status: 403 }
+      )
+    }
 
     // Delete the attachment
     const { error: attachmentError } = await supabase
