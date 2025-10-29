@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       // Add role information to member projects
       memberProjectsWithRoles = memberProjects.map(project => ({
         ...project,
-        user_role: roleMap.get(project.id) || 'Team Member'
+        user_role: 'Admin'
       }))
     }
 
