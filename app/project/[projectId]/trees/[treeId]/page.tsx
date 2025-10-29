@@ -2136,6 +2136,7 @@ export default function SimpleExperimentTreePage() {
                           <MetadataEditForm
                             metadata={tempMetadata}
                             status={selectedNode.status}
+                            experimentNodes={experimentNodes}
                             onSave={saveMetadata}
                             onCancel={cancelEditingMetadata}
                           />
@@ -2608,11 +2609,13 @@ function EditNodeForm({
 function MetadataEditForm({ 
   metadata,
   status,
+  experimentNodes,
   onSave, 
   onCancel
 }: { 
   metadata: ExperimentNode['metadata']
   status: string
+  experimentNodes: ExperimentNode[]
   onSave: (type: string, position: number, status: string) => void
   onCancel: () => void
 }) {
