@@ -64,14 +64,14 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
               variant="ghost"
               size="lg"
               onClick={() => router.push("/")}
-              className="flex items-center space-x-3 px-4 py-3"
+              className="flex items-center space-x-3 px-4 py-4"
             >
               <Image
                 src="/olvaro-fin.png"
                 alt="Olvaro Logo"
                 width={64}
                 height={64}
-                className="h-16 w-16"
+                className="h-16 w-16 mt-1"
               />
               <span className="font-bold text-xl">Olvaro</span>
             </Button>

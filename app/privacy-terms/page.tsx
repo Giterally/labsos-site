@@ -1,25 +1,33 @@
+"use client"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import Image from "next/image"
 import { ArrowLeftIcon } from "@heroicons/react/24/outline"
+import { useUser } from "@/lib/user-context"
 
 export default function PrivacyTermsPage() {
+  const { user, loading } = useUser()
+  const isAuthenticated = !loading && !!user
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Image
-              src="/olvaro-fin.png"
-              alt="Olvaro Logo"
-              width={32}
-              height={32}
-              className="h-8 w-8"
-            />
-            <span className="text-2xl font-bold text-foreground">Olvaro</span>
-          </div>
+      <header className={`border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky z-20 ${isAuthenticated ? 'top-20' : 'top-0'}`}>
+        <div className="container mx-auto px-4 h-20 flex items-center justify-between">
+          {!isAuthenticated && (
+            <div className="flex items-center space-x-2">
+              <Image
+                src="/olvaro-fin.png"
+                alt="Olvaro Logo"
+                width={32}
+                height={32}
+                className="h-8 w-8"
+              />
+              <span className="text-2xl font-bold text-foreground">Olvaro</span>
+            </div>
+          )}
           <Link href="/">
             <Button variant="outline" className="flex items-center space-x-2">
               <ArrowLeftIcon className="h-4 w-4" />
