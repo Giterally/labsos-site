@@ -120,6 +120,13 @@ export default function ResearcherProfilePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showPublicationForm, setShowPublicationForm] = useState(false)
   const [editingPublication, setEditingPublication] = useState<Publication | null>(null)
+  
+  // Delete profile state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [deleteStats, setDeleteStats] = useState<{soloProjects: number, publications: number, trees: number} | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteSuccess, setShowDeleteSuccess] = useState(false)
 
   useEffect(() => {
     // Check if this is the user's own profile
@@ -184,6 +191,81 @@ export default function ResearcherProfilePage() {
       setFilteredPublications(researcher.publications || [])
     }
   }, [researcher])
+
+  // Calculate delete statistics when dialog opens
+  useEffect(() => {
+    if (showDeleteDialog && isOwnProfile && researcherId) {
+      const calculateStats = async () => {
+        try {
+          const { data: session } = await supabase.auth.getSession()
+          if (!session?.session?.access_token) return
+
+          // Get user's project memberships
+          const response = await fetch(`/api/researcher/${researcherId}`)
+          if (!response.ok) return
+
+          const { researcher: profileData } = await response.json()
+          
+          // Get projects where user is a member
+          const { data: projectMemberships } = await supabase
+            .from('project_members')
+            .select('project_id, left_at')
+            .eq('user_id', researcherId)
+            .is('left_at', null)
+
+          if (!projectMemberships || projectMemberships.length === 0) {
+            setDeleteStats({
+              soloProjects: 0,
+              publications: profileData.publications?.length || 0,
+              trees: 0
+            })
+            return
+          }
+
+          const projectIds = projectMemberships.map(pm => pm.project_id)
+
+          // Get all members for these projects
+          const { data: allMembers } = await supabase
+            .from('project_members')
+            .select('project_id, user_id, left_at')
+            .in('project_id', projectIds)
+
+          // Count active members per project
+          const projectMemberCounts = new Map<string, number>()
+          allMembers?.forEach(member => {
+            if (!member.left_at) {
+              const count = projectMemberCounts.get(member.project_id) || 0
+              projectMemberCounts.set(member.project_id, count + 1)
+            }
+          })
+
+          // Find solo projects (only 1 active member)
+          let soloProjectsCount = 0
+          projectMemberCounts.forEach((count) => {
+            if (count === 1) {
+              soloProjectsCount++
+            }
+          })
+
+          setDeleteStats({
+            soloProjects: soloProjectsCount,
+            publications: profileData.publications?.length || 0,
+            trees: 0 // Can be enhanced later if needed
+          })
+        } catch (error) {
+          console.error('Error calculating delete stats:', error)
+          // Set default stats on error
+          setDeleteStats({
+            soloProjects: 0,
+            publications: researcher?.publications?.length || 0,
+            trees: 0
+          })
+        }
+      }
+
+      calculateStats()
+    }
+  }, [showDeleteDialog, isOwnProfile, researcherId, researcher?.publications?.length])
 
   const handleEditToggle = () => {
     if (isEditing) {
@@ -391,6 +473,48 @@ export default function ResearcherProfilePage() {
     await fetchResearcher()
     setShowPublicationForm(false)
     setEditingPublication(null)
+  }
+
+  const handleDeleteProfile = async () => {
+    setIsDeleting(true)
+    
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      if (!session?.session?.access_token) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch('/api/profile/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`
+        },
+        body: JSON.stringify({
+          confirmationText: deleteConfirmation
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete profile')
+      }
+
+      // Show success message and redirect
+      setShowDeleteDialog(false)
+      setShowDeleteSuccess(true)
+      
+      // Sign out and redirect after 3 seconds
+      setTimeout(async () => {
+        await supabase.auth.signOut()
+        router.push('/')
+      }, 3000)
+      
+    } catch (error) {
+      console.error('Error deleting profile:', error)
+      alert(error instanceof Error ? error.message : 'Failed to delete profile')
+      setIsDeleting(false)
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -684,6 +808,20 @@ export default function ResearcherProfilePage() {
                           </Button>
                         </div>
                       )}
+                    </div>
+                  )}
+                  
+                  {/* Delete Profile Button - Only show for own profile */}
+                  {isOwnProfile && !isEditing && (
+                    <div className="pt-4 border-t">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full text-gray-600 hover:bg-gray-100"
+                        onClick={() => setShowDeleteDialog(true)}
+                      >
+                        Delete Profile
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -1049,6 +1187,90 @@ export default function ResearcherProfilePage() {
           </div>
         </div>
       </main>
+      
+      {/* Delete Profile Dialog */}
+      {showDeleteDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full">
+            <CardHeader>
+              <CardTitle className="text-red-600">⚠️ Delete Profile</CardTitle>
+              <CardDescription>
+                This action cannot be undone.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="text-sm space-y-2">
+                <p className="font-semibold">This will permanently delete:</p>
+                <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                  <li>Your profile information</li>
+                  <li>All projects where you are the only member ({deleteStats?.soloProjects || 0} projects)</li>
+                  <li>All your publications ({researcher?.publications?.length || 0} publications)</li>
+                  <li>All your experiment trees and data from solo projects</li>
+                </ul>
+                <p className="text-sm pt-2">
+                  You will be removed from collaborative projects but they will remain active.
+                </p>
+                <p className="text-sm text-muted-foreground italic pt-2">
+                  Note: Data export feature will be available soon.
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="deleteConfirmation">
+                  Type <span className="font-bold">DELETE</span> to confirm:
+                </Label>
+                <Input
+                  id="deleteConfirmation"
+                  value={deleteConfirmation}
+                  onChange={(e) => setDeleteConfirmation(e.target.value)}
+                  placeholder="DELETE"
+                  className="font-mono"
+                />
+              </div>
+              
+              <div className="flex space-x-2">
+                <Button 
+                  variant="destructive" 
+                  className="flex-1"
+                  onClick={handleDeleteProfile}
+                  disabled={deleteConfirmation !== 'DELETE' || isDeleting}
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete Profile'}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    setShowDeleteDialog(false)
+                    setDeleteConfirmation('')
+                  }}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Success Message */}
+      {showDeleteSuccess && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full">
+            <CardContent className="pt-6 text-center space-y-4">
+              <CheckIcon className="h-16 w-16 mx-auto text-green-500" />
+              <h2 className="text-2xl font-bold">Account Deleted</h2>
+              <p className="text-muted-foreground">
+                Your profile has been permanently deleted. Redirecting to home page...
+              </p>
+              <p className="text-sm text-muted-foreground pt-2 border-t">
+                Note: You can sign up again with the same email address after 1-2 minutes.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
