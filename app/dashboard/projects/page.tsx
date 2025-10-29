@@ -20,7 +20,6 @@ import {
   BellIcon,
   Cog6ToothIcon,
   ArrowLeftIcon,
-  EllipsisVerticalIcon,
 } from "@heroicons/react/24/outline"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
@@ -222,9 +221,6 @@ export default function ProjectsPage() {
                   <CardHeader className="pb-4">
                     <div className="flex items-start justify-between">
                       <div className={`w-4 h-4 rounded-full ${project.color} mt-1`}></div>
-                      <Button variant="ghost" size="sm">
-                        <EllipsisVerticalIcon className="h-4 w-4" />
-                      </Button>
                     </div>
                     <CardTitle className="text-xl">{project.name}</CardTitle>
                     <CardDescription className="line-clamp-2">{project.description}</CardDescription>
