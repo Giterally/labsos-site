@@ -217,17 +217,19 @@ export default function KnowledgeCaptureLanding() {
       </Suspense>
       {/* Header */}
       <header className={`border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky z-20 ${isAuthenticated ? 'top-20' : 'top-0'}`}>
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Image
-              src="/olvaro-fin.png"
-              alt="Olvaro Logo"
-              width={isAuthenticated ? 80 : 64}
-              height={isAuthenticated ? 80 : 64}
-              className={isAuthenticated ? "h-20 w-20" : "h-16 w-16"}
-            />
-            <span className={isAuthenticated ? "text-3xl font-bold text-foreground" : "text-2xl font-bold text-foreground"}>Olvaro</span>
-          </div>
+        <div className="container mx-auto px-4 h-20 flex items-center justify-between">
+          {!isAuthenticated && (
+            <div className="flex items-center space-x-2">
+              <Image
+                src="/olvaro-fin.png"
+                alt="Olvaro Logo"
+                width={64}
+                height={64}
+                className="h-16 w-16"
+              />
+              <span className="text-2xl font-bold text-foreground">Olvaro</span>
+            </div>
+          )}
           <nav className="hidden md:flex items-center space-x-6">
             <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
               Features
