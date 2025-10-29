@@ -2171,7 +2171,7 @@ export default function SimpleExperimentTreePage() {
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Position:</span>
-                                    <span>{selectedNode.metadata.position}</span>
+                                    <span>{selectedNode.position}</span>
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Status:</span>
