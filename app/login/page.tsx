@@ -68,15 +68,7 @@ export default function LoginPage() {
     }
 
     if (isSignUp) {
-      // Store additional profile data for after email verification
-      const profileData = {
-        full_name: fullName,
-        institution: institution,
-        field_of_study: fieldOfStudy
-      }
-      localStorage.setItem('pendingProfileData', JSON.stringify(profileData))
-      
-      const { error: signUpError } = await signUp(email, password, fullName)
+      const { error: signUpError } = await signUp(email, password, fullName, institution, fieldOfStudy)
       
       console.log('SignUp result:', { signUpError, email })
       

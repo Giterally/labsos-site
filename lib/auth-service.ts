@@ -41,7 +41,7 @@ export async function checkEmailExists(email: string): Promise<{
 }
 
 // Sign up with email and password
-export async function signUp(email: string, password: string, fullName?: string) {
+export async function signUp(email: string, password: string, fullName?: string, institution?: string, department?: string) {
   // Check if email already exists
   const emailStatus = await checkEmailExists(email)
   
@@ -69,7 +69,9 @@ export async function signUp(email: string, password: string, fullName?: string)
     password,
     options: {
       data: {
-        name: fullName
+        name: fullName,
+        institution: institution,
+        department: department
       },
       emailRedirectTo: 'https://olvaro.net/auth/callback'
     }

@@ -28,44 +28,15 @@ export default function AuthCallbackPage() {
         if (data.session?.user) {
             // Check if email is verified
             if (data.session.user.email_confirmed_at) {
-              // Email is verified, create profile if we have pending data
-              const pendingProfileData = localStorage.getItem('pendingProfileData')
-              if (pendingProfileData) {
-                try {
-                  const profileData = JSON.parse(pendingProfileData)
-                  
-                  // Update profile in profiles table (profile already exists from trigger)
-                  const { error: profileError } = await supabase
-                    .from('profiles')
-                    .upsert({
-                      id: data.session.user.id,
-                      email: data.session.user.email,
-                      full_name: profileData.full_name,
-                      lab_name: profileData.institution,
-                      institution: profileData.institution,
-                      department: profileData.field_of_study,
-                      updated_at: new Date().toISOString()
-                    })
-
-                  if (profileError) {
-                    console.error('Profile creation error:', profileError)
-                  }
-
-                  // Clear pending profile data
-                  localStorage.removeItem('pendingProfileData')
-                } catch (error) {
-                  console.error('Error creating profile:', error)
-                }
-              }
-
-            setStatus('success')
-            setMessage('Email verified successfully! Redirecting to dashboard...')
-            
-            // Redirect to dashboard after 2 seconds
-            setTimeout(() => {
-              router.push('/dashboard')
-            }, 2000)
-          } else {
+              // Email is verified, profile is automatically created by database trigger
+              setStatus('success')
+              setMessage('Email verified successfully! Redirecting to dashboard...')
+              
+              // Redirect to dashboard after 2 seconds
+              setTimeout(() => {
+                router.push('/dashboard')
+              }, 2000)
+            } else {
             setStatus('error')
             setMessage('Email not verified. Please check your email and try again.')
           }
