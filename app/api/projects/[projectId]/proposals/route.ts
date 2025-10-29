@@ -244,7 +244,7 @@ export async function GET(
           .insert({
             project_id: actualProjectId,
             user_id: user.id,
-            role: 'Lead Researcher',
+            role: 'Admin',
             initials: user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U',
             joined_at: new Date().toISOString()
           });
