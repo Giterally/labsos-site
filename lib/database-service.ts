@@ -306,7 +306,6 @@ export async function updateProject(projectId: string, updates: Partial<Project>
     .from('projects')
     .update({
       ...updates,
-      updated_at: new Date().toISOString()
     })
     .eq('id', projectId)
     .eq('created_by', user.id)

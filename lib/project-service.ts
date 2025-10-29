@@ -83,7 +83,6 @@ export async function updateProject(projectData: UpdateProjectData): Promise<Pro
     .from('projects')
     .update({
       ...projectData,
-      updated_at: new Date().toISOString()
     })
     .eq('id', projectData.id)
     .eq('created_by', user.id) // Ensure user owns the project

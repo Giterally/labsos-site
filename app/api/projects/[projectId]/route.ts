@@ -178,7 +178,6 @@ export async function PUT(
         department,
         status,
         visibility,
-        updated_at: new Date().toISOString()
       })
       .eq('id', projectId)
       .select()
