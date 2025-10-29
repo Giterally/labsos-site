@@ -20,6 +20,7 @@ interface ExperimentTree {
   status: string
   category: string
   node_count: number
+  block_count: number
 }
 
 interface Software {
@@ -401,7 +402,7 @@ export default function SimpleProjectPage() {
   }, [projectId])
 
   // Create new experiment tree
-  const createExperimentTree = async (name: string, description: string, category: string) => {
+  const createExperimentTree = async (name: string, description: string, status: string) => {
     try {
       setCreating(true)
       
@@ -415,8 +416,7 @@ export default function SimpleProjectPage() {
         body: JSON.stringify({
           name,
           description,
-          category,
-          status: 'draft'
+          status
         }),
       })
 
@@ -440,7 +440,7 @@ export default function SimpleProjectPage() {
   }
 
   // Edit experiment tree
-  const editExperimentTree = async (treeId: string, name: string, description: string, category: string) => {
+  const editExperimentTree = async (treeId: string, name: string, description: string, status: string) => {
     try {
       setEditing(true)
       
@@ -461,7 +461,7 @@ export default function SimpleProjectPage() {
         body: JSON.stringify({
           name,
           description,
-          category
+          status
         }),
       })
 
@@ -475,7 +475,7 @@ export default function SimpleProjectPage() {
 
       const data = await response.json()
       setExperimentTrees(prev => prev.map(tree => 
-        tree.id === treeId ? { ...tree, name, description, category } : tree
+        tree.id === treeId ? { ...tree, name, description, status } : tree
       ))
       setShowEditForm(false)
       setEditingTree(null)
@@ -1097,6 +1097,7 @@ export default function SimpleProjectPage() {
                                <p className="text-sm text-muted-foreground">{tree.description}</p>
                                <div className="flex items-center space-x-4 mt-2">
                                  <Badge variant="outline">{tree.node_count} nodes</Badge>
+                                 <Badge variant="outline">{tree.block_count} blocks</Badge>
                                  <Badge variant="outline" className={
                                    tree.status === 'active' ? 'bg-green-100 text-green-800' :
                                    tree.status === 'completed' ? 'bg-blue-100 text-blue-800' :
@@ -1681,18 +1682,18 @@ function CreateTreeForm({
   onCancel, 
   loading 
 }: { 
-  onSubmit: (name: string, description: string, category: string) => void
+  onSubmit: (name: string, description: string, status: string) => void
   onCancel: () => void
   loading: boolean
 }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('protocol')
+  const [status, setStatus] = useState('draft')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (name.trim()) {
-      onSubmit(name.trim(), description.trim(), category)
+      onSubmit(name.trim(), description.trim(), status)
     }
   }
 
@@ -1722,16 +1723,16 @@ function CreateTreeForm({
       </div>
       
       <div className="space-y-2">
-        <label className="text-sm font-medium">Category</label>
+        <label className="text-sm font-medium">Status</label>
         <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
         >
-          <option value="protocol">Protocol</option>
-          <option value="analysis">Analysis</option>
-          <option value="data_collection">Data Collection</option>
-          <option value="results">Results</option>
+          <option value="draft">Draft</option>
+          <option value="active">Active</option>
+          <option value="completed">Completed</option>
+          <option value="archived">Archived</option>
         </select>
       </div>
       
@@ -1755,18 +1756,18 @@ function EditTreeForm({
   loading 
 }: { 
   tree: ExperimentTree
-  onSubmit: (treeId: string, name: string, description: string, category: string) => void
+  onSubmit: (treeId: string, name: string, description: string, status: string) => void
   onCancel: () => void
   loading: boolean
 }) {
   const [name, setName] = useState(tree.name)
   const [description, setDescription] = useState(tree.description || '')
-  const [category, setCategory] = useState(tree.category)
+  const [status, setStatus] = useState(tree.status)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (name.trim()) {
-      onSubmit(tree.id, name.trim(), description.trim(), category)
+      onSubmit(tree.id, name.trim(), description.trim(), status)
     }
   }
 
@@ -1796,16 +1797,16 @@ function EditTreeForm({
       </div>
       
       <div className="space-y-2">
-        <label className="text-sm font-medium">Category</label>
+        <label className="text-sm font-medium">Status</label>
         <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
         >
-          <option value="protocol">Protocol</option>
-          <option value="analysis">Analysis</option>
-          <option value="data_collection">Data Collection</option>
-          <option value="results">Results</option>
+          <option value="draft">Draft</option>
+          <option value="active">Active</option>
+          <option value="completed">Completed</option>
+          <option value="archived">Archived</option>
         </select>
       </div>
       

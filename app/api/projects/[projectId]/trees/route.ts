@@ -34,7 +34,7 @@ export async function GET(
       }
     }
 
-    // Get experiment trees for the project
+    // Get experiment trees for the project with real-time counts
     const { data: trees, error: treesError } = await supabase
       .from('experiment_trees')
       .select(`
@@ -44,8 +44,15 @@ export async function GET(
         status,
         category,
         node_count,
+        node_types,
         created_at,
-        updated_at
+        updated_at,
+        tree_blocks(
+          id
+        ),
+        tree_nodes(
+          id
+        )
       `)
       .eq('project_id', actualProjectId)
       .order('created_at', { ascending: false })
@@ -58,7 +65,27 @@ export async function GET(
       }, { status: 500 })
     }
 
-    return NextResponse.json({ trees })
+    // Calculate both node count and block count in real-time
+    const treesWithRealTimeCounts = trees?.map(tree => {
+      // Count actual nodes from the tree_nodes table
+      const nodeCount = tree.tree_nodes?.length || 0
+      
+      // Count actual blocks from the tree_blocks table
+      const blockCount = tree.tree_blocks?.length || 0
+      
+      console.log(`Tree "${tree.name}": real-time node_count=${nodeCount}, block_count=${blockCount}`)
+      
+      return {
+        ...tree,
+        node_count: nodeCount,  // Override the stale node_count
+        block_count: blockCount,
+        // Remove the joined data from the response to keep it clean
+        tree_blocks: undefined,
+        tree_nodes: undefined
+      }
+    }) || []
+
+    return NextResponse.json({ trees: treesWithRealTimeCounts })
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode })
@@ -75,7 +102,7 @@ export async function POST(
   try {
     const { projectId } = await params
     const body = await request.json()
-    const { name, description, category, status } = body
+    const { name, description, status } = body
 
     const authContext = await authenticateRequest(request)
     const { user, supabase } = authContext
@@ -113,7 +140,6 @@ export async function POST(
         project_id: actualProjectId,
         name,
         description,
-        category,
         status: status || 'draft',
         node_count: 0,
         created_by: user.id

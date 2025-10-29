@@ -56,7 +56,7 @@ export async function PUT(
   try {
     const { treeId } = await params
     const body = await request.json()
-    const { name, description, category } = body
+    const { name, description, status } = body
 
     // Validate required fields
     if (!name || !name.trim()) {
@@ -83,7 +83,7 @@ export async function PUT(
       .update({
         name: name.trim(),
         description: description?.trim() || null,
-        category: category || 'protocol',
+        status: status || 'draft',
         updated_at: new Date().toISOString()
       })
       .eq('id', treeId)
