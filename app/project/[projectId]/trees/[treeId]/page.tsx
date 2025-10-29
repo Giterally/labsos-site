@@ -60,7 +60,7 @@ export default function SimpleExperimentTreePage() {
   const [isProjectOwner, setIsProjectOwner] = useState(false)
   const [isProjectMember, setIsProjectMember] = useState(false)
   const [permissionsLoading, setPermissionsLoading] = useState(true)
-  const [treeInfo, setTreeInfo] = useState<{name: string, description: string, status: string, category: string} | null>(null)
+  const [treeInfo, setTreeInfo] = useState<{name: string, description: string, status: string} | null>(null)
   const [projectInfo, setProjectInfo] = useState<{name: string, description: string} | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -699,8 +699,7 @@ export default function SimpleExperimentTreePage() {
         setTreeInfo({
           name: data.tree.name,
           description: data.tree.description,
-          status: data.tree.status,
-          category: data.tree.category
+          status: data.tree.status
         })
       } catch (err) {
         console.error('Error fetching tree info:', err)
@@ -1570,9 +1569,6 @@ export default function SimpleExperimentTreePage() {
                         'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
                       }>
                         {treeInfo.status}
-                      </Badge>
-                      <Badge variant="outline">
-                        {treeInfo.category}
                       </Badge>
                       <Badge variant="secondary">
                         {allBlockTypes.length} Blocks
