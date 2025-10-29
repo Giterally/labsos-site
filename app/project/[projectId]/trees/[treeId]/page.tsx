@@ -436,6 +436,8 @@ export default function SimpleExperimentTreePage() {
   // Helper function to update multiple node positions
   const updateNodePositions = async (positionUpdates: {nodeId: string, position: number}[]) => {
     try {
+      console.log('updateNodePositions called with:', positionUpdates)
+      
       // Get the current session token
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
@@ -454,8 +456,12 @@ export default function SimpleExperimentTreePage() {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
+        console.error('Batch update failed:', errorData)
         throw new Error(errorData.error || 'Failed to update node positions')
       }
+      
+      const result = await response.json()
+      console.log('Batch update successful:', result)
     } catch (error) {
       console.error('Error updating node positions:', error)
       throw error
@@ -1337,7 +1343,14 @@ export default function SimpleExperimentTreePage() {
         }
         
         // Update all positions in database
-        await updateNodePositions(positionUpdates)
+        console.log('Position updates:', positionUpdates)
+        try {
+          await updateNodePositions(positionUpdates)
+          console.log('Successfully updated positions in database')
+        } catch (error) {
+          console.error('Failed to update positions:', error)
+          // Still update local state even if DB update fails
+        }
       }
       
       // Update the main node data
@@ -1362,29 +1375,35 @@ export default function SimpleExperimentTreePage() {
       }
       
       // Update local state
-      setExperimentNodes(prev => prev.map(node => {
-        const positionUpdate = positionChanged || typeChanged 
-          ? positionUpdates.find(u => u.nodeId === node.id)
-          : null
-        
-        if (node.id === selectedNode.id) {
-          return {
-            ...node,
-            type: newType,
-            status: newStatus,
-            position: newPosition,
-            metadata: {
-              ...node.metadata,
+      setExperimentNodes(prev => {
+        const updated = prev.map(node => {
+          const positionUpdate = positionChanged || typeChanged 
+            ? positionUpdates.find(u => u.nodeId === node.id)
+            : null
+          
+          if (node.id === selectedNode.id) {
+            return {
+              ...node,
               type: newType,
+              status: newStatus,
               position: newPosition,
-              updated: new Date().toISOString()
+              metadata: {
+                ...node.metadata,
+                type: newType,
+                position: newPosition,
+                updated: new Date().toISOString()
+              }
             }
+          } else if (positionUpdate) {
+            console.log(`Updating node ${node.id} position from ${node.position} to ${positionUpdate.position}`)
+            return { ...node, position: positionUpdate.position }
           }
-        } else if (positionUpdate) {
-          return { ...node, position: positionUpdate.position }
-        }
-        return node
-      }))
+          return node
+        })
+        
+        console.log('Updated nodes:', updated.map(n => ({ id: n.id, position: n.position })))
+        return updated
+      })
       
       setEditingMetadata(false)
       setTempMetadata(null)
