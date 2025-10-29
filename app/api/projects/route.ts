@@ -97,11 +97,8 @@ export async function GET(request: Request) {
     const transformedProjects = (projects || []).map(project => {
       const isOwner = project.created_by === auth.user.id
       
-      // Use the role we already determined, or default to Team Member
-      let userRole = project.user_role || 'Team Member'
-      if (isOwner) {
-        userRole = 'Lead Researcher'
-      }
+      // All project members are Admin
+      let userRole = 'Admin'
       
       return {
         ...project,
@@ -189,7 +186,7 @@ export async function POST(request: Request) {
       .upsert([{
         project_id: project.id,
         user_id: auth.user.id,
-        role: 'Lead Researcher',
+        role: 'Admin',
         initials: auth.user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U',
         left_at: null // Ensure they're active
       }], {

@@ -101,7 +101,7 @@ export default function ProjectsPage() {
           repository: null, // Default repository
           createdDate: new Date(project.created_at).toISOString().split('T')[0], // Format date
           isOwner: project.is_owner || project.created_by === authUser.id,
-          userRole: project.user_role || (project.created_by === authUser.id ? 'Lead Researcher' : 'Team Member'),
+          userRole: 'Admin',
           visibility: project.visibility || 'private'
         }
       })

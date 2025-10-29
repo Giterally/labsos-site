@@ -41,6 +41,9 @@ export default function CreateProjectForm({ onProjectCreated }: CreateProjectFor
         throw new Error('Not authenticated')
       }
 
+      console.log('DEBUG: Sending project data:', formData)
+      console.log('DEBUG: Session token length:', session.access_token?.length)
+      
       const response = await fetch('/api/projects', {
         method: 'POST',
         headers: {
@@ -50,8 +53,12 @@ export default function CreateProjectForm({ onProjectCreated }: CreateProjectFor
         body: JSON.stringify(formData),
       })
 
+      console.log('DEBUG: Response status:', response.status)
+      console.log('DEBUG: Response ok:', response.ok)
+
       if (!response.ok) {
         const errorData = await response.json()
+        console.error('DEBUG: Error response:', errorData)
         throw new Error(errorData.message || 'Failed to create project')
       }
 
