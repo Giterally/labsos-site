@@ -21,16 +21,24 @@ export interface AuthContext {
 export async function authenticateRequest(request: NextRequest): Promise<AuthContext> {
   const authHeader = request.headers.get('authorization')
   
+  console.log('DEBUG: Auth header present:', !!authHeader)
+  console.log('DEBUG: Auth header value:', authHeader ? `${authHeader.substring(0, 20)}...` : 'None')
+  
   if (!authHeader) {
     throw new AuthError('No authorization header', 401)
   }
   
   const token = authHeader.replace('Bearer ', '')
+  console.log('DEBUG: Token length:', token.length)
+  console.log('DEBUG: Token starts with:', token.substring(0, 20))
   
   try {
     const { client, user } = await createAuthenticatedClient(token)
+    console.log('DEBUG: Authentication successful for user:', user.email)
+    console.log('DEBUG: User ID from token:', user.id)
     return { supabase: client, user }
   } catch (error) {
+    console.error('DEBUG: Authentication failed:', error)
     throw new AuthError('Invalid or expired token', 401)
   }
 }

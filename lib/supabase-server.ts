@@ -14,6 +14,8 @@ export const supabaseServer = createClient(supabaseUrl, supabaseServiceKey, {
 
 // Create authenticated client from user token for RLS policies
 export async function createAuthenticatedClient(token: string) {
+  console.log('DEBUG: createAuthenticatedClient called with token length:', token.length);
+  
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: false,
@@ -23,9 +25,19 @@ export async function createAuthenticatedClient(token: string) {
 
   // Set the session with the user's token
   const { data: { user }, error } = await supabase.auth.getUser(token);
+  console.log('DEBUG: getUser result:', { user: user?.email, error: error?.message });
+  
   if (error || !user) {
+    console.error('DEBUG: getUser failed:', error);
     throw new Error('Invalid or expired token');
   }
+
+  console.log('DEBUG: User details:', {
+    id: user.id,
+    email: user.email,
+    created_at: user.created_at,
+    user_metadata: user.user_metadata
+  });
 
   // Create a new client with the user's session
   const authenticatedClient = createClient(supabaseUrl, supabaseAnonKey, {

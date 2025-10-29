@@ -147,8 +147,24 @@ export async function POST(request: Request) {
     const auth = await authenticateRequest(request)
     const permissions = new PermissionService(auth.supabase, auth.user.id)
     
-    // DEBUG: Log to verify the fix is working
+    // DEBUG: Log authentication details
     console.log('DEBUG: API authentication successful for user:', auth.user.email)
+    console.log('DEBUG: User ID:', auth.user.id)
+    console.log('DEBUG: User metadata:', auth.user.user_metadata)
+    
+    // DEBUG: Check if user has a profile
+    const { data: profile, error: profileError } = await auth.supabase
+      .from('profiles')
+      .select('id, email, full_name')
+      .eq('id', auth.user.id)
+      .single()
+    
+    console.log('DEBUG: Profile lookup result:', { profile, profileError })
+    
+    if (profileError) {
+      console.error('DEBUG: Profile not found for user:', auth.user.id, 'Error:', profileError)
+      throw new Error(`User profile not found: ${profileError.message}`)
+    }
 
     const body = await request.json()
     
