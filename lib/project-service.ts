@@ -5,9 +5,9 @@ export interface Project {
   name: string
   description: string
   status: 'draft' | 'planning' | 'active' | 'review' | 'completed'
-  language: string
-  repository_url?: string
-  tags: string[]
+  institution?: string
+  department?: string
+  visibility: 'public' | 'private'
   created_by: string
   created_at: string
   updated_at: string
@@ -17,9 +17,9 @@ export interface CreateProjectData {
   name: string
   description: string
   status: 'draft' | 'planning' | 'active' | 'review' | 'completed'
-  language: string
-  repository_url?: string
-  tags: string[]
+  institution?: string
+  department?: string
+  visibility: 'public' | 'private'
 }
 
 export interface UpdateProjectData extends Partial<CreateProjectData> {

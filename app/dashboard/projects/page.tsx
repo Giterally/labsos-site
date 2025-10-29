@@ -96,11 +96,9 @@ export default function ProjectsPage() {
           name: project.name,
           description: project.description || 'No description available',
           status: project.status || "Active",
-          language: "Python", // Default language
           lastUpdated: "Recently", // Default last updated
           color: (project.is_owner || project.created_by === authUser.id) ? "bg-blue-500" : "bg-green-500", // Blue for owned, green for member
           collaborators: [], // Will be populated later if needed
-          tags: ["Project", "Research"], // Default tags
           repository: null, // Default repository
           createdDate: new Date(project.created_at).toISOString().split('T')[0], // Format date
           isOwner: project.is_owner || project.created_by === authUser.id,
@@ -232,17 +230,9 @@ export default function ProjectsPage() {
                     <CardDescription className="line-clamp-2">{project.description}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex flex-wrap gap-2">
-                      {project.tags.map((tag, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
 
                     <div className="flex items-center justify-between text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">{project.language}</Badge>
                         <Badge variant="outline">{project.status}</Badge>
                         <Badge variant={project.visibility === 'public' ? 'default' : 'secondary'}>
                           {project.visibility === 'public' ? 'Public' : 'Private'}
@@ -251,9 +241,6 @@ export default function ProjectsPage() {
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <div className="text-xs text-muted-foreground">
-                        {project.isOwner ? 'Lead Researcher' : project.userRole}
-                      </div>
                       {project.isOwner && (
                         <ManageTeamForm 
                           projectId={project.id} 
@@ -299,14 +286,6 @@ export default function ProjectsPage() {
                   <CardContent className="space-y-4">
                     <p className="text-muted-foreground">{selectedProject.description}</p>
 
-                    <div className="flex flex-wrap gap-2">
-                      {selectedProject.tags.map((tag, index) => (
-                        <Badge key={index} variant="secondary">
-                          <TagIcon className="h-3 w-3 mr-1" />
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
 
                     {selectedProject.repository && (
                       <div className="flex items-center gap-2 text-sm">
@@ -408,11 +387,6 @@ export default function ProjectsPage() {
                         <CalendarIcon className="h-4 w-4 text-muted-foreground" />
                         <span className="text-muted-foreground">Created:</span>
                         <span>{selectedProject.createdDate}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <TagIcon className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Language:</span>
-                        <Badge variant="secondary">{selectedProject.language}</Badge>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <FolderIcon className="h-4 w-4 text-muted-foreground" />
