@@ -147,27 +147,27 @@ export default function LoginPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="fieldOfStudy">Primary Field of Study</Label>
+                  <Label htmlFor="fieldOfStudy">Department</Label>
                   <Select value={fieldOfStudy} onValueChange={setFieldOfStudy} required>
                     <SelectTrigger>
                       <SelectValue placeholder="Select your field" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="computer_science">Computer Science</SelectItem>
-                      <SelectItem value="biology">Biology</SelectItem>
-                      <SelectItem value="chemistry">Chemistry</SelectItem>
-                      <SelectItem value="physics">Physics</SelectItem>
-                      <SelectItem value="mathematics">Mathematics</SelectItem>
-                      <SelectItem value="engineering">Engineering</SelectItem>
-                      <SelectItem value="medicine">Medicine</SelectItem>
-                      <SelectItem value="psychology">Psychology</SelectItem>
-                      <SelectItem value="economics">Economics</SelectItem>
-                      <SelectItem value="business">Business</SelectItem>
-                      <SelectItem value="education">Education</SelectItem>
-                      <SelectItem value="arts">Arts & Humanities</SelectItem>
-                      <SelectItem value="social_sciences">Social Sciences</SelectItem>
-                      <SelectItem value="environmental">Environmental Science</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="Computer Science">Computer Science</SelectItem>
+                      <SelectItem value="Biology">Biology</SelectItem>
+                      <SelectItem value="Chemistry">Chemistry</SelectItem>
+                      <SelectItem value="Physics">Physics</SelectItem>
+                      <SelectItem value="Mathematics">Mathematics</SelectItem>
+                      <SelectItem value="Engineering">Engineering</SelectItem>
+                      <SelectItem value="Medicine">Medicine</SelectItem>
+                      <SelectItem value="Psychology">Psychology</SelectItem>
+                      <SelectItem value="Economics">Economics</SelectItem>
+                      <SelectItem value="Business">Business</SelectItem>
+                      <SelectItem value="Education">Education</SelectItem>
+                      <SelectItem value="Arts & Humanities">Arts & Humanities</SelectItem>
+                      <SelectItem value="Social Sciences">Social Sciences</SelectItem>
+                      <SelectItem value="Environmental Science">Environmental Science</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

@@ -34,17 +34,16 @@ export default function AuthCallbackPage() {
                 try {
                   const profileData = JSON.parse(pendingProfileData)
                   
-                  // Create profile in profiles table (single source of truth)
+                  // Update profile in profiles table (profile already exists from trigger)
                   const { error: profileError } = await supabase
                     .from('profiles')
-                    .insert({
+                    .upsert({
                       id: data.session.user.id,
                       email: data.session.user.email,
                       full_name: profileData.full_name,
                       lab_name: profileData.institution,
                       institution: profileData.institution,
                       department: profileData.field_of_study,
-                      created_at: new Date().toISOString(),
                       updated_at: new Date().toISOString()
                     })
 

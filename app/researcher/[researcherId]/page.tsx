@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   ArrowLeftIcon,
   BeakerIcon,
@@ -501,12 +502,43 @@ export default function ResearcherProfilePage() {
                           className="text-sm text-center"
                           placeholder="Institution"
                         />
+                        <Select 
+                          value={editData.department || ''} 
+                          onValueChange={(value) => handleInputChange('department', value)}
+                        >
+                          <SelectTrigger className="text-sm text-center">
+                            <SelectValue placeholder="Select department" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Computer Science">Computer Science</SelectItem>
+                            <SelectItem value="Biology">Biology</SelectItem>
+                            <SelectItem value="Chemistry">Chemistry</SelectItem>
+                            <SelectItem value="Physics">Physics</SelectItem>
+                            <SelectItem value="Mathematics">Mathematics</SelectItem>
+                            <SelectItem value="Engineering">Engineering</SelectItem>
+                            <SelectItem value="Medicine">Medicine</SelectItem>
+                            <SelectItem value="Psychology">Psychology</SelectItem>
+                            <SelectItem value="Economics">Economics</SelectItem>
+                            <SelectItem value="Business">Business</SelectItem>
+                            <SelectItem value="Education">Education</SelectItem>
+                            <SelectItem value="Arts & Humanities">Arts & Humanities</SelectItem>
+                            <SelectItem value="Social Sciences">Social Sciences</SelectItem>
+                            <SelectItem value="Environmental Science">Environmental Science</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
+                            <SelectItem value="Not specified">Not specified</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     ) : (
                       <>
                         <h1 className="text-2xl font-bold text-foreground">{researcher.name}</h1>
                         <p className="text-lg text-muted-foreground">{researcher.title}</p>
-                        <p className="text-sm text-muted-foreground">{researcher.institution}</p>
+                        {researcher.institution && researcher.institution !== 'Not specified' && (
+                          <p className="text-sm text-muted-foreground">{researcher.institution}</p>
+                        )}
+                        {researcher.department && researcher.department !== 'Not specified' && (
+                          <p className="text-sm text-muted-foreground">{researcher.department}</p>
+                        )}
                       </>
                     )}
                   </div>
