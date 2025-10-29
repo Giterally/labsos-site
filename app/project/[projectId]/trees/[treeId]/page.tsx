@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -109,6 +109,10 @@ export default function SimpleExperimentTreePage() {
   // Drag and drop state
   const [draggedItem, setDraggedItem] = useState<{type: 'block' | 'node', id: string, blockType?: string} | null>(null)
   const [dragOverItem, setDragOverItem] = useState<{type: 'block' | 'node', id: string, blockType?: string} | null>(null)
+  
+  // Auto-scroll refs
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [autoScrollDirection, setAutoScrollDirection] = useState<'up' | 'down' | null>(null)
   
   const selectedNode = experimentNodes.find(node => node.id === selectedNodeId) || null
 
@@ -253,6 +257,28 @@ export default function SimpleExperimentTreePage() {
     e.dataTransfer.dropEffect = 'move'
     setDragOverItem({ type, id, blockType })
     
+    // Auto-scroll detection
+    if (scrollContainerRef.current) {
+      const container = scrollContainerRef.current
+      const rect = container.getBoundingClientRect()
+      const mouseY = e.clientY
+      const triggerZone = 30 // 30px from top/bottom
+      
+      const relativeY = mouseY - rect.top
+      const containerHeight = rect.height
+      
+      if (relativeY <= triggerZone && container.scrollTop > 0) {
+        // Near top, scroll up
+        setAutoScrollDirection('up')
+      } else if (relativeY >= containerHeight - triggerZone && container.scrollTop < container.scrollHeight - containerHeight) {
+        // Near bottom, scroll down
+        setAutoScrollDirection('down')
+      } else {
+        // Not in trigger zone, stop auto-scroll
+        setAutoScrollDirection(null)
+      }
+    }
+    
     // Prevent event propagation for nodes to avoid triggering block drag
     if (type === 'node') {
       e.stopPropagation()
@@ -308,6 +334,7 @@ export default function SimpleExperimentTreePage() {
   const handleDragEnd = () => {
     setDraggedItem(null)
     setDragOverItem(null)
+    setAutoScrollDirection(null)
   }
 
   // Block reordering (unified system)
@@ -705,6 +732,42 @@ export default function SimpleExperimentTreePage() {
       fetchNodes()
     }
   }, [treeId, currentUser, userLoading])
+
+  // Auto-scroll during drag and drop
+  useEffect(() => {
+    if (!draggedItem || !scrollContainerRef.current || !autoScrollDirection) return
+
+    let animationFrameId: number
+    const scrollSpeed = 8 // Medium scroll speed
+
+    const handleAutoScroll = () => {
+      if (!scrollContainerRef.current || !autoScrollDirection) return
+
+      const container = scrollContainerRef.current
+      const scrollTop = container.scrollTop
+      const scrollHeight = container.scrollHeight
+      const clientHeight = container.clientHeight
+
+      if (autoScrollDirection === 'up' && scrollTop > 0) {
+        // Scroll up
+        container.scrollTop = Math.max(0, scrollTop - scrollSpeed)
+        animationFrameId = requestAnimationFrame(handleAutoScroll)
+      } else if (autoScrollDirection === 'down' && scrollTop < scrollHeight - clientHeight) {
+        // Scroll down
+        container.scrollTop = Math.min(scrollHeight - clientHeight, scrollTop + scrollSpeed)
+        animationFrameId = requestAnimationFrame(handleAutoScroll)
+      }
+    }
+
+    // Start auto-scroll monitoring
+    animationFrameId = requestAnimationFrame(handleAutoScroll)
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId)
+      }
+    }
+  }, [draggedItem, autoScrollDirection])
 
   // Create new node
   const createNode = async (name: string, description: string, nodeType: string) => {
@@ -1342,7 +1405,7 @@ export default function SimpleExperimentTreePage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[60vh] overflow-y-auto">
+                <div ref={scrollContainerRef} className="max-h-[60vh] overflow-y-auto">
                   <div className="space-y-3">
                   {allBlockTypes.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
