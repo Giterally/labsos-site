@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
+import { authFetch } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -445,13 +446,13 @@ export default function SimpleExperimentTreePage() {
       }
       
       // Use batch update API for better performance and atomicity
-      const response = await fetch(`/api/trees/${treeId}/nodes/batch-update`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/batch-update`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ positionUpdates })
+        body: JSON.stringify({ positionUpdates }),
+        requireAuth: true
       })
       
       if (!response.ok) {
@@ -856,18 +857,13 @@ export default function SimpleExperimentTreePage() {
       console.log('Tree ID:', treeId)
       
       // Get the current session token and include it for authenticated creation
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No authentication token available')
-      }
-
-      const response = await fetch(`/api/trees/${treeId}/nodes`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestData),
+        requireAuth: true
       })
 
       if (!response.ok) {
@@ -928,22 +924,17 @@ export default function SimpleExperimentTreePage() {
       setEditing(true)
       
       // Get the current session token
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No authentication token available')
-      }
-      
-      const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim(),
           node_type: nodeType
-        })
+        }),
+        requireAuth: true
       })
       
       if (!response.ok) {
@@ -1360,11 +1351,10 @@ export default function SimpleExperimentTreePage() {
       }
       
       // Update the main node data
-      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           name: selectedNode.title,
@@ -1373,7 +1363,8 @@ export default function SimpleExperimentTreePage() {
           position: newPosition,
           content: selectedNode.content,
           status: newStatus
-        })
+        }),
+        requireAuth: true
       })
       
       if (!response.ok) {
@@ -1427,16 +1418,9 @@ export default function SimpleExperimentTreePage() {
 
     try {
       // Get the current session token
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No authentication token available')
-      }
-      
-      const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
+        requireAuth: true
       })
 
       if (!response.ok) {
@@ -2159,6 +2143,7 @@ export default function SimpleExperimentTreePage() {
                             metadata={tempMetadata}
                             status={selectedNode.status}
                             experimentNodes={experimentNodes}
+                            currentGroupKey={selectedNode.type}
                             onSave={saveMetadata}
                             onCancel={cancelEditingMetadata}
                           />
@@ -2632,12 +2617,14 @@ function MetadataEditForm({
   metadata,
   status,
   experimentNodes,
+  currentGroupKey,
   onSave, 
   onCancel
 }: { 
   metadata: ExperimentNode['metadata']
   status: string
   experimentNodes: ExperimentNode[]
+  currentGroupKey: string
   onSave: (type: string, position: number, status: string) => void
   onCancel: () => void
 }) {
@@ -2645,18 +2632,22 @@ function MetadataEditForm({
   const [position, setPosition] = useState(metadata.position)
   const [nodeStatus, setNodeStatus] = useState(status)
   
-  // Calculate max position based on current block type (ensure at least 1)
-  const maxPosition = Math.max(1, experimentNodes.filter(n => n.type === nodeType).length)
+  // Use the same grouping key as node rendering: node.type (block_id || node_type)
+  // When the form first loads, group by the current node's effective key (currentGroupKey).
+  // When the type changes in the form, group by the selected nodeType instead.
+  const effectiveGroupKey = nodeType === metadata.type ? currentGroupKey : nodeType
+  const maxPosition = Math.max(1, experimentNodes.filter(n => n.type === effectiveGroupKey).length)
 
   // Update position when node type changes, clamp between 1 and max
   useEffect(() => {
-    const newMaxPosition = Math.max(1, experimentNodes.filter(n => n.type === nodeType).length)
+    const groupKey = nodeType === metadata.type ? currentGroupKey : nodeType
+    const newMaxPosition = Math.max(1, experimentNodes.filter(n => n.type === groupKey).length)
     if (position > newMaxPosition) {
       setPosition(newMaxPosition)
     } else if (position < 1) {
       setPosition(1)
     }
-  }, [nodeType, position, experimentNodes])
+  }, [nodeType, position, experimentNodes, currentGroupKey, metadata.type])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
