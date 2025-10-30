@@ -143,11 +143,17 @@ export default function SimpleProjectPage() {
   const [teamMembersLoading, setTeamMembersLoading] = useState(false)
   const [isProjectOwner, setIsProjectOwner] = useState(false)
   const [isProjectMember, setIsProjectMember] = useState(false)
+  const [accessDenied, setAccessDenied] = useState(false)
+  const [accessReason, setAccessReason] = useState<string | null>(null)
 
   // Function to refresh team members
   const refreshTeamMembers = async () => {
     // Prevent multiple simultaneous calls
     if (teamMembersLoading) {
+      return
+    }
+
+    if (accessDenied) {
       return
     }
 
@@ -168,7 +174,7 @@ export default function SimpleProjectPage() {
       })
       
       if (!response.ok) {
-        console.error('Team API error:', response.status)
+        // Swallow errors in denied paths to avoid console spam
         setTeamMembers([])
         setIsProjectOwner(false)
         setIsProjectMember(false)
@@ -213,9 +219,15 @@ export default function SimpleProjectPage() {
         })
         
         if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            setAccessDenied(true)
+            setAccessReason(response.status === 401 ? 'unauthorized' : 'private')
+            setProjectInfo(null)
+            return
+          }
           const errorData = await response.json().catch(() => ({}))
           const errorMessage = errorData.message || errorData.error || 'Failed to fetch project information'
-          console.error('API Error:', response.status, errorMessage, errorData)
+          console.error('API Error:', response.status, errorMessage)
           throw new Error(errorMessage)
         }
         
@@ -234,8 +246,10 @@ export default function SimpleProjectPage() {
 
   // Fetch team members when component mounts
   useEffect(() => {
-    refreshTeamMembers()
-  }, [projectId])
+    if (!accessDenied) {
+      refreshTeamMembers()
+    }
+  }, [projectId, accessDenied])
 
   // Fetch experiment trees for this project
   useEffect(() => {
@@ -243,6 +257,11 @@ export default function SimpleProjectPage() {
       try {
         setLoading(true)
         setError(null) // Clear any previous errors
+
+        if (accessDenied) {
+          setExperimentTrees([])
+          return
+        }
         
         // Get session for API call if user is authenticated
         let headers: HeadersInit = {}
@@ -258,17 +277,20 @@ export default function SimpleProjectPage() {
         })
         
         if (!response.ok) {
-          if (response.status === 401) {
-            throw new Error('You are not authorized to view this project')
-          } else if (response.status === 404) {
+          if (response.status === 401 || response.status === 403) {
+            setAccessDenied(true)
+            setAccessReason(response.status === 401 ? 'unauthorized' : 'private')
+            setExperimentTrees([])
+            return
+          }
+          if (response.status === 404) {
             throw new Error('Project not found')
-          } else {
-            const errorData = await response.json().catch(() => ({}))
-            const errorMessage = errorData.details ? 
+          }
+          const errorData = await response.json().catch(() => ({}))
+          const errorMessage = errorData.details ? 
               `${errorData.error}: ${errorData.details}` : 
               `Failed to fetch experiment trees (${response.status})`
-            throw new Error(errorMessage)
-          }
+          throw new Error(errorMessage)
         }
         
         const data = await response.json()
@@ -284,7 +306,36 @@ export default function SimpleProjectPage() {
     if (!userLoading) {
       fetchExperimentTrees()
     }
-  }, [projectId, currentUser, userLoading])
+  }, [projectId, currentUser, userLoading, accessDenied])
+
+  // Render access denied view early
+  if (accessDenied) {
+    const signedIn = !!currentUser
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <Card className="max-w-md w-full text-center">
+          <CardHeader>
+            <CardTitle>Private Project</CardTitle>
+            <CardDescription>
+              {accessReason === 'unauthorized' ? 'Please sign in to continue.' : "You don't have access to view this project."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <Button onClick={() => window.location.href = signedIn ? '/dashboard/projects' : '/labs'} className="w-full">
+                {signedIn ? 'Back to My Projects' : 'Back to Discover'}
+              </Button>
+              {!signedIn && (
+                <Button variant="outline" onClick={() => window.location.href = '/login'} className="w-full">
+                  Sign In
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   // Fetch software for this project
   useEffect(() => {
