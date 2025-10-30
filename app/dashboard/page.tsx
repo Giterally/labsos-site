@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { BeakerIcon } from "@heroicons/react/24/outline"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
+// Removed legacy beaker icon and 'Knowledge Capture' branding per request
 
 interface UserProfile {
   full_name: string
@@ -97,40 +99,116 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader className="text-center space-y-4">
-          <div className="flex items-center justify-center space-x-2">
-            <BeakerIcon className="h-8 w-8 text-primary" />
-            <span className="text-2xl font-bold text-foreground">Knowledge Capture</span>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <div className="w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container mx-auto px-6 py-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="text-xl font-semibold">Welcome, {user?.full_name || 'User'}</div>
           </div>
-          <CardTitle className="text-3xl">Welcome to your Dashboard, {user?.full_name || 'User'}!</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-lg">
-            <div>
-              <p className="font-semibold text-muted-foreground">Email:</p>
-              <p className="text-foreground">{user?.email}</p>
-            </div>
-            <div>
-              <p className="font-semibold text-muted-foreground">Institution:</p>
-              <p className="text-foreground">{user?.institution}</p>
-            </div>
-            <div className="md:col-span-2">
-              <p className="font-semibold text-muted-foreground">Department:</p>
-              <p className="text-foreground">{user?.department}</p>
-            </div>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" onClick={() => router.push('/dashboard/projects')}>View My Projects</Button>
           </div>
-          <div className="flex flex-col gap-3">
-            <Button onClick={() => router.push("/dashboard/projects")} className="w-full max-w-xs">
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="container mx-auto px-6 py-8 space-y-12">
+        {/* Hero action */}
+        <section className="text-center">
+          <h1 className="text-3xl md:text-4xl font-semibold mb-3">Your research, organized</h1>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Projects are collaborative spaces for your lab. Inside each project, experiment trees capture
+            protocols, data creation, analysis, and results so work stays structured and reproducible.
+          </p>
+          <div className="mt-6 flex justify-center">
+            <Button
+              size="lg"
+              className="px-8 py-6 text-lg shadow-md"
+              onClick={() => router.push('/dashboard/projects')}
+            >
               View My Projects
             </Button>
-            <Button onClick={handleSignOut} variant="outline" className="w-full max-w-xs">
-              Sign Out
-            </Button>
           </div>
-        </CardContent>
-      </Card>
+        </section>
+        {/* Profile summary (compact) */}
+        <section>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Card className="p-0">
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground mb-1">Email</div>
+                <div className="text-sm truncate">{(user as any)?.email || '—'}</div>
+              </CardContent>
+            </Card>
+            <Card className="p-0">
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground mb-1">Institution</div>
+                <div className="text-sm truncate">{user?.institution || '—'}</div>
+              </CardContent>
+            </Card>
+            <Card className="p-0">
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground mb-1">Department</div>
+                <div className="text-sm truncate">{user?.department || '—'}</div>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Todos */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-semibold">Todo Lists</h2>
+          </div>
+          <div className="rounded-xl border bg-muted/40 p-4 md:p-6">
+            <Tabs defaultValue="personal" className="w-full">
+              <TabsList>
+                <TabsTrigger value="personal">Personal</TabsTrigger>
+                <TabsTrigger value="shared">Shared</TabsTrigger>
+              </TabsList>
+              <TabsContent value="personal">
+                <Card className="bg-background/60">
+                  <CardContent className="py-8 text-center text-muted-foreground">Personal todos — Coming soon</CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="shared">
+                <Card className="bg-background/60">
+                  <CardContent className="py-8 text-center text-muted-foreground">Shared team todos — Coming soon</CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Ticketing */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-semibold">Ticketing</h2>
+          </div>
+          <div className="rounded-xl border bg-muted/40 p-4 md:p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="bg-background/60">
+                <CardHeader><CardTitle className="text-base">Backlog</CardTitle></CardHeader>
+                <CardContent className="py-8 text-center text-muted-foreground">Coming soon</CardContent>
+              </Card>
+              <Card className="bg-background/60">
+                <CardHeader><CardTitle className="text-base">In Progress</CardTitle></CardHeader>
+                <CardContent className="py-8 text-center text-muted-foreground">Coming soon</CardContent>
+              </Card>
+              <Card className="bg-background/60">
+                <CardHeader><CardTitle className="text-base">Done</CardTitle></CardHeader>
+                <CardContent className="py-8 text-center text-muted-foreground">Coming soon</CardContent>
+              </Card>
+            </div>
+          </div>
+        </section>
+
+        {/* Messaging section removed per request */}
+      </div>
     </div>
   )
 }
