@@ -13,6 +13,7 @@ import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
 import SearchTool from "@/components/SearchTool"
+import { authFetch } from "@/lib/api-client"
 
 interface ExperimentNode {
   id: string
@@ -76,6 +77,15 @@ export default function SimpleExperimentTreePage() {
   const [editingAttachments, setEditingAttachments] = useState(false)
   const [editingLinks, setEditingLinks] = useState(false)
   const [editingMetadata, setEditingMetadata] = useState(false)
+  // Centralized auth error handler
+  const handleAuthError = (err: unknown): boolean => {
+    const code = (err as any)?.code
+    if (code === 'AUTH_REQUIRED') {
+      router.push('/login')
+      return true
+    }
+    return false
+  }
   
   // Temporary edit states
   const [tempContent, setTempContent] = useState('')
@@ -464,8 +474,9 @@ export default function SimpleExperimentTreePage() {
       const result = await response.json()
       console.log('Batch update successful:', result)
     } catch (error) {
+      if (handleAuthError(error)) return
       console.error('Error updating node positions:', error)
-      throw error
+      alert('Failed to update node positions')
     }
   }
 
@@ -911,6 +922,7 @@ export default function SimpleExperimentTreePage() {
       setShowCreateForm(false)
       setTargetBlockForNewNode(null) // Reset target block
     } catch (err) {
+      if (handleAuthError(err)) return
       console.error('Error creating node:', err)
       alert('Failed to create node: ' + (err instanceof Error ? err.message : 'Unknown error'))
     } finally {
@@ -950,6 +962,7 @@ export default function SimpleExperimentTreePage() {
       ))
       setShowEditForm(false)
     } catch (err) {
+      if (handleAuthError(err)) return
       console.error('Error updating node:', err)
       alert(err instanceof Error ? err.message : 'Failed to update node')
     } finally {
@@ -980,11 +993,10 @@ export default function SimpleExperimentTreePage() {
         throw new Error('No authentication token available')
       }
       
-      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           name: selectedNode.title,
@@ -992,7 +1004,8 @@ export default function SimpleExperimentTreePage() {
           node_type: selectedNode.type,
           content: tempContent,
           status: 'draft'
-        })
+        }),
+        requireAuth: true
       })
       
       if (!response.ok) {
@@ -1009,6 +1022,7 @@ export default function SimpleExperimentTreePage() {
       setEditingContent(false)
       setTempContent('')
     } catch (err) {
+      if (handleAuthError(err)) return
       console.error('Error saving content:', err)
       alert('Failed to save content')
     }
@@ -1435,6 +1449,7 @@ export default function SimpleExperimentTreePage() {
         setSelectedNodeId(null)
       }
     } catch (err) {
+      if (handleAuthError(err)) return
       console.error('Error deleting node:', err)
       alert('Failed to delete node: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }

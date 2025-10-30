@@ -153,10 +153,17 @@ export default function PublicProjectsPage() {
   }, [activeFilters, searchTerm, authLoading, fetchPublicProjects])
 
   useEffect(() => {
-    fetchPublicProjects()
-    fetchPublicResearchers()
+    // Resolve auth on mount only
     checkAuth()
-  }, [fetchPublicProjects])
+  }, [])
+
+  // After auth resolves, run initial data fetches once
+  useEffect(() => {
+    if (!authLoading) {
+      fetchPublicProjects()
+      fetchPublicResearchers()
+    }
+  }, [authLoading, fetchPublicProjects])
 
   const checkAuth = async () => {
     try {
