@@ -12,6 +12,12 @@ import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
 import SearchTool from "@/components/SearchTool"
+import { authFetch } from "@/lib/api-client"
+
+// DEBUG: module load sanity check
+try {
+  console.debug('[TreePage] loaded. typeof authFetch =', typeof authFetch)
+} catch {}
 
 
 interface ExperimentNode {
@@ -867,6 +873,7 @@ export default function SimpleExperimentTreePage() {
       console.log('Tree ID:', treeId)
       
       // Get the current session token and include it for authenticated creation
+      console.debug('[createNode] typeof authFetch before call =', typeof authFetch)
       const response = await authFetch(`/api/trees/${treeId}/nodes`, {
         method: 'POST',
         headers: {
@@ -922,7 +929,7 @@ export default function SimpleExperimentTreePage() {
       setTargetBlockForNewNode(null) // Reset target block
     } catch (err) {
       if (handleAuthError(err)) return
-      console.error('Error creating node:', err)
+      console.error('[createNode] error:', err)
       alert('Failed to create node: ' + (err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setCreating(false)

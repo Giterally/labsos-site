@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase-client'
+// DEBUG: module load marker
+console.debug('[api-client] module loaded')
 
 export interface AuthFetchOptions extends RequestInit {
   requireAuth?: boolean
@@ -10,6 +12,8 @@ export interface AuthFetchOptions extends RequestInit {
  * can handle re-auth (or we can redirect here for global UX).
  */
 export async function authFetch(input: RequestInfo | URL, init: AuthFetchOptions = {}) {
+  // DEBUG: entry
+  try { console.debug('[authFetch] called', { url: String(input), requireAuth: !!init.requireAuth }) } catch {}
   const { requireAuth, headers, ...rest } = init
 
   const mergedHeaders: Record<string, string> = {
@@ -39,6 +43,8 @@ export async function authFetch(input: RequestInfo | URL, init: AuthFetchOptions
     throw err
   }
 
+  // DEBUG: exit
+  try { console.debug('[authFetch] response', { url: String(input), status: response.status }) } catch {}
   return response
 }
 
