@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
+import { supabaseServer } from '@/lib/supabase-server'
 
 export async function GET(
   request: NextRequest,
@@ -9,40 +10,57 @@ export async function GET(
   try {
     const { treeId } = await params
 
-    // Authenticate the request
-    let authContext: AuthContext
-    try {
-      authContext = await authenticateRequest(request)
-    } catch (error) {
-      if (error instanceof AuthError) {
-        return NextResponse.json(
-          { message: error.message },
-          { status: error.statusCode }
-        )
-      }
-      return NextResponse.json(
-        { message: 'Authentication failed' },
-        { status: 401 }
-      )
+    // Resolve parent project visibility using server client
+    const { data: treeMeta, error: treeMetaErr } = await supabaseServer
+      .from('experiment_trees')
+      .select('id, project_id')
+      .eq('id', treeId)
+      .single()
+
+    if (treeMetaErr || !treeMeta) {
+      return NextResponse.json({ error: 'Experiment tree not found' }, { status: 404 })
     }
 
-    const { user, supabase } = authContext
+    const { data: proj, error: projErr } = await supabaseServer
+      .from('projects')
+      .select('visibility')
+      .eq('id', treeMeta.project_id)
+      .single()
 
-    // Initialize permission service
-    const permissionService = new PermissionService(supabase, user.id)
+    if (projErr || !proj) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
 
-    // Check tree permissions
-    const permissions = await permissionService.checkTreeAccess(treeId)
-    
-    if (!permissions.canRead) {
-      return NextResponse.json(
-        { message: 'Access denied' },
-        { status: 403 }
-      )
+    let client: any = supabaseServer
+    if (proj.visibility === 'private') {
+      // Authenticate the request for private projects
+      let authContext: AuthContext
+      try {
+        authContext = await authenticateRequest(request)
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return NextResponse.json(
+            { message: error.message },
+            { status: error.statusCode }
+          )
+        }
+        return NextResponse.json(
+          { message: 'Authentication failed' },
+          { status: 401 }
+        )
+      }
+
+      const { user, supabase } = authContext
+      const permissionService = new PermissionService(supabase, user.id)
+      const permissions = await permissionService.checkTreeAccess(treeId)
+      if (!permissions.canRead) {
+        return NextResponse.json({ message: 'Access denied' }, { status: 403 })
+      }
+      client = supabase
     }
 
     // Fetch tree blocks (unified system)
-    const { data: treeBlocks, error: treeBlocksError } = await supabase
+    const { data: treeBlocks, error: treeBlocksError } = await client
       .from('tree_blocks')
       .select('*')
       .eq('tree_id', treeId)
@@ -56,7 +74,7 @@ export async function GET(
     // Get node counts for each block
     const blocksWithCounts = await Promise.all(
       (treeBlocks || []).map(async (block) => {
-        const { count, error: countError } = await supabase
+        const { count, error: countError } = await client
           .from('tree_nodes')
           .select('*', { count: 'exact', head: true })
           .eq('block_id', block.id)

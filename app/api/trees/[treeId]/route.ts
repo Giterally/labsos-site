@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
+import { supabaseServer } from '@/lib/supabase-server'
 
 export async function GET(
   request: NextRequest,
@@ -9,24 +10,42 @@ export async function GET(
   try {
     const { treeId } = await params
 
-    // Authenticate request
-    const auth = await authenticateRequest(request)
-    const permissions = new PermissionService(auth.supabase, auth.user.id)
+    // Resolve parent project visibility using server client
+    const { data: treeMeta, error: treeMetaErr } = await supabaseServer
+      .from('experiment_trees')
+      .select('id, project_id')
+      .eq('id', treeId)
+      .single()
 
-    // Check tree permissions
-    const access = await permissions.checkTreeAccess(treeId)
-    
-    if (!access.canRead) {
-      return NextResponse.json(
-        { message: 'Access denied' },
-        { status: 403 }
-      )
+    if (treeMetaErr || !treeMeta) {
+      return NextResponse.json({ error: 'Experiment tree not found' }, { status: 404 })
+    }
+
+    const { data: proj, error: projErr } = await supabaseServer
+      .from('projects')
+      .select('visibility')
+      .eq('id', treeMeta.project_id)
+      .single()
+
+    if (projErr || !proj) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
+
+    let client: any = supabaseServer
+    if (proj.visibility === 'private') {
+      const auth = await authenticateRequest(request)
+      const permissions = new PermissionService(auth.supabase, auth.user.id)
+      const access = await permissions.checkTreeAccess(treeId)
+      if (!access.canRead) {
+        return NextResponse.json({ message: 'Access denied' }, { status: 403 })
+      }
+      client = auth.supabase
     }
 
     // Get the experiment tree information
-    const { data, error: treeError } = await auth.supabase
+    const { data, error: treeError } = await client
       .from('experiment_trees')
-      .select('id, name, description, status, category, node_count, created_at, updated_at')
+      .select('id, name, description, status, node_count, created_at, updated_at')
       .eq('id', treeId)
       .single()
 
