@@ -855,10 +855,17 @@ export default function SimpleExperimentTreePage() {
       console.log('Creating node with data:', requestData)
       console.log('Tree ID:', treeId)
       
+      // Get the current session token and include it for authenticated creation
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+
       const response = await fetch(`/api/trees/${treeId}/nodes`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify(requestData),
       })
@@ -2638,16 +2645,18 @@ function MetadataEditForm({
   const [position, setPosition] = useState(metadata.position)
   const [nodeStatus, setNodeStatus] = useState(status)
   
-  // Calculate max position based on current block type
-  const maxPosition = experimentNodes.filter(n => n.type === nodeType).length
+  // Calculate max position based on current block type (ensure at least 1)
+  const maxPosition = Math.max(1, experimentNodes.filter(n => n.type === nodeType).length)
 
-  // Update position when node type changes
+  // Update position when node type changes, clamp between 1 and max
   useEffect(() => {
-    const newMaxPosition = experimentNodes.filter(n => n.type === nodeType).length
+    const newMaxPosition = Math.max(1, experimentNodes.filter(n => n.type === nodeType).length)
     if (position > newMaxPosition) {
       setPosition(newMaxPosition)
+    } else if (position < 1) {
+      setPosition(1)
     }
-  }, [nodeType, position])
+  }, [nodeType, position, experimentNodes])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

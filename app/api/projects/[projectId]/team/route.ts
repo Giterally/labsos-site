@@ -24,8 +24,72 @@ export async function GET(
 
     const actualProjectId = project.id
 
-    // Public, unauthenticated: return limited team list
+    // Public project: if auth header present, authenticate to compute membership; otherwise return limited team list
     if (project.visibility === 'public') {
+      const hasAuthHeader = !!request.headers.get('authorization')
+      if (hasAuthHeader) {
+        // Treat as authenticated flow to determine membership/ownership
+        const auth = await authenticateRequest(request)
+        const permissions = new PermissionService(auth.supabase, auth.user.id)
+        const access = await permissions.checkProjectAccess(actualProjectId)
+        
+        // Fetch full team using authenticated client
+        const { data: teamMembers, error } = await auth.supabase
+          .from('project_members')
+          .select(`
+            id,
+            user_id,
+            role,
+            initials,
+            joined_at,
+            left_at
+          `)
+          .eq('project_id', actualProjectId)
+          .is('left_at', null)
+          .order('joined_at', { ascending: true })
+
+        if (error) {
+          throw new Error(`Failed to fetch team members: ${error.message}`)
+        }
+
+        const userIds = (teamMembers || []).map(member => member.user_id)
+        const { data: profiles, error: profilesError } = await auth.supabase
+          .from('profiles')
+          .select('id, full_name, email, lab_name')
+          .in('id', userIds)
+
+        if (profilesError) {
+          console.error('Error fetching profiles:', profilesError)
+        }
+
+        const profileMap = new Map()
+        ;(profiles || []).forEach(profile => {
+          profileMap.set(profile.id, profile)
+        })
+
+        const transformedMembers = (teamMembers || []).map(member => {
+          const profile = profileMap.get(member.user_id)
+          return {
+            id: member.id,
+            user_id: member.user_id,
+            name: profile?.full_name || 'Unknown User',
+            email: profile?.email || 'Unknown Email',
+            lab_name: profile?.lab_name || 'Unknown Lab',
+            role: member.role,
+            initials: member.initials || (profile?.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+            joined_at: member.joined_at
+          }
+        })
+
+        return NextResponse.json({
+          members: transformedMembers,
+          isOwner: access.isOwner,
+          isTeamMember: access.isMember,
+          isAuthenticated: true
+        })
+      }
+
+      // No auth header: limited public response
       const { data: teamMembers, error } = await supabaseServer
         .from('project_members')
         .select('id,user_id,initials')
