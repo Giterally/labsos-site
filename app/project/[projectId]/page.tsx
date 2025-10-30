@@ -84,6 +84,7 @@ interface ProjectInfo {
   created_by: string
   created_at: string
   updated_at: string
+  visibility?: string
 }
 
 export default function SimpleProjectPage() {
@@ -870,11 +871,14 @@ export default function SimpleProjectPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push("/dashboard/projects")}
+            onClick={() => {
+              const isPublicVisitor = !currentUser && projectInfo?.visibility === 'public'
+              router.push(isPublicVisitor ? "/discover" : "/dashboard/projects")
+            }}
             className="flex items-center space-x-2"
           >
             <ArrowLeftIcon className="h-4 w-4" />
-            <span>Back to Projects</span>
+            <span>{(!currentUser && projectInfo?.visibility === 'public') ? 'Back to Discover' : 'Back to Projects'}</span>
           </Button>
         </div>
         
