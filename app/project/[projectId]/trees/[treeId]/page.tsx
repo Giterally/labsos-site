@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
-import { authFetch } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -13,7 +12,7 @@ import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
 import SearchTool from "@/components/SearchTool"
-import { authFetch } from "@/lib/api-client"
+
 
 interface ExperimentNode {
   id: string
