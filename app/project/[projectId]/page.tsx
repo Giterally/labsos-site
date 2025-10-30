@@ -873,7 +873,7 @@ export default function SimpleProjectPage() {
             size="sm"
             onClick={() => {
               const isPublicVisitor = !currentUser && projectInfo?.visibility === 'public'
-              router.push(isPublicVisitor ? "/discover" : "/dashboard/projects")
+              router.push(isPublicVisitor ? "/labs" : "/dashboard/projects")
             }}
             className="flex items-center space-x-2"
           >
