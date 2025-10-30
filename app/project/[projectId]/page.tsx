@@ -145,6 +145,8 @@ export default function SimpleProjectPage() {
   const [isProjectMember, setIsProjectMember] = useState(false)
   const [accessDenied, setAccessDenied] = useState(false)
   const [accessReason, setAccessReason] = useState<string | null>(null)
+  // True once project visibility/access has been determined (success or denied)
+  const [accessChecked, setAccessChecked] = useState(false)
 
   // Function to refresh team members
   const refreshTeamMembers = async () => {
@@ -223,6 +225,7 @@ export default function SimpleProjectPage() {
             setAccessDenied(true)
             setAccessReason(response.status === 401 ? 'unauthorized' : 'private')
             setProjectInfo(null)
+            setAccessChecked(true)
             return
           }
           const errorData = await response.json().catch(() => ({}))
@@ -233,8 +236,10 @@ export default function SimpleProjectPage() {
         
         const data = await response.json()
         setProjectInfo(data.project)
+        setAccessChecked(true)
       } catch (err) {
         console.error('Error fetching project info:', err)
+        setAccessChecked(true)
       }
     }
 
@@ -246,10 +251,11 @@ export default function SimpleProjectPage() {
 
   // Fetch team members when component mounts
   useEffect(() => {
-    if (!accessDenied) {
+    // Only attempt after initial access check; skip if denied
+    if (accessChecked && !accessDenied) {
       refreshTeamMembers()
     }
-  }, [projectId, accessDenied])
+  }, [projectId, accessDenied, accessChecked])
 
   // Fetch experiment trees for this project
   useEffect(() => {
@@ -258,7 +264,7 @@ export default function SimpleProjectPage() {
         setLoading(true)
         setError(null) // Clear any previous errors
 
-        if (accessDenied) {
+        if (accessDenied || !accessChecked) {
           setExperimentTrees([])
           return
         }
@@ -306,7 +312,7 @@ export default function SimpleProjectPage() {
     if (!userLoading) {
       fetchExperimentTrees()
     }
-  }, [projectId, currentUser, userLoading, accessDenied])
+  }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
 
   // Render access denied view early
   if (accessDenied) {
