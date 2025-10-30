@@ -155,7 +155,7 @@ export default function SimpleProjectPage() {
       return
     }
 
-    if (accessDenied) {
+    if (!accessChecked || accessDenied) {
       return
     }
 
@@ -314,35 +314,6 @@ export default function SimpleProjectPage() {
     }
   }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
 
-  // Render access denied view early
-  if (accessDenied) {
-    const signedIn = !!currentUser
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <Card className="max-w-md w-full text-center">
-          <CardHeader>
-            <CardTitle>Private Project</CardTitle>
-            <CardDescription>
-              {accessReason === 'unauthorized' ? 'Please sign in to continue.' : "You don't have access to view this project."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <Button onClick={() => window.location.href = signedIn ? '/dashboard/projects' : '/labs'} className="w-full">
-                {signedIn ? 'Back to My Projects' : 'Back to Discover'}
-              </Button>
-              {!signedIn && (
-                <Button variant="outline" onClick={() => window.location.href = '/login'} className="w-full">
-                  Sign In
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   // Fetch software for this project
   useEffect(() => {
     const fetchSoftware = async () => {
@@ -375,10 +346,10 @@ export default function SimpleProjectPage() {
       }
     }
 
-    if (!userLoading) {
+    if (!userLoading && accessChecked && !accessDenied) {
       fetchSoftware()
     }
-  }, [projectId, currentUser, userLoading])
+  }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
 
   // Fetch datasets for this project
   useEffect(() => {
@@ -412,10 +383,10 @@ export default function SimpleProjectPage() {
       }
     }
 
-    if (!userLoading) {
+    if (!userLoading && accessChecked && !accessDenied) {
       fetchDatasets()
     }
-  }, [projectId, currentUser, userLoading])
+  }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
 
   // Fetch outputs for this project
   useEffect(() => {
@@ -449,15 +420,12 @@ export default function SimpleProjectPage() {
       }
     }
 
-    if (!userLoading) {
+    if (!userLoading && accessChecked && !accessDenied) {
       fetchOutputs()
     }
-  }, [projectId, currentUser, userLoading])
+  }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
 
-  // Fetch team members for this project
-  useEffect(() => {
-    refreshTeamMembers()
-  }, [projectId])
+  // (Removed unguarded team refresh effect)
 
   // Create new experiment tree
   const createExperimentTree = async (name: string, description: string, status: string) => {
@@ -921,7 +889,35 @@ export default function SimpleProjectPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Main Content */}
+      {accessDenied ? (
+        (() => {
+          const signedIn = !!currentUser
+          return (
+            <div className="flex items-center justify-center p-6">
+              <Card className="max-w-md w-full text-center">
+                <CardHeader>
+                  <CardTitle>Private Project</CardTitle>
+                  <CardDescription>
+                    {accessReason === 'unauthorized' ? 'Please sign in to continue.' : "You don't have access to view this project."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <Button onClick={() => window.location.href = signedIn ? '/dashboard/projects' : '/labs'} className="w-full">
+                      {signedIn ? 'Back to My Projects' : 'Back to Discover'}
+                    </Button>
+                    {!signedIn && (
+                      <Button variant="outline" onClick={() => window.location.href = '/login'} className="w-full">
+                        Sign In
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )
+        })()
+      ) : (
       <div className="container mx-auto px-4 py-8 pt-20">
         {/* Back Button */}
         <div className="mb-6">
@@ -1527,6 +1523,7 @@ export default function SimpleProjectPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Create Experiment Tree Modal */}
       {showCreateForm && (
