@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
+import { supabaseServer } from '@/lib/supabase-server'
 
 export async function GET(
   request: Request,
@@ -8,8 +9,24 @@ export async function GET(
 ) {
   try {
     const { projectId } = await params
-    
-    // Authenticate the request
+    // Resolve project by id or slug using service client
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
+    const { data: project, error: projErr } = await supabaseServer
+      .from('projects')
+      .select('id,name,description,institution,department,status,created_by,created_at,slug,visibility')
+      [isUUID ? 'eq' : 'eq'](isUUID ? 'id' : 'slug', projectId)
+      .single()
+
+    if (projErr || !project) {
+      return NextResponse.json({ message: 'Project not found' }, { status: 404 })
+    }
+
+    // If public, allow unauthenticated access and return safe fields
+    if (project.visibility === 'public') {
+      return NextResponse.json({ project })
+    }
+
+    // If private, require auth and membership
     let authContext: AuthContext
     try {
       authContext = await authenticateRequest(request)
@@ -27,41 +44,8 @@ export async function GET(
     }
 
     const { user, supabase } = authContext
-
-    // Check if projectId is a UUID or slug/name
-    let actualProjectId = projectId
-    if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // It's a slug or name, try to find the project
-      // First try by slug
-      let { data: projectBySlug, error: projectError } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('slug', projectId)
-        .single()
-
-      // If not found by slug, try by name
-      if (projectError || !projectBySlug) {
-        const { data: projectByName, error: nameError } = await supabase
-          .from('projects')
-          .select('id')
-          .eq('name', projectId)
-          .single()
-
-        if (nameError || !projectByName) {
-          return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-        }
-        actualProjectId = projectByName.id
-      } else {
-        actualProjectId = projectBySlug.id
-      }
-    }
-
-    // Initialize permission service
     const permissionService = new PermissionService(supabase, user.id)
-
-    // Check user permissions for this project
-    const permissions = await permissionService.checkProjectAccess(actualProjectId)
-    
+    const permissions = await permissionService.checkProjectAccess(project.id)
     if (!permissions.canRead) {
       return NextResponse.json(
         { message: 'Access denied. This project is private.' },
@@ -69,54 +53,8 @@ export async function GET(
       )
     }
 
-    // Get the specific project
-    const { data: project, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', actualProjectId)
-      .single()
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { message: 'Project not found' },
-          { status: 404 }
-        )
-      }
-      throw new Error(`Failed to fetch project: ${error.message}`)
-    }
-
-    // Get experiment trees for this project
-    const { data: trees, error: treesError } = await supabase
-      .from('experiment_trees')
-      .select('*')
-      .eq('project_id', actualProjectId)
-      .order('created_at', { ascending: false })
-
-    // Transform project to include related data
-    const transformedProject = {
-      ...project,
-      members: [],
-      past_members: [],
-      related_projects: [],
-      experiment_trees: trees || [],
-      software: [],
-      datasets: [],
-      outputs: [],
-      stats: {
-        total_trees: trees?.length || 0,
-        active_trees: trees?.filter(t => t.status === 'active').length || 0,
-        completed_trees: trees?.filter(t => t.status === 'completed').length || 0,
-        total_nodes: trees?.reduce((sum, t) => sum + t.node_count, 0) || 0,
-        total_software: 0,
-        total_datasets: 0,
-        total_outputs: 0,
-        total_publications: 0,
-        total_citations: 0
-      }
-    }
-
-    return NextResponse.json({ project: transformedProject })
+    // Return full project (safe enough as previously done)
+    return NextResponse.json({ project })
   } catch (error: any) {
     console.error('Error fetching project:', error)
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
+import { supabaseServer } from '@/lib/supabase-server'
 
 export async function GET(
   request: NextRequest,
@@ -9,45 +10,77 @@ export async function GET(
   try {
     const { projectId } = await params
 
-    // Authenticate request
-    const auth = await authenticateRequest(request)
-    const permissions = new PermissionService(auth.supabase, auth.user.id)
+    // Resolve project (by id or slug) using service client
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
+    const { data: project } = await supabaseServer
+      .from('projects')
+      .select('id, visibility')
+      [isUUID ? 'eq' : 'eq'](isUUID ? 'id' : 'slug', projectId)
+      .single()
 
-    // Check if projectId is a UUID or slug/name
-    let actualProjectId = projectId
-    if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // It's a slug or name, try to find the project
-      // First try by slug
-      let { data: projectBySlug, error: slugError } = await auth.supabase
-        .from('projects')
-        .select('id')
-        .eq('slug', projectId)
-        .single()
-
-      // If not found by slug, try by name
-      if (slugError || !projectBySlug) {
-        const { data: projectByName, error: nameError } = await auth.supabase
-          .from('projects')
-          .select('id')
-          .eq('name', projectId)
-          .single()
-
-        if (nameError || !projectByName) {
-          return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-        }
-        actualProjectId = projectByName.id
-      } else {
-        actualProjectId = projectBySlug.id
-      }
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
-    // Check project access
+    const actualProjectId = project.id
+
+    // Public, unauthenticated: return limited team list
+    if (project.visibility === 'public') {
+      const { data: teamMembers, error } = await supabaseServer
+        .from('project_members')
+        .select('id,user_id,initials')
+        .eq('project_id', actualProjectId)
+        .is('left_at', null)
+        .order('joined_at', { ascending: true })
+
+      if (error) {
+        throw new Error(`Failed to fetch team members: ${error.message}`)
+      }
+
+      const userIds = (teamMembers || []).map(m => m.user_id)
+      const { data: profiles } = await supabaseServer
+        .from('profiles')
+        .select('id, full_name, lab_name')
+        .in('id', userIds)
+
+      const profileMap = new Map()
+      ;(profiles || []).forEach(p => profileMap.set(p.id, p))
+
+      const transformedMembers = (teamMembers || []).map(member => {
+        const profile = profileMap.get(member.user_id)
+        const computedInitials = (profile?.full_name || 'U')
+          .split(' ')
+          .filter(Boolean)
+          .map((n: string) => n[0])
+          .join('')
+          .toUpperCase()
+        const initials = member.initials || computedInitials
+        const displayName = (profile?.full_name && profile.full_name.trim())
+          || (profile?.lab_name && profile.lab_name.trim())
+          || initials
+        return {
+          id: member.id,
+          user_id: member.user_id,
+          name: displayName,
+          lab_name: profile?.lab_name || 'Unknown Lab',
+          initials,
+        }
+      })
+
+      return NextResponse.json({ 
+        members: transformedMembers,
+        isOwner: false,
+        isTeamMember: false,
+        isAuthenticated: false
+      })
+    }
+
+    // Private project: require auth and membership
+    const auth = await authenticateRequest(request)
+    const permissions = new PermissionService(auth.supabase, auth.user.id)
     const access = await permissions.checkProjectAccess(actualProjectId)
     if (!access.hasAccess) {
-      return NextResponse.json(
-        { message: 'Access denied' },
-        { status: 403 }
-      )
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
     }
 
     // Get all team members for this project with profile data

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
+import { supabaseServer } from '@/lib/supabase-server'
 
 export async function GET(
   request: NextRequest,
@@ -8,43 +9,50 @@ export async function GET(
 ) {
   try {
     const { projectId } = await params
-    const authContext = await authenticateRequest(request)
-    const { user, supabase } = authContext
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
+    const { data: project } = await supabaseServer
+      .from('projects')
+      .select('id, visibility')
+      [isUUID ? 'eq' : 'eq'](isUUID ? 'id' : 'slug', projectId)
+      .single()
 
-    const permissionService = new PermissionService(supabase, user.id)
-    const access = await permissionService.checkProjectAccess(projectId)
-
-    if (!access.canRead) {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
+    if (!project) {
+      return NextResponse.json({ message: 'Project not found' }, { status: 404 })
     }
 
     // Get the actual project ID (in case projectId was a slug)
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
     let actualProjectId = projectId
     
     if (!isUUID) {
-      const { data: project } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('slug', projectId)
-        .single()
-      
-      if (project) {
-        actualProjectId = project.id
+      actualProjectId = project.id
+    }
+
+    // If public project, allow unauthenticated access using service client
+    const supa = project.visibility === 'public' ? supabaseServer : null
+
+    // For private projects, authenticate and enforce permissions
+    let authedSupabase = null as any
+    if (project.visibility !== 'public') {
+      const authContext = await authenticateRequest(request)
+      authedSupabase = authContext.supabase
+      const permissionService = new PermissionService(authedSupabase, authContext.user.id)
+      const access = await permissionService.checkProjectAccess(actualProjectId)
+      if (!access.canRead) {
+        return NextResponse.json({ message: 'Access denied' }, { status: 403 })
       }
     }
 
+    const client = supa || authedSupabase
+
     // Get experiment trees for the project with real-time counts
-    const { data: trees, error: treesError } = await supabase
+    const { data: trees, error: treesError } = await client
       .from('experiment_trees')
       .select(`
         id,
         name,
         description,
         status,
-        category,
         node_count,
-        node_types,
         created_at,
         updated_at,
         tree_blocks(
