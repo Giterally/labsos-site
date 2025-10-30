@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { supabaseServer } from '@/lib/supabase-server'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Create a Supabase client with anon key for server-side operations
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Anon client used only to parse auth header (if present)
+const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey)
 
 export async function GET(request: Request) {
   try {
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
       const token = authHeader.replace('Bearer ', '')
       
       // Verify the token and get user
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(token)
       if (!authError && user) {
         userId = user.id
       }
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
 
     // Build the query for discoverable projects
     // Show ALL projects regardless of visibility or user authentication
-    let query = supabase
+    let query = supabaseServer
       .from('projects')
       .select(`
         id,
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
 
     // Get member counts for each project
     const projectIds = projects?.map(p => p.id) || []
-    const { data: memberCounts, error: memberError } = await supabase
+    const { data: memberCounts, error: memberError } = await supabaseServer
       .from('project_members')
       .select('project_id')
       .in('project_id', projectIds)
@@ -95,7 +96,7 @@ export async function GET(request: Request) {
     })
 
     // Get experiment tree counts for each project
-    const { data: treeCounts, error: treeError } = await supabase
+    const { data: treeCounts, error: treeError } = await supabaseServer
       .from('experiment_trees')
       .select('project_id')
       .in('project_id', projectIds)
@@ -114,7 +115,7 @@ export async function GET(request: Request) {
     // Get user's project memberships for access control
     let userMemberships = new Set<string>()
     if (userId) {
-      const { data: memberships } = await supabase
+      const { data: memberships } = await supabaseServer
         .from('project_members')
         .select('project_id')
         .eq('user_id', userId)
@@ -132,7 +133,7 @@ export async function GET(request: Request) {
                        (project.visibility === 'private' && 
                         (project.created_by === userId || userMemberships.has(project.id)))
       const profile = Array.isArray(project.profiles) ? project.profiles[0] : project.profiles
-      return {
+      const base = {
         id: project.id,
         name: project.name,
         description: project.description || 'No description available',
@@ -143,7 +144,7 @@ export async function GET(request: Request) {
         created_at: project.created_at,
         lead_researcher: profile?.full_name || 'Unknown',
         lab_name: profile?.lab_name || profile?.full_name || 'Unknown Lab',
-        member_count: memberCountMap.get(project.id) || 0,
+        member_count: project.visibility === 'private' ? 0 : (memberCountMap.get(project.id) || 0),
         tree_count: treeCountMap.get(project.id) || 0,
         canAccess: canAccess,
         // Generate avatar initials from lab name or project name
@@ -154,6 +155,7 @@ export async function GET(request: Request) {
           .toUpperCase()
           .slice(0, 2)
       }
+      return base
     })
 
     // Apply filters

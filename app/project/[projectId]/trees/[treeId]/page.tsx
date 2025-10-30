@@ -12,6 +12,13 @@ import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
 import SearchTool from "@/components/SearchTool"
+import { authFetch } from "@/lib/api-client"
+
+// DEBUG: module load sanity check
+try {
+  console.debug('[TreePage] loaded. typeof authFetch =', typeof authFetch)
+} catch {}
+
 
 interface ExperimentNode {
   id: string
@@ -75,6 +82,15 @@ export default function SimpleExperimentTreePage() {
   const [editingAttachments, setEditingAttachments] = useState(false)
   const [editingLinks, setEditingLinks] = useState(false)
   const [editingMetadata, setEditingMetadata] = useState(false)
+  // Centralized auth error handler
+  const handleAuthError = (err: unknown): boolean => {
+    const code = (err as any)?.code
+    if (code === 'AUTH_REQUIRED') {
+      router.push('/login')
+      return true
+    }
+    return false
+  }
   
   // Temporary edit states
   const [tempContent, setTempContent] = useState('')
@@ -445,13 +461,13 @@ export default function SimpleExperimentTreePage() {
       }
       
       // Use batch update API for better performance and atomicity
-      const response = await fetch(`/api/trees/${treeId}/nodes/batch-update`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/batch-update`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ positionUpdates })
+        body: JSON.stringify({ positionUpdates }),
+        requireAuth: true
       })
       
       if (!response.ok) {
@@ -463,8 +479,9 @@ export default function SimpleExperimentTreePage() {
       const result = await response.json()
       console.log('Batch update successful:', result)
     } catch (error) {
+      if (handleAuthError(error)) return
       console.error('Error updating node positions:', error)
-      throw error
+      alert('Failed to update node positions')
     }
   }
 
@@ -855,12 +872,15 @@ export default function SimpleExperimentTreePage() {
       console.log('Creating node with data:', requestData)
       console.log('Tree ID:', treeId)
       
-      const response = await fetch(`/api/trees/${treeId}/nodes`, {
+      // Get the current session token and include it for authenticated creation
+      console.debug('[createNode] typeof authFetch before call =', typeof authFetch)
+      const response = await authFetch(`/api/trees/${treeId}/nodes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestData),
+        requireAuth: true
       })
 
       if (!response.ok) {
@@ -908,7 +928,8 @@ export default function SimpleExperimentTreePage() {
       setShowCreateForm(false)
       setTargetBlockForNewNode(null) // Reset target block
     } catch (err) {
-      console.error('Error creating node:', err)
+      if (handleAuthError(err)) return
+      console.error('[createNode] error:', err)
       alert('Failed to create node: ' + (err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setCreating(false)
@@ -921,22 +942,17 @@ export default function SimpleExperimentTreePage() {
       setEditing(true)
       
       // Get the current session token
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No authentication token available')
-      }
-      
-      const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim(),
           node_type: nodeType
-        })
+        }),
+        requireAuth: true
       })
       
       if (!response.ok) {
@@ -952,6 +968,7 @@ export default function SimpleExperimentTreePage() {
       ))
       setShowEditForm(false)
     } catch (err) {
+      if (handleAuthError(err)) return
       console.error('Error updating node:', err)
       alert(err instanceof Error ? err.message : 'Failed to update node')
     } finally {
@@ -982,11 +999,10 @@ export default function SimpleExperimentTreePage() {
         throw new Error('No authentication token available')
       }
       
-      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           name: selectedNode.title,
@@ -994,7 +1010,8 @@ export default function SimpleExperimentTreePage() {
           node_type: selectedNode.type,
           content: tempContent,
           status: 'draft'
-        })
+        }),
+        requireAuth: true
       })
       
       if (!response.ok) {
@@ -1011,6 +1028,7 @@ export default function SimpleExperimentTreePage() {
       setEditingContent(false)
       setTempContent('')
     } catch (err) {
+      if (handleAuthError(err)) return
       console.error('Error saving content:', err)
       alert('Failed to save content')
     }
@@ -1353,11 +1371,10 @@ export default function SimpleExperimentTreePage() {
       }
       
       // Update the main node data
-      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/${selectedNode.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           name: selectedNode.title,
@@ -1366,7 +1383,8 @@ export default function SimpleExperimentTreePage() {
           position: newPosition,
           content: selectedNode.content,
           status: newStatus
-        })
+        }),
+        requireAuth: true
       })
       
       if (!response.ok) {
@@ -1420,16 +1438,9 @@ export default function SimpleExperimentTreePage() {
 
     try {
       // Get the current session token
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error('No authentication token available')
-      }
-      
-      const response = await fetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
+      const response = await authFetch(`/api/trees/${treeId}/nodes/${nodeId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
+        requireAuth: true
       })
 
       if (!response.ok) {
@@ -1444,6 +1455,7 @@ export default function SimpleExperimentTreePage() {
         setSelectedNodeId(null)
       }
     } catch (err) {
+      if (handleAuthError(err)) return
       console.error('Error deleting node:', err)
       alert('Failed to delete node: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
@@ -2152,6 +2164,7 @@ export default function SimpleExperimentTreePage() {
                             metadata={tempMetadata}
                             status={selectedNode.status}
                             experimentNodes={experimentNodes}
+                            currentGroupKey={selectedNode.type}
                             onSave={saveMetadata}
                             onCancel={cancelEditingMetadata}
                           />
@@ -2625,12 +2638,14 @@ function MetadataEditForm({
   metadata,
   status,
   experimentNodes,
+  currentGroupKey,
   onSave, 
   onCancel
 }: { 
   metadata: ExperimentNode['metadata']
   status: string
   experimentNodes: ExperimentNode[]
+  currentGroupKey: string
   onSave: (type: string, position: number, status: string) => void
   onCancel: () => void
 }) {
@@ -2638,16 +2653,22 @@ function MetadataEditForm({
   const [position, setPosition] = useState(metadata.position)
   const [nodeStatus, setNodeStatus] = useState(status)
   
-  // Calculate max position based on current block type
-  const maxPosition = experimentNodes.filter(n => n.type === nodeType).length
+  // Use the same grouping key as node rendering: node.type (block_id || node_type)
+  // When the form first loads, group by the current node's effective key (currentGroupKey).
+  // When the type changes in the form, group by the selected nodeType instead.
+  const effectiveGroupKey = nodeType === metadata.type ? currentGroupKey : nodeType
+  const maxPosition = Math.max(1, experimentNodes.filter(n => n.type === effectiveGroupKey).length)
 
-  // Update position when node type changes
+  // Update position when node type changes, clamp between 1 and max
   useEffect(() => {
-    const newMaxPosition = experimentNodes.filter(n => n.type === nodeType).length
+    const groupKey = nodeType === metadata.type ? currentGroupKey : nodeType
+    const newMaxPosition = Math.max(1, experimentNodes.filter(n => n.type === groupKey).length)
     if (position > newMaxPosition) {
       setPosition(newMaxPosition)
+    } else if (position < 1) {
+      setPosition(1)
     }
-  }, [nodeType, position])
+  }, [nodeType, position, experimentNodes, currentGroupKey, metadata.type])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
