@@ -432,13 +432,20 @@ export default function SimpleProjectPage() {
     try {
       setCreating(true)
       
-      // For now, no authentication required
-      // TODO: Implement proper project ownership and member system
+      // Include Authorization when available
+      let headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      }
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/projects/${projectId}/trees`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           name,
           description,
@@ -551,11 +558,19 @@ export default function SimpleProjectPage() {
     try {
       setCreatingSoftware(true)
       
+      let headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      }
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/projects/${projectId}/software`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           name,
           type,
@@ -590,11 +605,19 @@ export default function SimpleProjectPage() {
     try {
       setEditingSoftwareState(true)
       
+      let headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      }
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/software/${softwareId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           name,
           type,
@@ -632,8 +655,17 @@ export default function SimpleProjectPage() {
     }
 
     try {
+      let headers: HeadersInit = {}
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/software/${softwareId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers
       })
 
       if (!response.ok) {
@@ -653,11 +685,19 @@ export default function SimpleProjectPage() {
     try {
       setCreatingDataset(true)
       
+      let headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      }
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/projects/${projectId}/datasets`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           name,
           type,
@@ -690,11 +730,19 @@ export default function SimpleProjectPage() {
     try {
       setEditingDatasetState(true)
       
+      let headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      }
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/datasets/${datasetId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           name,
           type,
@@ -730,8 +778,17 @@ export default function SimpleProjectPage() {
     }
 
     try {
+      let headers: HeadersInit = {}
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/datasets/${datasetId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers
       })
 
       if (!response.ok) {
@@ -751,11 +808,19 @@ export default function SimpleProjectPage() {
     try {
       setCreatingOutput(true)
       
+      let headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      }
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/projects/${projectId}/outputs`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           type,
           title,
@@ -789,11 +854,19 @@ export default function SimpleProjectPage() {
     try {
       setEditingOutputState(true)
       
+      let headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      }
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/outputs/${outputId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           type,
           title,
@@ -830,8 +903,17 @@ export default function SimpleProjectPage() {
     }
 
     try {
+      let headers: HeadersInit = {}
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
+        }
+      }
+
       const response = await fetch(`/api/outputs/${outputId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers
       })
 
       if (!response.ok) {

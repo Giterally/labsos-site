@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
+import { supabaseServer } from '@/lib/supabase-server'
 
 export async function GET(
   request: NextRequest,
@@ -11,40 +10,54 @@ export async function GET(
   try {
     const { projectId } = await params
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-    // Check if projectId is a UUID or slug/name
+    // Resolve project and visibility using server client
     let actualProjectId = projectId
-    if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // It's a slug or name, try to find the project
-      // First try by slug
-      let { data: project, error: projectError } = await supabase
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId)
+    if (!isUUID) {
+      const { data: bySlug } = await supabaseServer
         .from('projects')
         .select('id')
         .eq('slug', projectId)
         .single()
-
-      // If not found by slug, try by name
-      if (projectError || !project) {
-        const { data: projectByName, error: nameError } = await supabase
+      if (bySlug?.id) {
+        actualProjectId = bySlug.id
+      } else {
+        const { data: byName } = await supabaseServer
           .from('projects')
           .select('id')
           .eq('name', projectId)
           .single()
-
-        if (nameError || !projectByName) {
+        if (!byName?.id) {
           return NextResponse.json({ error: 'Project not found' }, { status: 404 })
         }
-        actualProjectId = projectByName.id
-      } else {
-        actualProjectId = project.id
+        actualProjectId = byName.id
+      }
+    }
+
+    const { data: proj, error: projErr } = await supabaseServer
+      .from('projects')
+      .select('visibility')
+      .eq('id', actualProjectId)
+      .single()
+
+    if (projErr || !proj) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
+
+    let client: any = supabaseServer
+    if (proj.visibility === 'private') {
+      // Require auth for private projects
+      const authContext = await authenticateRequest(request)
+      client = authContext.supabase
+      const permissionService = new PermissionService(client, authContext.user.id)
+      const access = await permissionService.checkProjectAccess(actualProjectId)
+      if (!access.canRead) {
+        return NextResponse.json({ message: 'Access denied' }, { status: 403 })
       }
     }
 
     // Get datasets associated with this project
-    const { data: projectDatasets, error: projectDatasetsError } = await supabase
+    const { data: projectDatasets, error: projectDatasetsError } = await client
       .from('project_datasets')
       .select(`
         dataset:dataset_id (
@@ -70,6 +83,9 @@ export async function GET(
 
     return NextResponse.json({ datasets })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in GET /api/projects/[projectId]/datasets:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -142,16 +158,12 @@ export async function POST(
     const validDatasetTypes = ['raw_data', 'processed_data', 'training_data', 'validation_data']
     const finalDatasetType = validDatasetTypes.includes(type) ? type : 'raw_data'
     
-    console.log('Creating dataset with data:', {
-      name: name.trim(),
-      type: finalDatasetType,
-      description: description?.trim() || null,
-      format: format?.trim() || null,
-      file_size: file_size || null,
-      size_unit: finalSizeUnit,
-      access_level: finalAccessLevel,
-      repository_url: repository_url?.trim() || null
-    })
+    // Verify permissions
+    const permissionService = new PermissionService(supabase, user.id)
+    const access = await permissionService.checkProjectAccess(actualProjectId)
+    if (!access.canWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
+    }
 
     // Create the dataset entry
     const { data: dataset, error: datasetError } = await supabase
@@ -165,7 +177,7 @@ export async function POST(
         size_unit: finalSizeUnit,
         access_level: finalAccessLevel,
         repository_url: repository_url?.trim() || null,
-        created_by: null // No authentication for now
+        created_by: user.id
       })
       .select()
       .single()
@@ -198,6 +210,9 @@ export async function POST(
 
     return NextResponse.json({ dataset })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in POST /api/projects/[projectId]/datasets:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

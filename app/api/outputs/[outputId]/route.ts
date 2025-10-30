@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function PUT(
   request: NextRequest,
@@ -28,9 +26,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Authenticate
+    const authContext = await authenticateRequest(request)
+    const { user, supabase } = authContext
 
     // Validate and prepare data
     const validStatuses = ['published', 'submitted', 'in_preparation', 'draft']
@@ -44,6 +42,31 @@ export async function PUT(
       if (!isNaN(parsedDate.getTime())) {
         finalDate = parsedDate.toISOString()
       }
+    }
+
+    // Determine linked projects
+    const { data: links, error: linkError } = await supabase
+      .from('project_outputs')
+      .select('project_id')
+      .eq('output_id', outputId)
+
+    if (linkError) {
+      console.error('Error reading project_outputs links:', linkError)
+      return NextResponse.json({ error: 'Failed to verify permissions' }, { status: 500 })
+    }
+    if (!links || links.length === 0) {
+      return NextResponse.json({ error: 'Output not found' }, { status: 404 })
+    }
+
+    // Check canWrite against at least one linked project
+    const permissionService = new PermissionService(supabase, user.id)
+    let hasWrite = false
+    for (const l of links) {
+      const perms = await permissionService.checkProjectAccess(l.project_id)
+      if (perms.canWrite) { hasWrite = true; break }
+    }
+    if (!hasWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
     }
 
     // Update the output entry
@@ -75,6 +98,9 @@ export async function PUT(
 
     return NextResponse.json({ output: data })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in PUT /api/outputs/[outputId]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -87,9 +113,34 @@ export async function DELETE(
   try {
     const { outputId } = await params
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Authenticate
+    const authContext = await authenticateRequest(request)
+    const { user, supabase } = authContext
+
+    // Determine linked projects
+    const { data: links, error: linkError } = await supabase
+      .from('project_outputs')
+      .select('project_id')
+      .eq('output_id', outputId)
+
+    if (linkError) {
+      console.error('Error reading project_outputs links:', linkError)
+      return NextResponse.json({ error: 'Failed to verify permissions' }, { status: 500 })
+    }
+    if (!links || links.length === 0) {
+      return NextResponse.json({ error: 'Output not found' }, { status: 404 })
+    }
+
+    // Check canWrite against at least one linked project
+    const permissionService = new PermissionService(supabase, user.id)
+    let hasWrite = false
+    for (const l of links) {
+      const perms = await permissionService.checkProjectAccess(l.project_id)
+      if (perms.canWrite) { hasWrite = true; break }
+    }
+    if (!hasWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
+    }
 
     // Delete the output entry (this will cascade delete project_outputs links)
     const { error: outputError } = await supabase
@@ -104,6 +155,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in DELETE /api/outputs/[outputId]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

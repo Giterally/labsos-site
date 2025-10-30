@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { PermissionService } from '@/lib/permission-service'
 
 export async function PUT(
   request: NextRequest,
@@ -27,9 +25,34 @@ export async function PUT(
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Authenticate
+    const authContext = await authenticateRequest(request)
+    const { user, supabase } = authContext
+
+    // Determine linked projects
+    const { data: links, error: linkError } = await supabase
+      .from('project_datasets')
+      .select('project_id')
+      .eq('dataset_id', datasetId)
+
+    if (linkError) {
+      console.error('Error reading project_datasets links:', linkError)
+      return NextResponse.json({ error: 'Failed to verify permissions' }, { status: 500 })
+    }
+    if (!links || links.length === 0) {
+      return NextResponse.json({ error: 'Dataset not found' }, { status: 404 })
+    }
+
+    // Check canWrite against at least one linked project
+    const permissionService = new PermissionService(supabase, user.id)
+    let hasWrite = false
+    for (const l of links) {
+      const perms = await permissionService.checkProjectAccess(l.project_id)
+      if (perms.canWrite) { hasWrite = true; break }
+    }
+    if (!hasWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
+    }
 
     // Validate access_level
     const validAccessLevels = ['public', 'restricted', 'private']
@@ -71,6 +94,9 @@ export async function PUT(
 
     return NextResponse.json({ dataset: data })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in PUT /api/datasets/[datasetId]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -83,9 +109,34 @@ export async function DELETE(
   try {
     const { datasetId } = await params
 
-    // For now, use the anon client without authentication
-    // TODO: Implement proper project ownership and member system
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    // Authenticate
+    const authContext = await authenticateRequest(request)
+    const { user, supabase } = authContext
+
+    // Determine linked projects
+    const { data: links, error: linkError } = await supabase
+      .from('project_datasets')
+      .select('project_id')
+      .eq('dataset_id', datasetId)
+
+    if (linkError) {
+      console.error('Error reading project_datasets links:', linkError)
+      return NextResponse.json({ error: 'Failed to verify permissions' }, { status: 500 })
+    }
+    if (!links || links.length === 0) {
+      return NextResponse.json({ error: 'Dataset not found' }, { status: 404 })
+    }
+
+    // Check canWrite against at least one linked project
+    const permissionService = new PermissionService(supabase, user.id)
+    let hasWrite = false
+    for (const l of links) {
+      const perms = await permissionService.checkProjectAccess(l.project_id)
+      if (perms.canWrite) { hasWrite = true; break }
+    }
+    if (!hasWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
+    }
 
     // Delete the dataset entry (this will cascade delete project_datasets links)
     const { error: datasetError } = await supabase
@@ -100,6 +151,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Error in DELETE /api/datasets/[datasetId]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
