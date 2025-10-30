@@ -130,7 +130,9 @@ export async function POST(
 
     const { projectId } = await params
     const body = await request.json()
-    const { user_id, role = 'Admin' } = body
+    const { user_id } = body
+    // Force role to always be 'Admin' - no other roles allowed
+    const role = 'Admin'
 
     if (!user_id) {
       return NextResponse.json(

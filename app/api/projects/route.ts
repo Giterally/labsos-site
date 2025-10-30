@@ -179,23 +179,32 @@ export async function POST(request: Request) {
       throw new Error(`Failed to create project: ${error.message}`)
     }
 
-    // Add the creator as a team member with "Lead Researcher" role
+    // Add the creator as a team member with "Admin" role
     // Use upsert to avoid duplicate key constraint violations
+    const memberData = {
+      project_id: project.id,
+      user_id: auth.user.id,
+      role: 'Admin',
+      initials: auth.user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U',
+      left_at: null // Ensure they're active
+    }
+    
+    console.log('DEBUG: About to insert project_member with data:', JSON.stringify(memberData, null, 2))
+    console.log('DEBUG: Role value:', memberData.role, 'Type:', typeof memberData.role)
+    console.log('DEBUG: Role === "Admin":', memberData.role === 'Admin')
+    
     const { error: memberError } = await auth.supabase
       .from('project_members')
-      .upsert([{
-        project_id: project.id,
-        user_id: auth.user.id,
-        role: 'Admin',
-        initials: auth.user.user_metadata?.name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'U',
-        left_at: null // Ensure they're active
-      }], {
+      .upsert([memberData], {
         onConflict: 'project_id,user_id'
       })
 
     if (memberError) {
-      console.warn('Failed to add creator as team member:', memberError)
+      console.error('DEBUG: Failed to add creator as team member:', memberError)
+      console.error('DEBUG: Member error details:', JSON.stringify(memberError, null, 2))
       // Don't fail the project creation if team member addition fails
+    } else {
+      console.log('DEBUG: Successfully added creator as team member')
     }
 
     // Transform project to include empty related data

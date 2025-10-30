@@ -1,14 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export type ProjectRole = 'Lead Researcher' | 'Admin' | 'Member' | 'Viewer'
+export type ProjectRole = 'Admin'
 export type Permission = 'read' | 'write' | 'delete' | 'manage_members' | 'manage_trees'
 
-const ROLE_PERMISSIONS: Record<ProjectRole, Permission[]> = {
-  'Lead Researcher': ['read', 'write', 'delete', 'manage_members', 'manage_trees'],
-  'Admin': ['read', 'write', 'delete', 'manage_members', 'manage_trees'],
-  'Member': ['read', 'write'],
-  'Viewer': ['read']
-}
+// All users with Admin role have full permissions
+const ADMIN_PERMISSIONS: Permission[] = ['read', 'write', 'delete', 'manage_members', 'manage_trees']
 
 export interface ProjectAccess {
   hasAccess: boolean
@@ -54,7 +50,7 @@ export class PermissionService {
         hasAccess: true,
         isOwner: true,
         isMember: true,
-        role: 'Lead Researcher',
+        role: 'Admin',
         projectId: project.id,
         canRead: true,
         canWrite: true,
@@ -75,7 +71,8 @@ export class PermissionService {
 
     if (membership) {
       const role = membership.role as ProjectRole
-      const permissions = ROLE_PERMISSIONS[role] || []
+      // All members have Admin role with full permissions
+      const permissions = ADMIN_PERMISSIONS
       
       return {
         hasAccess: true,
