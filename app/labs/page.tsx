@@ -557,16 +557,18 @@ export default function PublicProjectsPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                      <div className="flex items-center space-x-1">
-                        <UserGroupIcon className="h-4 w-4" />
-                        <span>{project.member_count} members</span>
+                    {project.visibility !== 'private' && (
+                      <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                        <div className="flex items-center space-x-1">
+                          <UserGroupIcon className="h-4 w-4" />
+                          <span>{project.member_count} members</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <FolderIcon className="h-4 w-4" />
+                          <span>{project.tree_count} trees</span>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        <FolderIcon className="h-4 w-4" />
-                        <span>{project.tree_count} trees</span>
-                      </div>
-                    </div>
+                    )}
 
                     <div className="text-xs text-muted-foreground">
                       Created {new Date(project.created_at).toLocaleDateString()}
