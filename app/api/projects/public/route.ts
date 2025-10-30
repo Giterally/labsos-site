@@ -115,7 +115,7 @@ export async function GET(request: Request) {
     // Get user's project memberships for access control
     let userMemberships = new Set<string>()
     if (userId) {
-      const { data: memberships } = await supabase
+      const { data: memberships } = await supabaseServer
         .from('project_members')
         .select('project_id')
         .eq('user_id', userId)
