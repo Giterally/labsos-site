@@ -31,13 +31,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setLoading(false)
     })
 
-    // Set up auth state listener for login/logout only
-    const { data: { subscription } } = onAuthStateChange((authUser) => {
-      if (!authUser) {
-        // User logged out
-        setUser(null)
+    // Set up auth state listener for login/logout events
+    const {
+      data: { subscription },
+    } = onAuthStateChange((authUser) => {
+      if (authUser) {
+        // User logged in elsewhere in the app
+        setUser(authUser)
+        setLoading(false)
+        return
       }
-      // Don't refresh on login - the initial mount handles that
+
+      // User logged out
+      setUser(null)
+      setLoading(false)
     })
 
     return () => {
