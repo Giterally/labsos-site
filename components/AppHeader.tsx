@@ -67,7 +67,7 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
               className="flex items-center space-x-3 px-4 py-7 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 rounded-lg transition-colors"
             >
               <Image
-                src="/olvaro-fin copy.png"
+                src="/olvaro-logo.png"
                 alt="Olvaro Logo"
                 width={48}
                 height={48}

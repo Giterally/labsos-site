@@ -221,7 +221,7 @@ export default function KnowledgeCaptureLanding() {
           {!isAuthenticated && (
             <div className="flex items-center space-x-2">
               <Image
-                src="/olvaro-fin copy.png"
+                src="/olvaro-logo.png"
                 alt="Olvaro Logo"
                 width={48}
                 height={48}
@@ -528,7 +528,7 @@ export default function KnowledgeCaptureLanding() {
             <div className="space-y-4">
               <div className="flex items-center space-x-2">
                 <Image
-                  src="/olvaro-fin copy.png"
+                  src="/olvaro-logo.png"
                   alt="Olvaro Logo"
                   width={24}
                   height={24}

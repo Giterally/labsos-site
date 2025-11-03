@@ -248,7 +248,7 @@ export default function PublicProjectsPage() {
           <div className="container mx-auto px-4 py-4 flex items-center justify-between">
             <Link href="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
               <Image
-                src="/olvaro-fin copy.png"
+                src="/olvaro-logo.png"
                 alt="Olvaro Logo"
                 width={32}
                 height={32}
