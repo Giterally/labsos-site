@@ -141,8 +141,8 @@ export function PublicationForm({ publication, profileId, onSave, onCancel }: Pu
   }
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+    <Card className="w-full border-0 shadow-none">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 px-4 pt-4">
         <CardTitle>
           {publication ? 'Edit Publication' : 'Add New Publication'}
         </CardTitle>
@@ -150,7 +150,7 @@ export function PublicationForm({ publication, profileId, onSave, onCancel }: Pu
           <XMarkIcon className="h-4 w-4" />
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">

@@ -56,13 +56,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized to import to this profile' }, { status: 403 })
     }
 
+    // Get current profile data for comparison
+    const { data: currentProfile } = await supabase
+      .from('profiles')
+      .select('bio, institution, department, website, linkedin, github')
+      .eq('id', profileId)
+      .single()
+
     // Fetch data from ORCID API
-    const [profileData, worksData] = await Promise.all([
+    const [profileData, worksData, employmentData] = await Promise.all([
       orcidService.getProfile(orcidId),
-      orcidService.getWorks(orcidId)
+      orcidService.getWorks(orcidId),
+      orcidService.getEmployments(orcidId).catch(() => ({ 'employment-summary': [] })) // Gracefully handle missing employment data
     ])
 
-    // Update profile with ORCID data
+    // Update ORCID ID and metadata (but not profile fields yet)
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
@@ -77,13 +85,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 })
     }
 
-    // Process and import publications
+    // Process and import publications (still automatic)
     const importedCount = await importPublications(supabase, profileId, worksData, orcidService)
+
+    // Extract current employment
+    // Handle the actual ORCID API structure: affiliation-group > summaries > employment-summary
+    const employments = orcidService.extractEmploymentSummaries(employmentData)
+    const currentEmployment = orcidService.getCurrentEmployment(employments)
+
+    // Debug logging to help diagnose issues
+    console.log('[ORCID Import] Employment data response:', JSON.stringify(employmentData, null, 2))
+    console.log('[ORCID Import] Employments array:', JSON.stringify(employments, null, 2))
+    console.log('[ORCID Import] Current employment extracted:', JSON.stringify(currentEmployment, null, 2))
+    console.log('[ORCID Import] Profile person data:', JSON.stringify(profileData.person, null, 2))
+
+    // Extract profile changes
+    const profileChanges = orcidService.extractProfileChanges(
+      profileData,
+      currentEmployment,
+      currentProfile || undefined
+    )
+
+    console.log('[ORCID Import] Final extracted profile changes:', JSON.stringify(profileChanges, null, 2))
 
     return NextResponse.json({
       success: true,
       importedPublications: importedCount,
-      profile: profileData
+      profileChanges
     })
   } catch (error: any) {
     console.error('ORCID import error:', error)

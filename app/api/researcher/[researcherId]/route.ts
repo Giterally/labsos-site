@@ -114,6 +114,8 @@ export async function GET(
       name: profile.full_name || 'Unknown User',
       title: 'Researcher', // Default title since we don't have this field yet
       email: profile.email,
+      show_email: profile.show_email ?? true, // Default to true if null
+      show_projects: profile.show_projects ?? true, // Default to true if null
       bio: profile.bio || 'No bio available',
       avatar: profile.full_name ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'U',
       institution: profile.institution && profile.institution !== 'Not specified' ? profile.institution : (profile.lab_name || 'Not specified'),

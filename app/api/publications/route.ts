@@ -52,9 +52,10 @@ export async function POST(request: NextRequest) {
     const { user, supabase } = authContext
 
     // Verify profile exists and belongs to authenticated user
+    // Note: profiles.id is the foreign key to auth.users.id, so they're the same value
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id, user_id')
+      .select('id')
       .eq('id', profileId)
       .single()
 
@@ -62,8 +63,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    // Verify ownership
-    if (profile.user_id !== user.id) {
+    // Verify ownership - user can only add publications to their own profile
+    if (profile.id !== user.id) {
       return NextResponse.json({ error: 'Unauthorized to add publication to this profile' }, { status: 403 })
     }
 

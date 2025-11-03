@@ -35,7 +35,7 @@ export interface ORCIDProfile {
     path: string
     host: string
   }
-  person: {
+  person?: {
     name?: {
       'given-names'?: { value: string }
       'family-name'?: { value: string }
@@ -80,10 +80,19 @@ export interface ORCIDWorksResponse {
 }
 
 // API Response types
+export interface ORCIDProfileChanges {
+  bio?: string
+  institution?: string
+  department?: string
+  website?: string
+  linkedin?: string
+  github?: string
+}
+
 export interface ORCIDImportResponse {
   success: boolean
   importedPublications: number
-  profile: ORCIDProfile
+  profileChanges: ORCIDProfileChanges
 }
 
 export interface ORCIDImportError {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -12,35 +12,62 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ArrowLeftIcon, ShieldIcon, PaletteIcon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useTheme } from 'next-themes'
+import { supabase } from '@/lib/supabase-client'
 
 export default function SettingsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
   
+  // Get initial tab from URL parameter, default to 'privacy'
+  const initialTab = searchParams.get('tab') || 'privacy'
+  const [activeTab, setActiveTab] = useState(initialTab)
+  
   // Privacy settings
   const [profileVisibility, setProfileVisibility] = useState('public')
-  const [showEmail, setShowEmail] = useState(false)
+  const [showEmail, setShowEmail] = useState(true)
   const [showProjects, setShowProjects] = useState(true)
   
   // Loading states
   const [loading, setLoading] = useState(true)
 
-  // Load user settings
+  // Update tab when URL parameter changes
+  useEffect(() => {
+    const tab = searchParams.get('tab') || 'privacy'
+    setActiveTab(tab)
+  }, [searchParams])
+
+  // Load user settings from database
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        // In a real app, you'd fetch from your API
-        // For now, we'll use localStorage or default values
-        const savedSettings = localStorage.getItem('userSettings')
-        if (savedSettings) {
-          const settings = JSON.parse(savedSettings)
-          setProfileVisibility(settings.profileVisibility || 'public')
-          setShowEmail(settings.showEmail ?? false)
-          setShowProjects(settings.showProjects ?? true)
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          setLoading(false)
+          return
+        }
+
+        const response = await fetch('/api/settings/privacy', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setShowEmail(data.showEmail ?? true)
+          setShowProjects(data.showProjects ?? true)
+        } else {
+          // Default values if fetch fails
+          setShowEmail(true)
+          setShowProjects(true)
         }
       } catch (error) {
         console.error('Error loading settings:', error)
+        // Default values on error
+        setShowEmail(true)
+        setShowProjects(true)
       } finally {
         setLoading(false)
       }
@@ -49,17 +76,34 @@ export default function SettingsPage() {
     loadSettings()
   }, [])
 
-  // Auto-save settings when they change
-  useEffect(() => {
-    if (!loading) {
-      const settings = {
-        profileVisibility,
-        showEmail,
-        showProjects
+  // Save settings to database when they change
+  const savePrivacySettings = async (email?: boolean, projects?: boolean) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        return
       }
-      localStorage.setItem('userSettings', JSON.stringify(settings))
+
+      const updateData: any = {}
+      if (email !== undefined) {
+        updateData.showEmail = email
+      }
+      if (projects !== undefined) {
+        updateData.showProjects = projects
+      }
+
+      await fetch('/api/settings/privacy', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(updateData)
+      })
+    } catch (error) {
+      console.error('Error saving privacy settings:', error)
     }
-  }, [profileVisibility, showEmail, showProjects, loading])
+  }
 
 
   if (loading) {
@@ -95,7 +139,7 @@ export default function SettingsPage() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="privacy" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="privacy" className="flex items-center space-x-2">
               <ShieldIcon className="h-4 w-4" />
@@ -153,6 +197,7 @@ export default function SettingsPage() {
                     checked={showEmail}
                     onCheckedChange={(checked) => {
                       setShowEmail(checked)
+                      savePrivacySettings(checked, undefined)
                       toast({
                         title: "Setting updated",
                         description: "Email visibility preference saved.",
@@ -171,6 +216,7 @@ export default function SettingsPage() {
                     checked={showProjects}
                     onCheckedChange={(checked) => {
                       setShowProjects(checked)
+                      savePrivacySettings(undefined, checked)
                       toast({
                         title: "Setting updated",
                         description: "Project visibility preference saved.",

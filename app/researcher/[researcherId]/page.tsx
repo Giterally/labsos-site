@@ -50,6 +50,8 @@ interface ResearcherProfile {
   name: string
   title: string
   email: string
+  show_email?: boolean
+  show_projects?: boolean
   bio: string
   avatar?: string
   institution: string
@@ -742,7 +744,7 @@ export default function ResearcherProfilePage() {
                     </div>
                   ) : (
                     <div className="flex justify-center space-x-2">
-                      {researcher.email && (
+                      {researcher.email && (researcher.show_email ?? true) && (
                         <Button variant="outline" size="sm" asChild>
                           <a href={`mailto:${researcher.email}`}>
                             <EnvelopeIcon className="h-4 w-4" />
@@ -813,9 +815,21 @@ export default function ResearcherProfilePage() {
                     </div>
                   )}
                   
-                  {/* Delete Profile Button - Only show for own profile */}
+                  {/* Privacy Controls Button - Only show for own profile */}
                   {isOwnProfile && !isEditing && (
                     <div className="pt-4 border-t">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full text-gray-600 hover:bg-gray-100 mb-2"
+                        onClick={() => {
+                          router.push('/settings?tab=privacy')
+                        }}
+                      >
+                        Privacy Controls
+                      </Button>
+                      
+                      {/* Delete Profile Button */}
                       <Button 
                         variant="outline" 
                         size="sm" 
@@ -1013,87 +1027,103 @@ export default function ResearcherProfilePage() {
               </TabsList>
 
               <TabsContent value="projects" className="space-y-6">
-                {/* Current Projects */}
-                <div>
-                  <h2 className="text-xl font-semibold text-foreground mb-4">Current Projects</h2>
-                  <div className="space-y-4">
-                    {researcher.currentProjects.map((project) => (
-                      <Card key={project.id} className="hover:shadow-lg transition-shadow">
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <h3 className="font-semibold text-foreground mb-1">{project.name}</h3>
-                              <p className="text-sm text-muted-foreground mb-2">{project.description}</p>
-                              <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                                <div className="flex items-center space-x-1">
-                                  <UserGroupIcon className="h-3 w-3" />
-                                  <span>{project.role}</span>
+                {researcher.show_projects !== false ? (
+                  <>
+                    {/* Current Projects */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-foreground mb-4">Current Projects</h2>
+                      <div className="space-y-4">
+                        {researcher.currentProjects.length > 0 ? (
+                          researcher.currentProjects.map((project) => (
+                            <Card key={project.id} className="hover:shadow-lg transition-shadow">
+                              <CardContent className="p-6">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div>
+                                    <h3 className="font-semibold text-foreground mb-1">{project.name}</h3>
+                                    <p className="text-sm text-muted-foreground mb-2">{project.description}</p>
+                                    <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                                      <div className="flex items-center space-x-1">
+                                        <UserGroupIcon className="h-3 w-3" />
+                                        <span>{project.role}</span>
+                                      </div>
+                                      <div className="flex items-center space-x-1">
+                                        <FolderIcon className="h-3 w-3" />
+                                        <span>{project.project.name}</span>
+                                      </div>
+                                      <div className="flex items-center space-x-1">
+                                        <CalendarIcon className="h-3 w-3" />
+                                        <span>Started {new Date(project.startDate).toLocaleDateString()}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Badge className={getStatusColor(project.status)}>
+                                    {project.status}
+                                  </Badge>
                                 </div>
-                                <div className="flex items-center space-x-1">
-                                  <FolderIcon className="h-3 w-3" />
-                                  <span>{project.project.name}</span>
-                                </div>
-                                <div className="flex items-center space-x-1">
-                                  <CalendarIcon className="h-3 w-3" />
-                                  <span>Started {new Date(project.startDate).toLocaleDateString()}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <Badge className={getStatusColor(project.status)}>
-                              {project.status}
-                            </Badge>
-                          </div>
-                          <Link href={`/project/${project.project.id}`}>
-                            <Button variant="outline" size="sm">
-                              View Project
-                            </Button>
-                          </Link>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
+                                <Link href={`/project/${project.project.id}`}>
+                                  <Button variant="outline" size="sm">
+                                    View Project
+                                  </Button>
+                                </Link>
+                              </CardContent>
+                            </Card>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No current projects</p>
+                        )}
+                      </div>
+                    </div>
 
-                {/* Past Projects */}
-                <div>
-                  <h2 className="text-xl font-semibold text-foreground mb-4">Past Projects</h2>
-                  <div className="space-y-4">
-                    {researcher.pastProjects.map((project) => (
-                      <Card key={project.id} className="hover:shadow-lg transition-shadow">
-                        <CardContent className="p-6">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <h3 className="font-semibold text-foreground mb-1">{project.name}</h3>
-                              <p className="text-sm text-muted-foreground mb-2">{project.description}</p>
-                              <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                                <div className="flex items-center space-x-1">
-                                  <UserGroupIcon className="h-3 w-3" />
-                                  <span>{project.role}</span>
+                    {/* Past Projects */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-foreground mb-4">Past Projects</h2>
+                      <div className="space-y-4">
+                        {researcher.pastProjects.length > 0 ? (
+                          researcher.pastProjects.map((project) => (
+                            <Card key={project.id} className="hover:shadow-lg transition-shadow">
+                              <CardContent className="p-6">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div>
+                                    <h3 className="font-semibold text-foreground mb-1">{project.name}</h3>
+                                    <p className="text-sm text-muted-foreground mb-2">{project.description}</p>
+                                    <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                                      <div className="flex items-center space-x-1">
+                                        <UserGroupIcon className="h-3 w-3" />
+                                        <span>{project.role}</span>
+                                      </div>
+                                      <div className="flex items-center space-x-1">
+                                        <FolderIcon className="h-3 w-3" />
+                                        <span>{project.project.name}</span>
+                                      </div>
+                                      <div className="flex items-center space-x-1">
+                                        <CalendarIcon className="h-3 w-3" />
+                                        <span>{new Date(project.startDate).toLocaleDateString()} - {new Date(project.endDate).toLocaleDateString()}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Badge className={getStatusColor(project.status)}>
+                                    {project.status}
+                                  </Badge>
                                 </div>
-                                <div className="flex items-center space-x-1">
-                                  <FolderIcon className="h-3 w-3" />
-                                  <span>{project.project.name}</span>
-                                </div>
-                                <div className="flex items-center space-x-1">
-                                  <CalendarIcon className="h-3 w-3" />
-                                  <span>{new Date(project.startDate).toLocaleDateString()} - {new Date(project.endDate).toLocaleDateString()}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <Badge className={getStatusColor(project.status)}>
-                              {project.status}
-                            </Badge>
-                          </div>
-                          <Link href={`/project/${project.project.id}`}>
-                            <Button variant="outline" size="sm">
-                              View Project
-                            </Button>
-                          </Link>
-                        </CardContent>
-                      </Card>
-                    ))}
+                                <Link href={`/project/${project.project.id}`}>
+                                  <Button variant="outline" size="sm">
+                                    View Project
+                                  </Button>
+                                </Link>
+                              </CardContent>
+                            </Card>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No past projects</p>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-8 text-center text-muted-foreground">
+                    <p>Projects are hidden on this profile</p>
                   </div>
-                </div>
+                )}
               </TabsContent>
 
               <TabsContent value="publications" className="space-y-4">
@@ -1137,7 +1167,7 @@ export default function ResearcherProfilePage() {
                 
                 {/* Publication Form Modal */}
                 {showPublicationForm && (
-                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 py-4 px-2">
                     <div className="bg-background rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                       <PublicationForm
                         publication={editingPublication}
