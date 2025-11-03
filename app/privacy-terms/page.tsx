@@ -19,7 +19,7 @@ export default function PrivacyTermsPage() {
           {!isAuthenticated && (
             <div className="flex items-center space-x-2">
               <Image
-                src="/olvaro-fin.png"
+                src="/olvaro-fin copy.png"
                 alt="Olvaro Logo"
                 width={32}
                 height={32}

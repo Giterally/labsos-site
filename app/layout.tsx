@@ -12,6 +12,10 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Olvaro",
   description: "Research project management and knowledge organization platform",
+  icons: {
+    icon: '/olvaro-fin copy.png',
+    apple: '/olvaro-fin copy.png',
+  },
 }
 
 export default function RootLayout({

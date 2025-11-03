@@ -64,16 +64,16 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
               variant="ghost"
               size="lg"
               onClick={() => router.push("/")}
-              className="flex items-center space-x-3 px-4 py-4 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
+              className="flex items-center space-x-3 px-4 py-7 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 rounded-lg transition-colors"
             >
               <Image
-                src="/olvaro-fin.png"
+                src="/olvaro-fin copy.png"
                 alt="Olvaro Logo"
-                width={64}
-                height={64}
-                className="h-16 w-16 mt-1"
+                width={48}
+                height={48}
+                className="h-12 w-12 mt-1 pointer-events-none"
               />
-              <span className="font-bold text-xl">Olvaro</span>
+              <span className="font-bold text-xl pointer-events-none">Olvaro</span>
             </Button>
             
             {/* Navigation breadcrumb */}

@@ -221,11 +221,11 @@ export default function KnowledgeCaptureLanding() {
           {!isAuthenticated && (
             <div className="flex items-center space-x-2">
               <Image
-                src="/olvaro-fin.png"
+                src="/olvaro-fin copy.png"
                 alt="Olvaro Logo"
-                width={64}
-                height={64}
-                className="h-16 w-16"
+                width={48}
+                height={48}
+                className="h-12 w-12"
               />
               <span className="text-2xl font-bold text-foreground">Olvaro</span>
             </div>
@@ -240,9 +240,12 @@ export default function KnowledgeCaptureLanding() {
             <a href="#labs" className="text-muted-foreground hover:text-foreground transition-colors">
               Research Projects
             </a>
-            <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">
+            <button 
+              onClick={() => setShowContactDialog(true)}
+              className="text-muted-foreground hover:text-foreground transition-colors text-left"
+            >
               Contact
-            </a>
+            </button>
           </nav>
           {!userLoading && !isAuthenticated && (
             <Button 
@@ -365,7 +368,7 @@ export default function KnowledgeCaptureLanding() {
       </section>
 
       {/* Research Projects Discovery */}
-      <section id="labs" className="py-16 px-4 bg-muted/10 relative z-10">
+      <section id="labs" className="py-16 px-4 bg-muted/10 relative z-10 scroll-mt-32">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Researchers and Research Projects Using Olvaro</h2>
@@ -524,12 +527,13 @@ export default function KnowledgeCaptureLanding() {
           <div className="grid md:grid-cols-4 gap-8">
             <div className="space-y-4">
               <div className="flex items-center space-x-2">
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.5 16C11.5 16 11 18 11 20V22H13V20C13 18 12.5 16 12.5 16" fill="#1B5E20" stroke="#1B5E20" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2C8 6 6 10 6 14C6 16 8 16 10 14C10 12 11 10 12 8C13 10 14 12 14 14C16 16 18 16 18 14C18 10 16 6 12 2Z" fill="#1B5E20" stroke="#1B5E20" />
-                  <path strokeLinecap="round" strokeWidth={1.5} d="M10 22C9 21 8 20 7 19" fill="#1B5E20" stroke="#1B5E20" />
-                  <path strokeLinecap="round" strokeWidth={1.5} d="M14 22C15 21 16 20 17 19" fill="#1B5E20" stroke="#1B5E20" />
-                </svg>
+                <Image
+                  src="/olvaro-fin copy.png"
+                  alt="Olvaro Logo"
+                  width={24}
+                  height={24}
+                  className="h-6 w-6"
+                />
                 <span className="text-lg font-semibold text-foreground">Olvaro</span>
               </div>
               <p className="text-sm text-muted-foreground">
