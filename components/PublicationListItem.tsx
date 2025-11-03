@@ -71,19 +71,19 @@ export function PublicationListItem({
 
   const getTypeColor = (type: string) => {
     const colors: Record<string, string> = {
-      'journal-article': 'bg-blue-100 text-blue-800',
-      'conference-paper': 'bg-green-100 text-green-800',
-      'book-chapter': 'bg-purple-100 text-purple-800',
-      'preprint': 'bg-orange-100 text-orange-800',
-      'thesis': 'bg-pink-100 text-pink-800',
-      'book': 'bg-indigo-100 text-indigo-800',
-      'other': 'bg-gray-100 text-gray-800'
+      'journal-article': 'bg-blue-100 text-blue-800 dark:bg-blue-800/50 dark:text-blue-200',
+      'conference-paper': 'bg-green-100 text-green-800 dark:bg-green-800/50 dark:text-green-200',
+      'book-chapter': 'bg-purple-100 text-purple-800 dark:bg-purple-800/50 dark:text-purple-200',
+      'preprint': 'bg-orange-100 text-orange-800 dark:bg-orange-800/50 dark:text-orange-200',
+      'thesis': 'bg-pink-100 text-pink-800 dark:bg-pink-800/50 dark:text-pink-200',
+      'book': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-800/50 dark:text-indigo-200',
+      'other': 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-200'
     }
     return colors[type] || colors.other
   }
 
   return (
-    <Card className={`hover:shadow-md transition-all duration-200 relative ${isSelected ? 'ring-2 ring-primary bg-blue-50 dark:bg-blue-950/20' : ''}`}>
+    <Card className={`hover:shadow-md transition-all duration-200 relative ${isSelected ? 'ring-2 ring-primary !bg-muted' : ''}`}>
       <CardContent className="p-4">
         {/* ORCID Logo - Top Right */}
         {publication.source === 'orcid' && (
@@ -111,7 +111,10 @@ export function PublicationListItem({
           
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
+              <div 
+                className="flex-1 min-w-0 cursor-pointer"
+                onClick={() => onSelect(publication.id)}
+              >
                 <div className="mb-2">
                   <h3 className="font-semibold text-foreground line-clamp-2">
                     {publication.title}
@@ -147,7 +150,8 @@ export function PublicationListItem({
                         href={`https://doi.org/${publication.doi}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        className={`text-xs hover:underline ${isSelected ? 'text-blue-400 dark:text-blue-300' : 'text-blue-600 dark:text-blue-400'}`}
                       >
                         {publication.doi}
                       </a>
@@ -157,7 +161,7 @@ export function PublicationListItem({
                   {publication.url && (
                     <div className="flex items-center space-x-1">
                       {isLinkedInUrl(publication.url) ? (
-                        <Linkedin className="h-3 w-3 text-blue-600" />
+                        <Linkedin className={`h-3 w-3 ${isSelected ? 'text-blue-400 dark:text-blue-300' : 'text-blue-600 dark:text-blue-400'}`} />
                       ) : (
                         <LinkIcon className="h-3 w-3" />
                       )}
@@ -165,7 +169,8 @@ export function PublicationListItem({
                         href={publication.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        className={`text-xs hover:underline ${isSelected ? 'text-blue-400 dark:text-blue-300' : 'text-blue-600 dark:text-blue-400'}`}
                       >
                         {isLinkedInUrl(publication.url) ? 'View on LinkedIn' : 'View Paper'}
                       </a>
@@ -178,7 +183,10 @@ export function PublicationListItem({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setShowAbstract(!showAbstract)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowAbstract(!showAbstract)
+                      }}
                       className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
                     >
                       {showAbstract ? (
@@ -203,7 +211,7 @@ export function PublicationListItem({
                 )}
               </div>
 
-              <div className="flex items-center space-x-1 ml-2">
+              <div className="flex items-center space-x-1 ml-2" onClick={(e) => e.stopPropagation()}>
                 <Button
                   variant="ghost"
                   size="sm"

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,6 +20,11 @@ export function ORCIDImport({ profileId, currentORCID, onImportComplete }: ORCID
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // Sync internal state with currentORCID prop when it changes
+  useEffect(() => {
+    setOrcidId(currentORCID || '')
+  }, [currentORCID])
 
   const handleImport = async () => {
     if (!orcidId.trim()) {

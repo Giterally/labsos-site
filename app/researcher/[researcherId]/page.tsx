@@ -169,9 +169,9 @@ export default function ResearcherProfilePage() {
     }
   }, [researcherId])
 
-  // Initialize edit data when researcher data loads
+  // Initialize edit data when researcher data loads, but only if not currently editing
   useEffect(() => {
-    if (researcher) {
+    if (researcher && !isEditing) {
       setEditData({
         name: researcher.name,
         title: researcher.title,
@@ -186,11 +186,13 @@ export default function ResearcherProfilePage() {
         skills: [...researcher.skills],
         interests: [...researcher.interests],
       })
-      
-      // Initialize filtered publications
+    }
+    
+    // Always update filtered publications when researcher changes
+    if (researcher) {
       setFilteredPublications(researcher.publications || [])
     }
-  }, [researcher])
+  }, [researcher, isEditing])
 
   // Calculate delete statistics when dialog opens
   useEffect(() => {

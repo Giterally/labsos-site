@@ -1,6 +1,6 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -30,7 +30,9 @@ interface AppHeaderProps {
 
 export default function AppHeader({ currentPage }: AppHeaderProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const { user, loading } = useUser()
+  const isHomePage = pathname === "/"
 
   const handleSignOut = async () => {
     try {
@@ -82,6 +84,36 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                 <span>/</span>
                 <span className="capitalize">{currentPage}</span>
               </div>
+            )}
+
+            {/* Homepage navigation links - only show on homepage */}
+            {isHomePage && (
+              <nav className="hidden md:flex items-center space-x-6 ml-6">
+                <a 
+                  href="#features" 
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Features
+                </a>
+                <a 
+                  href="#faq" 
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  FAQ
+                </a>
+                <a 
+                  href="#labs" 
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Research Projects
+                </a>
+                <button 
+                  onClick={() => router.push('/?contact=true')}
+                  className="text-muted-foreground hover:text-foreground transition-colors text-left"
+                >
+                  Contact
+                </button>
+              </nav>
             )}
           </div>
 

@@ -43,7 +43,7 @@ export async function PUT(req: NextRequest) {
         website: website || null,
         linkedin: linkedin || null,
         github: github || null,
-        orcid: orcid || null,
+        orcid_id: orcid || null,
         skills: skills || [],
         interests: interests || [],
         updated_at: new Date().toISOString()

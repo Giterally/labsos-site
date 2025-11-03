@@ -215,10 +215,10 @@ export default function KnowledgeCaptureLanding() {
           setShowContactDialog={setShowContactDialog} 
         />
       </Suspense>
-      {/* Header */}
-      <header className={`border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky z-20 ${isAuthenticated ? 'top-20' : 'top-0'}`}>
-        <div className="container mx-auto px-4 h-20 flex items-center justify-between">
-          {!isAuthenticated && (
+      {/* Header - only show when not authenticated (AppHeader handles authenticated state) */}
+      {!isAuthenticated && (
+        <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky z-20 top-0">
+          <div className="container mx-auto px-4 h-20 flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Image
                 src="/olvaro-logo.png"
@@ -229,35 +229,35 @@ export default function KnowledgeCaptureLanding() {
               />
               <span className="text-2xl font-bold text-foreground">Olvaro</span>
             </div>
-          )}
-          <nav className="hidden md:flex items-center space-x-6">
-            <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
-              Features
-            </a>
-            <a href="#faq" className="text-muted-foreground hover:text-foreground transition-colors">
-              FAQ
-            </a>
-            <a href="#labs" className="text-muted-foreground hover:text-foreground transition-colors">
-              Research Projects
-            </a>
-            <button 
-              onClick={() => setShowContactDialog(true)}
-              className="text-muted-foreground hover:text-foreground transition-colors text-left"
-            >
-              Contact
-            </button>
-          </nav>
-          {!userLoading && !isAuthenticated && (
-            <Button 
-              size="lg" 
-              className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold px-8 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
-              onClick={() => (window.location.href = "/login")}
-            >
-              Get Started
-            </Button>
-          )}
-        </div>
-      </header>
+            <nav className="hidden md:flex items-center space-x-6">
+              <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
+                Features
+              </a>
+              <a href="#faq" className="text-muted-foreground hover:text-foreground transition-colors">
+                FAQ
+              </a>
+              <a href="#labs" className="text-muted-foreground hover:text-foreground transition-colors">
+                Research Projects
+              </a>
+              <button 
+                onClick={() => setShowContactDialog(true)}
+                className="text-muted-foreground hover:text-foreground transition-colors text-left"
+              >
+                Contact
+              </button>
+            </nav>
+            {!userLoading && (
+              <Button 
+                size="lg" 
+                className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold px-8 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
+                onClick={() => (window.location.href = "/login")}
+              >
+                Get Started
+              </Button>
+            )}
+          </div>
+        </header>
+      )}
 
       {/* Hero Section */}
       <section className="py-20 px-4 relative pb-32 z-10">

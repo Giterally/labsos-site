@@ -122,7 +122,7 @@ export async function GET(
       website: profile.website || null,
       linkedin: profile.linkedin || null,
       github: profile.github || null,
-      orcid: profile.orcid || null,
+      orcid: profile.orcid_id || null,
       joinedDate: profile.created_at ? new Date(profile.created_at).toISOString().split('T')[0] : 'Unknown',
       lastActive: profile.updated_at ? new Date(profile.updated_at).toISOString().split('T')[0] : 'Unknown',
       currentProjects: currentProjects || [],
