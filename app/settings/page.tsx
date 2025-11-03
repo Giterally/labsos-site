@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeftIcon, BellIcon, ShieldIcon, PaletteIcon } from 'lucide-react'
+import { ArrowLeftIcon, ShieldIcon, PaletteIcon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useTheme } from 'next-themes'
 
@@ -18,24 +18,13 @@ export default function SettingsPage() {
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
   
-  // Notification settings
-  const [emailNotifications, setEmailNotifications] = useState(true)
-  const [projectUpdates, setProjectUpdates] = useState(true)
-  const [teamInvites, setTeamInvites] = useState(true)
-  const [weeklyDigest, setWeeklyDigest] = useState(false)
-  
   // Privacy settings
   const [profileVisibility, setProfileVisibility] = useState('public')
   const [showEmail, setShowEmail] = useState(false)
   const [showProjects, setShowProjects] = useState(true)
   
-  // Appearance settings
-  const [language, setLanguage] = useState('en')
-  const [timezone, setTimezone] = useState('UTC')
-  
   // Loading states
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
 
   // Load user settings
   useEffect(() => {
@@ -46,15 +35,9 @@ export default function SettingsPage() {
         const savedSettings = localStorage.getItem('userSettings')
         if (savedSettings) {
           const settings = JSON.parse(savedSettings)
-          setEmailNotifications(settings.emailNotifications ?? true)
-          setProjectUpdates(settings.projectUpdates ?? true)
-          setTeamInvites(settings.teamInvites ?? true)
-          setWeeklyDigest(settings.weeklyDigest ?? false)
           setProfileVisibility(settings.profileVisibility || 'public')
           setShowEmail(settings.showEmail ?? false)
           setShowProjects(settings.showProjects ?? true)
-          setLanguage(settings.language || 'en')
-          setTimezone(settings.timezone || 'UTC')
         }
       } catch (error) {
         console.error('Error loading settings:', error)
@@ -66,39 +49,17 @@ export default function SettingsPage() {
     loadSettings()
   }, [])
 
-  const saveSettings = async () => {
-    setSaving(true)
-    try {
+  // Auto-save settings when they change
+  useEffect(() => {
+    if (!loading) {
       const settings = {
-        emailNotifications,
-        projectUpdates,
-        teamInvites,
-        weeklyDigest,
         profileVisibility,
         showEmail,
-        showProjects,
-        language,
-        timezone
+        showProjects
       }
-      
-      // In a real app, you'd save to your API
       localStorage.setItem('userSettings', JSON.stringify(settings))
-      
-      toast({
-        title: "Settings saved",
-        description: "Your settings have been updated successfully.",
-      })
-    } catch (error) {
-      console.error('Error saving settings:', error)
-      toast({
-        title: "Error",
-        description: "Failed to save settings. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setSaving(false)
     }
-  }
+  }, [profileVisibility, showEmail, showProjects, loading])
 
 
   if (loading) {
@@ -134,12 +95,8 @@ export default function SettingsPage() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="notifications" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="notifications" className="flex items-center space-x-2">
-              <BellIcon className="h-4 w-4" />
-              <span>Notifications</span>
-            </TabsTrigger>
+        <Tabs defaultValue="privacy" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="privacy" className="flex items-center space-x-2">
               <ShieldIcon className="h-4 w-4" />
               <span>Privacy</span>
@@ -149,70 +106,6 @@ export default function SettingsPage() {
               <span>Appearance</span>
             </TabsTrigger>
           </TabsList>
-
-
-          {/* Notification Settings */}
-          <TabsContent value="notifications" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Notification Preferences</CardTitle>
-                <CardDescription>
-                  Choose how you want to be notified about updates and activities
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Email Notifications</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Receive notifications via email
-                    </p>
-                  </div>
-                  <Switch
-                    checked={emailNotifications}
-                    onCheckedChange={setEmailNotifications}
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Project Updates</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Get notified when projects you're involved in are updated
-                    </p>
-                  </div>
-                  <Switch
-                    checked={projectUpdates}
-                    onCheckedChange={setProjectUpdates}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Team Invites</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Get notified when you're invited to join a team
-                    </p>
-                  </div>
-                  <Switch
-                    checked={teamInvites}
-                    onCheckedChange={setTeamInvites}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Weekly Digest</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Receive a weekly summary of your activities
-                    </p>
-                  </div>
-                  <Switch
-                    checked={weeklyDigest}
-                    onCheckedChange={setWeeklyDigest}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           {/* Privacy Settings */}
           <TabsContent value="privacy" className="space-y-6">
@@ -226,7 +119,13 @@ export default function SettingsPage() {
               <CardContent className="space-y-6">
                 <div className="space-y-2">
                   <Label>Profile Visibility</Label>
-                  <Select value={profileVisibility} onValueChange={setProfileVisibility}>
+                  <Select value={profileVisibility} onValueChange={(value) => {
+                    setProfileVisibility(value)
+                    toast({
+                      title: "Setting updated",
+                      description: "Profile visibility preference saved.",
+                    })
+                  }}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -252,7 +151,13 @@ export default function SettingsPage() {
                   </div>
                   <Switch
                     checked={showEmail}
-                    onCheckedChange={setShowEmail}
+                    onCheckedChange={(checked) => {
+                      setShowEmail(checked)
+                      toast({
+                        title: "Setting updated",
+                        description: "Email visibility preference saved.",
+                      })
+                    }}
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -264,7 +169,13 @@ export default function SettingsPage() {
                   </div>
                   <Switch
                     checked={showProjects}
-                    onCheckedChange={setShowProjects}
+                    onCheckedChange={(checked) => {
+                      setShowProjects(checked)
+                      toast({
+                        title: "Setting updated",
+                        description: "Project visibility preference saved.",
+                      })
+                    }}
                   />
                 </div>
               </CardContent>
@@ -275,7 +186,7 @@ export default function SettingsPage() {
           <TabsContent value="appearance" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Appearance & Language</CardTitle>
+                <CardTitle>Appearance</CardTitle>
                 <CardDescription>
                   Customize the look and feel of your interface
                 </CardDescription>
@@ -303,46 +214,11 @@ export default function SettingsPage() {
                     Choose your preferred color scheme. System will follow your device settings.
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label>Language</Label>
-                  <Select value={language} onValueChange={setLanguage}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="en">English</SelectItem>
-                      <SelectItem value="es">Spanish</SelectItem>
-                      <SelectItem value="fr">French</SelectItem>
-                      <SelectItem value="de">German</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Timezone</Label>
-                  <Select value={timezone} onValueChange={setTimezone}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="UTC">UTC</SelectItem>
-                      <SelectItem value="EST">Eastern Time</SelectItem>
-                      <SelectItem value="PST">Pacific Time</SelectItem>
-                      <SelectItem value="GMT">Greenwich Mean Time</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
         </Tabs>
-
-        {/* Save Button */}
-        <div className="flex justify-end pt-6">
-          <Button onClick={saveSettings} disabled={saving}>
-            {saving ? 'Saving...' : 'Save Settings'}
-          </Button>
-        </div>
       </div>
     </div>
   )
