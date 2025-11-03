@@ -111,28 +111,55 @@ export async function signOut() {
 
 // Get current user
 export async function getCurrentUser(forceRefresh = false): Promise<User | null> {
-  const { data: { user }, error } = await supabase.auth.getUser()
-  
-  if (error || !user) {
+  try {
+    // Add timeout protection for getUser()
+    const getUserPromise = supabase.auth.getUser()
+    const getUserTimeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('AUTH_TIMEOUT')), 5000)
+    )
+    
+    const { data: { user }, error } = await Promise.race([
+      getUserPromise,
+      getUserTimeoutPromise
+    ])
+    
+    if (error || !user) {
+      return null
+    }
+
+    // Get profile data from profiles table with timeout protection
+    const profilePromise = supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+    
+    const profileTimeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('PROFILE_TIMEOUT')), 5000)
+    )
+    
+    const { data: profile } = await Promise.race([
+      profilePromise,
+      profileTimeoutPromise
+    ]).catch((error) => {
+      // Profile fetch timeout or error - continue with user metadata only
+      console.warn('[AUTH] Profile fetch timeout/error:', error)
+      return { data: null }
+    })
+
+    return {
+      id: user.id,
+      email: user.email || '',
+      full_name: profile?.full_name || user.user_metadata?.name || null,
+      lab_name: profile?.lab_name || null,
+      avatar_url: profile?.avatar_url || null,
+      institution: profile?.institution || null,
+      department: profile?.department || null,
+      profile_picture_url: profile?.profile_picture_url || null
+    }
+  } catch (error) {
+    console.error('[AUTH] getCurrentUser error:', error)
     return null
-  }
-
-  // Get profile data from profiles table (single source of truth)
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
-
-  return {
-    id: user.id,
-    email: user.email || '',
-    full_name: profile?.full_name || user.user_metadata?.name || null,
-    lab_name: profile?.lab_name || null,
-    avatar_url: profile?.avatar_url || null,
-    institution: profile?.institution || null,
-    department: profile?.department || null,
-    profile_picture_url: profile?.profile_picture_url || null
   }
 }
 
@@ -176,8 +203,27 @@ export async function updateProfile(updates: {
 export function onAuthStateChange(callback: (user: User | null) => void) {
   return supabase.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
-      const user = await getCurrentUser()
-      callback(user)
+      // Use setTimeout to prevent blocking the callback
+      // This prevents one hanging getCurrentUser from blocking all auth updates
+      setTimeout(async () => {
+        try {
+          const user = await getCurrentUser()
+          callback(user)
+        } catch (error) {
+          console.error('[AUTH] Error in onAuthStateChange callback:', error)
+          // Fallback: use session data directly if getCurrentUser fails
+          callback({
+            id: session.user.id,
+            email: session.user.email || '',
+            full_name: session.user.user_metadata?.name || null,
+            lab_name: null,
+            avatar_url: null,
+            institution: session.user.user_metadata?.institution || null,
+            department: session.user.user_metadata?.department || null,
+            profile_picture_url: null
+          })
+        }
+      }, 0)
     } else {
       callback(null)
     }
