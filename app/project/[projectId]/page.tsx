@@ -163,7 +163,7 @@ export default function SimpleProjectPage() {
       setTeamMembersLoading(true)
       
       // Get the current session for authentication
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      const { data: { session } } = await supabase.auth.getSession()
       
       // Prepare headers (include auth if available)
       const headers: Record<string, string> = {}

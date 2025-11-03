@@ -24,131 +24,40 @@ export async function GET(
 
     const actualProjectId = project.id
 
-    // Public project: if auth header present, authenticate to compute membership; otherwise return limited team list
-    if (project.visibility === 'public') {
+    // Determine which client to use: service client for public, authenticated client for private
+    let client = supabaseServer as any
+    let access = { isOwner: false, isMember: false, hasAccess: false, canRead: false, canWrite: false, canManageMembers: false }
+    let isAuthenticated = false
+
+    // For public projects, always use service client (bypasses RLS)
+    // For private projects, require authentication
+    if (project.visibility === 'private') {
+      const auth = await authenticateRequest(request)
+      client = auth.supabase
+      const permissions = new PermissionService(auth.supabase, auth.user.id)
+      access = await permissions.checkProjectAccess(actualProjectId)
+      if (!access.hasAccess) {
+        return NextResponse.json({ message: 'Access denied' }, { status: 403 })
+      }
+      isAuthenticated = true
+    } else {
+      // Public project: optionally authenticate to determine membership status, but still use service client for queries
       const hasAuthHeader = !!request.headers.get('authorization')
       if (hasAuthHeader) {
-        // Treat as authenticated flow to determine membership/ownership
-        const auth = await authenticateRequest(request)
-        const permissions = new PermissionService(auth.supabase, auth.user.id)
-        const access = await permissions.checkProjectAccess(actualProjectId)
-        
-        // Fetch full team using authenticated client
-        const { data: teamMembers, error } = await auth.supabase
-          .from('project_members')
-          .select(`
-            id,
-            user_id,
-            role,
-            initials,
-            joined_at,
-            left_at
-          `)
-          .eq('project_id', actualProjectId)
-          .is('left_at', null)
-          .order('joined_at', { ascending: true })
-
-        if (error) {
-          throw new Error(`Failed to fetch team members: ${error.message}`)
+        try {
+          const auth = await authenticateRequest(request)
+          const permissions = new PermissionService(auth.supabase, auth.user.id)
+          access = await permissions.checkProjectAccess(actualProjectId)
+          isAuthenticated = true
+        } catch (error) {
+          // If auth fails, continue without auth (public access)
+          // User is not authenticated, but can still view public project
         }
-
-        const userIds = (teamMembers || []).map(member => member.user_id)
-        const { data: profiles, error: profilesError } = await auth.supabase
-          .from('profiles')
-          .select('id, full_name, email, lab_name')
-          .in('id', userIds)
-
-        if (profilesError) {
-          console.error('Error fetching profiles:', profilesError)
-        }
-
-        const profileMap = new Map()
-        ;(profiles || []).forEach(profile => {
-          profileMap.set(profile.id, profile)
-        })
-
-        const transformedMembers = (teamMembers || []).map(member => {
-          const profile = profileMap.get(member.user_id)
-          return {
-            id: member.id,
-            user_id: member.user_id,
-            name: profile?.full_name || 'Unknown User',
-            email: profile?.email || 'Unknown Email',
-            lab_name: profile?.lab_name || 'Unknown Lab',
-            role: member.role,
-            initials: member.initials || (profile?.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
-            joined_at: member.joined_at
-          }
-        })
-
-        return NextResponse.json({
-          members: transformedMembers,
-          isOwner: access.isOwner,
-          isTeamMember: access.isMember,
-          isAuthenticated: true
-        })
       }
-
-      // No auth header: limited public response
-      const { data: teamMembers, error } = await supabaseServer
-        .from('project_members')
-        .select('id,user_id,initials')
-        .eq('project_id', actualProjectId)
-        .is('left_at', null)
-        .order('joined_at', { ascending: true })
-
-      if (error) {
-        throw new Error(`Failed to fetch team members: ${error.message}`)
-      }
-
-      const userIds = (teamMembers || []).map(m => m.user_id)
-      const { data: profiles } = await supabaseServer
-        .from('profiles')
-        .select('id, full_name, lab_name')
-        .in('id', userIds)
-
-      const profileMap = new Map()
-      ;(profiles || []).forEach(p => profileMap.set(p.id, p))
-
-      const transformedMembers = (teamMembers || []).map(member => {
-        const profile = profileMap.get(member.user_id)
-        const computedInitials = (profile?.full_name || 'U')
-          .split(' ')
-          .filter(Boolean)
-          .map((n: string) => n[0])
-          .join('')
-          .toUpperCase()
-        const initials = member.initials || computedInitials
-        const displayName = (profile?.full_name && profile.full_name.trim())
-          || (profile?.lab_name && profile.lab_name.trim())
-          || initials
-        return {
-          id: member.id,
-          user_id: member.user_id,
-          name: displayName,
-          lab_name: profile?.lab_name || 'Unknown Lab',
-          initials,
-        }
-      })
-
-      return NextResponse.json({ 
-        members: transformedMembers,
-        isOwner: false,
-        isTeamMember: false,
-        isAuthenticated: false
-      })
     }
 
-    // Private project: require auth and membership
-    const auth = await authenticateRequest(request)
-    const permissions = new PermissionService(auth.supabase, auth.user.id)
-    const access = await permissions.checkProjectAccess(actualProjectId)
-    if (!access.hasAccess) {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 })
-    }
-
-    // Get all team members for this project with profile data
-    const { data: teamMembers, error } = await auth.supabase
+    // Fetch team members using the determined client (service client for public, auth client for private)
+    const { data: teamMembers, error } = await client
       .from('project_members')
       .select(`
         id,
@@ -168,7 +77,7 @@ export async function GET(
 
     // Get profile data for all team members
     const userIds = (teamMembers || []).map(member => member.user_id)
-    const { data: profiles, error: profilesError } = await auth.supabase
+    const { data: profiles, error: profilesError } = await client
       .from('profiles')
       .select('id, full_name, email, lab_name')
       .in('id', userIds)
@@ -183,26 +92,49 @@ export async function GET(
       profileMap.set(profile.id, profile)
     })
 
-    // Transform the data
+    // Transform the data - return full data for authenticated users, limited for unauthenticated
     const transformedMembers = (teamMembers || []).map(member => {
       const profile = profileMap.get(member.user_id)
-      return {
-        id: member.id,
-        user_id: member.user_id,
-        name: profile?.full_name || 'Unknown User',
-        email: profile?.email || 'Unknown Email',
-        lab_name: profile?.lab_name || 'Unknown Lab',
-        role: member.role,
-        initials: member.initials || (profile?.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
-        joined_at: member.joined_at
+      
+      if (isAuthenticated) {
+        // Authenticated users get full data (email, full name, etc.)
+        return {
+          id: member.id,
+          user_id: member.user_id,
+          name: profile?.full_name || 'Unknown User',
+          email: profile?.email || 'Unknown Email',
+          lab_name: profile?.lab_name || 'Unknown Lab',
+          role: member.role,
+          initials: member.initials || (profile?.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+          joined_at: member.joined_at
+        }
+      } else {
+        // Unauthenticated users get limited data (no email)
+        const computedInitials = (profile?.full_name || 'U')
+          .split(' ')
+          .filter(Boolean)
+          .map((n: string) => n[0])
+          .join('')
+          .toUpperCase()
+        const initials = member.initials || computedInitials
+        const displayName = (profile?.full_name && profile.full_name.trim())
+          || (profile?.lab_name && profile.lab_name.trim())
+          || initials
+        return {
+          id: member.id,
+          user_id: member.user_id,
+          name: displayName,
+          lab_name: profile?.lab_name || 'Unknown Lab',
+          initials,
+        }
       }
     })
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       members: transformedMembers,
       isOwner: access.isOwner,
       isTeamMember: access.isMember,
-      isAuthenticated: true
+      isAuthenticated
     })
   } catch (error: any) {
     if (error instanceof AuthError) {
