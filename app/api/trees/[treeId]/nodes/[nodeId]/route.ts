@@ -115,7 +115,7 @@ export async function PUT(
   try {
     const { treeId, nodeId } = params
     const body = await request.json()
-    const { name, description, node_type, position, content, status } = body
+    const { name, description, node_type, position, content, status, referenced_tree_ids } = body
 
     // Authenticate the request
     let authContext: AuthContext
@@ -149,16 +149,99 @@ export async function PUT(
       )
     }
 
+    // Validate referenced_tree_ids if provided
+    if (referenced_tree_ids !== undefined) {
+      if (Array.isArray(referenced_tree_ids)) {
+        // Validate maximum of 3 references
+        if (referenced_tree_ids.length > 3) {
+          return NextResponse.json({ 
+            error: 'Maximum of 3 tree references allowed per node' 
+          }, { status: 400 })
+        }
+
+        // Remove duplicates and filter out null/undefined
+        const uniqueTreeIds = [...new Set(referenced_tree_ids.filter(id => id))]
+        
+        if (uniqueTreeIds.length > 0) {
+          // Prevent self-reference - node cannot reference the tree it belongs to
+          if (uniqueTreeIds.includes(treeId)) {
+            return NextResponse.json({ 
+              error: 'Cannot reference the tree this node belongs to' 
+            }, { status: 400 })
+          }
+
+          // Validate UUID format for all tree IDs
+          const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          const invalidUuids = uniqueTreeIds.filter(id => !uuidPattern.test(id))
+          if (invalidUuids.length > 0) {
+            return NextResponse.json({ 
+              error: 'Invalid tree ID format. All referenced tree IDs must be valid UUIDs' 
+            }, { status: 400 })
+          }
+
+          // Get the parent tree's project_id
+          const { data: parentTree, error: parentTreeError } = await supabase
+            .from('experiment_trees')
+            .select('project_id')
+            .eq('id', treeId)
+            .single()
+
+          if (parentTreeError || !parentTree) {
+            return NextResponse.json({ error: 'Parent tree not found' }, { status: 404 })
+          }
+
+          // Get all referenced trees and verify they exist and are in the same project
+          const { data: referencedTrees, error: referencedTreesError } = await supabase
+            .from('experiment_trees')
+            .select('id, project_id')
+            .in('id', uniqueTreeIds)
+
+          if (referencedTreesError) {
+            return NextResponse.json({ 
+              error: 'Failed to validate referenced trees' 
+            }, { status: 400 })
+          }
+
+          if (referencedTrees.length !== uniqueTreeIds.length) {
+            return NextResponse.json({ 
+              error: 'One or more referenced trees not found' 
+            }, { status: 400 })
+          }
+
+          // Verify all trees are in the same project
+          const invalidTrees = referencedTrees.filter(tree => tree.project_id !== parentTree.project_id)
+          if (invalidTrees.length > 0) {
+            return NextResponse.json({ 
+              error: 'Cannot reference trees from a different project' 
+            }, { status: 400 })
+          }
+        }
+      } else if (referenced_tree_ids !== null) {
+        return NextResponse.json({ 
+          error: 'referenced_tree_ids must be an array or null' 
+        }, { status: 400 })
+      }
+    }
+
+    // Build update data
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    }
+    
+    if (name !== undefined) updateData.name = name
+    if (description !== undefined) updateData.description = description
+    if (node_type !== undefined) updateData.node_type = node_type
+    if (position !== undefined) updateData.position = position
+    if (referenced_tree_ids !== undefined) {
+      updateData.referenced_tree_ids = Array.isArray(referenced_tree_ids) 
+        ? [...new Set(referenced_tree_ids.filter(id => id))]
+        : []
+    }
+
     // Update the node
     const { data: updatedNode, error: nodeError } = await supabase
       .from('tree_nodes')
-      .update({
-        name,
-        description,
-        node_type,
-        position,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', nodeId)
       .eq('tree_id', treeId)
       .select()

@@ -13,45 +13,144 @@ export default function AuthCallbackPage() {
   const [message, setMessage] = useState<string>('')
 
   useEffect(() => {
+    let subscription: { unsubscribe: () => void } | null = null
+    let timeoutId: NodeJS.Timeout | null = null
+    let handled = false
+
     const handleAuthCallback = async () => {
       try {
-        // Get the session from the URL
+        // Check for token_hash in URL query parameters (fallback for PKCE failures)
+        const urlParams = new URLSearchParams(window.location.search)
+        const tokenHash = urlParams.get('token_hash')
+        const type = urlParams.get('type')
+
+        // If token_hash exists in query params, try manual verification (PKCE fallback)
+        if (tokenHash && type && !handled) {
+          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: type as 'signup' | 'email'
+          })
+
+          if (!verifyError && verifyData?.user) {
+            handled = true
+            if (verifyData.user.email_confirmed_at) {
+              setStatus('success')
+              setMessage('Email verified successfully! Redirecting to dashboard...')
+              setTimeout(() => router.push('/dashboard'), 2000)
+              if (subscription) subscription.unsubscribe()
+              if (timeoutId) clearTimeout(timeoutId)
+              return
+            }
+          } else if (verifyError) {
+            console.error('verifyOtp error:', verifyError)
+            // Continue to normal flow - might be hash-based instead
+          }
+        }
+
+        // Set up listener for auth state change (fires when URL hash is processed by Supabase)
+        const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+          if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            if (session?.user?.email_confirmed_at && !handled) {
+              handled = true
+              setStatus('success')
+              setMessage('Email verified successfully! Redirecting to dashboard...')
+              setTimeout(() => router.push('/dashboard'), 2000)
+              if (subscription) subscription.unsubscribe()
+              if (timeoutId) clearTimeout(timeoutId)
+            }
+          } else if (event === 'SIGNED_OUT' && !handled) {
+            // PKCE failed, but check if we have token_hash to try manual verification
+            const urlParams = new URLSearchParams(window.location.search)
+            const tokenHash = urlParams.get('token_hash')
+            const type = urlParams.get('type')
+            
+            if (tokenHash && type) {
+              const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+                token_hash: tokenHash,
+                type: type as 'signup' | 'email'
+              })
+
+              if (!verifyError && verifyData?.user?.email_confirmed_at) {
+                handled = true
+                setStatus('success')
+                setMessage('Email verified successfully! Redirecting to dashboard...')
+                setTimeout(() => router.push('/dashboard'), 2000)
+                if (subscription) subscription.unsubscribe()
+                if (timeoutId) clearTimeout(timeoutId)
+                return
+              }
+            }
+
+            // If we get here, verification truly failed
+            if (!handled) {
+              handled = true
+              setStatus('error')
+              setMessage('No active session found. This often happens if you used a different browser or cleared your browser data. Please try signing up again.')
+              if (subscription) subscription.unsubscribe()
+              if (timeoutId) clearTimeout(timeoutId)
+            }
+          }
+        })
+        subscription = authSubscription
+
+        // Also try immediate check (in case session is already processed)
         const { data, error } = await supabase.auth.getSession()
 
         if (error) {
           console.error('Auth callback error:', error)
-          setStatus('error')
-          setMessage('Authentication failed. Please try again.')
+          if (!handled) {
+            handled = true
+            setStatus('error')
+            setMessage('Authentication failed. Please try again.')
+          }
           return
         }
 
-        if (data.session?.user) {
-            // Check if email is verified
-            if (data.session.user.email_confirmed_at) {
-              // Email is verified, profile is automatically created by database trigger
-              setStatus('success')
-              setMessage('Email verified successfully! Redirecting to dashboard...')
-              
-              // Redirect to dashboard after 2 seconds
-              setTimeout(() => {
-                router.push('/dashboard')
-              }, 2000)
-            } else {
-            setStatus('error')
-            setMessage('Email not verified. Please check your email and try again.')
+        if (data.session?.user && !handled) {
+          // Check if email is verified
+          if (data.session.user.email_confirmed_at) {
+            handled = true
+            setStatus('success')
+            setMessage('Email verified successfully! Redirecting to dashboard...')
+            setTimeout(() => router.push('/dashboard'), 2000)
+            return
+          } else {
+            if (!handled) {
+              handled = true
+              setStatus('error')
+              setMessage('Email not verified. Please check your email and try again.')
+            }
+            return
           }
-        } else {
-          setStatus('error')
-          setMessage('No active session found. Please sign up again.')
+        }
+
+        // If no session found immediately, wait for auth state change (max 5 seconds)
+        if (!handled) {
+          timeoutId = setTimeout(() => {
+            if (!handled) {
+              handled = true
+              setStatus('error')
+              setMessage('Verification timed out. Please try again or sign up again.')
+            }
+          }, 5000)
         }
       } catch (error) {
         console.error('Error handling auth callback:', error)
-        setStatus('error')
-        setMessage('An error occurred. Please try again.')
+        if (!handled) {
+          handled = true
+          setStatus('error')
+          setMessage('An error occurred. Please try again.')
+        }
       }
     }
 
     handleAuthCallback()
+
+    // Cleanup on unmount
+    return () => {
+      if (subscription) subscription.unsubscribe()
+      if (timeoutId) clearTimeout(timeoutId)
+    }
   }, [router])
 
   return (

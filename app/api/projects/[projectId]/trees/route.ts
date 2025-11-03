@@ -58,7 +58,7 @@ export async function GET(
         tree_blocks(
           id
         ),
-        tree_nodes(
+        tree_nodes!tree_id(
           id
         )
       `)

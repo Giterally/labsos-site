@@ -64,7 +64,7 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
               variant="ghost"
               size="lg"
               onClick={() => router.push("/")}
-              className="flex items-center space-x-3 px-4 py-4"
+              className="flex items-center space-x-3 px-4 py-4 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
             >
               <Image
                 src="/olvaro-fin.png"
@@ -93,7 +93,7 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => router.push("/dashboard")}
-                className="flex items-center space-x-1"
+                className="flex items-center space-x-1 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 [&_svg]:hover:!text-foreground"
               >
                 <HomeIcon className="h-4 w-4" />
                 <span>Dashboard</span>
@@ -102,7 +102,7 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => router.push("/dashboard/projects")}
-                className="flex items-center space-x-1"
+                className="flex items-center space-x-1 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 [&_svg]:hover:!text-foreground"
               >
                 <FolderIcon className="h-4 w-4" />
                 <span>Projects</span>
@@ -112,7 +112,7 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
             {/* User profile dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                <Button variant="ghost" className="relative h-8 w-8 rounded-full hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 [&_[data-slot=avatar-fallback]]:hover:!text-foreground">
                   <Avatar className="h-8 w-8">
                     {user?.profile_picture_url ? (
                       <img 
@@ -121,7 +121,7 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <AvatarFallback className="text-xs">
+                      <AvatarFallback className="text-xs text-foreground">
                         {user?.full_name
                           ? user.full_name
                               .split(" ")
@@ -150,16 +150,25 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleProfileClick}>
+                <DropdownMenuItem 
+                  onClick={handleProfileClick}
+                  className="focus:ring-0 focus:ring-offset-0 focus:outline-none focus:!bg-muted focus:!text-foreground hover:!bg-muted hover:!text-foreground [&_svg]:hover:!text-foreground [&_svg]:focus:!text-foreground"
+                >
                   <UserIcon className="mr-2 h-4 w-4" />
                   <span>Profile</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleSettingsClick}>
+                <DropdownMenuItem 
+                  onClick={handleSettingsClick}
+                  className="focus:ring-0 focus:ring-offset-0 focus:outline-none focus:!bg-muted focus:!text-foreground hover:!bg-muted hover:!text-foreground [&_svg]:hover:!text-foreground [&_svg]:focus:!text-foreground"
+                >
                   <CogIcon className="mr-2 h-4 w-4" />
                   <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut}>
+                <DropdownMenuItem 
+                  onClick={handleSignOut}
+                  className="focus:ring-0 focus:ring-offset-0 focus:outline-none focus:!bg-muted focus:!text-foreground hover:!bg-muted hover:!text-foreground [&_svg]:hover:!text-foreground [&_svg]:focus:!text-foreground"
+                >
                   <ArrowRightOnRectangleIcon className="mr-2 h-4 w-4" />
                   <span>Sign out</span>
                 </DropdownMenuItem>

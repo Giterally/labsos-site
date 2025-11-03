@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BeakerIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { signIn, signUp } from "@/lib/auth-service"
 
 export default function LoginPage() {
@@ -23,7 +23,19 @@ export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(true)
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const [showVerifiedSuccess, setShowVerifiedSuccess] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Check for verified query parameter
+  useEffect(() => {
+    if (searchParams.get('verified') === 'true') {
+      setShowVerifiedSuccess(true)
+      setIsSignUp(false) // Switch to sign in mode
+      // Clean up URL by removing query param
+      router.replace('/login', { scroll: false })
+    }
+  }, [searchParams, router])
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -239,6 +251,13 @@ export default function LoginPage() {
                     {password === confirmPassword ? '✓ Passwords match' : '✗ Passwords do not match'}
                   </p>
                 )}
+              </div>
+            )}
+            {showVerifiedSuccess && (
+              <div className="text-sm p-3 rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
+                <p className="text-green-600 dark:text-green-400 font-medium">
+                  ✓ Email verified successfully! Please sign in to continue.
+                </p>
               </div>
             )}
             {error && (

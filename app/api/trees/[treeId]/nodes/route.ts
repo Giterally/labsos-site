@@ -82,24 +82,103 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch nodes' }, { status: 500 })
     }
 
-    // Transform the data to match the expected format
-    const transformedNodes = nodes.map(node => ({
-      id: node.id,
-      title: node.name,
-      description: node.description,
-      type: node.block_id || node.node_type, // Use block_id if available, fallback to node_type
-      status: node.node_content?.[0]?.status || 'draft',
-      position: node.position,
-      content: node.node_content?.[0]?.content || '',
-      attachments: node.node_attachments || [],
-      links: node.node_links || [],
-      metadata: {
-        created: node.created_at,
-        updated: node.updated_at,
-        type: node.node_type, // Keep original node_type in metadata
-        position: node.position
+    // Check access permissions for referenced trees if user is authenticated
+    let userPermissions: any = null
+    if (proj.visibility === 'private' && client !== supabaseServer) {
+      const auth = await authenticateRequest(request)
+      userPermissions = new PermissionService(auth.supabase, auth.user.id)
+    }
+
+    // Collect all unique referenced tree IDs
+    const allReferencedTreeIds = new Set<string>()
+    nodes.forEach(node => {
+      if (node.referenced_tree_ids && Array.isArray(node.referenced_tree_ids)) {
+        node.referenced_tree_ids.forEach(id => {
+          if (id) allReferencedTreeIds.add(id)
+        })
       }
-    }))
+    })
+
+    // Fetch all referenced trees in one query
+    let referencedTreesMap = new Map()
+    if (allReferencedTreeIds.size > 0) {
+      const { data: referencedTrees, error: refTreesError } = await client
+        .from('experiment_trees')
+        .select('id, name, description, status, project_id')
+        .in('id', Array.from(allReferencedTreeIds))
+      
+      if (!refTreesError && referencedTrees) {
+        // Check permissions for each tree if needed
+        for (const tree of referencedTrees) {
+          if (userPermissions) {
+            const canAccess = await userPermissions.checkTreeAccess(tree.id)
+            if (canAccess.canRead) {
+              referencedTreesMap.set(tree.id, {
+                id: tree.id,
+                name: tree.name,
+                description: tree.description,
+                status: tree.status
+              })
+            } else {
+              referencedTreesMap.set(tree.id, { error: 'access_denied' as const })
+            }
+          } else {
+            referencedTreesMap.set(tree.id, {
+              id: tree.id,
+              name: tree.name,
+              description: tree.description,
+              status: tree.status
+            })
+          }
+        }
+      }
+    }
+
+    // Transform the data to match the expected format
+    const transformedNodes = nodes.map(node => {
+      const referencedTreesData: Array<{
+        id: string
+        name: string
+        description: string
+        status: string
+        error?: 'not_found' | 'access_denied'
+      }> = []
+      
+      // Handle referenced trees array
+      if (node.referenced_tree_ids && Array.isArray(node.referenced_tree_ids)) {
+        node.referenced_tree_ids.forEach((treeId: string) => {
+          if (treeId) {
+            const treeData = referencedTreesMap.get(treeId)
+            if (treeData) {
+              referencedTreesData.push(treeData)
+            } else {
+              // Tree ID exists but tree not found (deleted)
+              referencedTreesData.push({ error: 'not_found' as const, id: treeId, name: '', description: '', status: '' })
+            }
+          }
+        })
+      }
+      
+      return {
+        id: node.id,
+        title: node.name,
+        description: node.description,
+        type: node.block_id || node.node_type, // Use block_id if available, fallback to node_type
+        status: node.node_content?.[0]?.status || 'draft',
+        position: node.position,
+        content: node.node_content?.[0]?.content || '',
+        attachments: node.node_attachments || [],
+        links: node.node_links || [],
+        referenced_tree_ids: node.referenced_tree_ids || [],
+        referenced_trees: referencedTreesData,
+        metadata: {
+          created: node.created_at,
+          updated: node.updated_at,
+          type: node.node_type, // Keep original node_type in metadata
+          position: node.position
+        }
+      }
+    })
 
     return NextResponse.json({ nodes: transformedNodes })
   } catch (error) {
@@ -118,7 +197,7 @@ export async function POST(
   try {
     const { treeId } = await params
     const body = await request.json()
-    const { name, description, node_type, position, content } = body
+    const { name, description, node_type, position, content, referenced_tree_ids } = body
 
     // Enhanced logging for debugging
     console.log('Creating node with data:', {
@@ -127,7 +206,8 @@ export async function POST(
       description,
       node_type,
       position,
-      content
+      content,
+      referenced_tree_ids
     })
 
     // Input validation
@@ -166,12 +246,83 @@ export async function POST(
       )
     }
 
+    // Validate referenced_tree_ids if provided
+    if (referenced_tree_ids && Array.isArray(referenced_tree_ids)) {
+      // Validate maximum of 3 references
+      if (referenced_tree_ids.length > 3) {
+        return NextResponse.json({ 
+          error: 'Maximum of 3 tree references allowed per node' 
+        }, { status: 400 })
+      }
+
+      // Remove duplicates and filter out null/undefined
+      const uniqueTreeIds = [...new Set(referenced_tree_ids.filter(id => id))]
+      
+      if (uniqueTreeIds.length > 0) {
+        // Prevent self-reference - node cannot reference the tree it belongs to
+        if (uniqueTreeIds.includes(treeId)) {
+          return NextResponse.json({ 
+            error: 'Cannot reference the tree this node belongs to' 
+          }, { status: 400 })
+        }
+
+        // Validate UUID format for all tree IDs
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        const invalidUuids = uniqueTreeIds.filter(id => !uuidPattern.test(id))
+        if (invalidUuids.length > 0) {
+          return NextResponse.json({ 
+            error: 'Invalid tree ID format. All referenced tree IDs must be valid UUIDs' 
+          }, { status: 400 })
+        }
+
+        // Get the parent tree's project_id
+        const { data: parentTree, error: parentTreeError } = await auth.supabase
+          .from('experiment_trees')
+          .select('project_id')
+          .eq('id', treeId)
+          .single()
+
+        if (parentTreeError || !parentTree) {
+          return NextResponse.json({ error: 'Parent tree not found' }, { status: 404 })
+        }
+
+        // Get all referenced trees and verify they exist and are in the same project
+        const { data: referencedTrees, error: referencedTreesError } = await auth.supabase
+          .from('experiment_trees')
+          .select('id, project_id')
+          .in('id', uniqueTreeIds)
+
+        if (referencedTreesError) {
+          return NextResponse.json({ 
+            error: 'Failed to validate referenced trees' 
+          }, { status: 400 })
+        }
+
+        if (referencedTrees.length !== uniqueTreeIds.length) {
+          return NextResponse.json({ 
+            error: 'One or more referenced trees not found' 
+          }, { status: 400 })
+        }
+
+        // Verify all trees are in the same project
+        const invalidTrees = referencedTrees.filter(tree => tree.project_id !== parentTree.project_id)
+        if (invalidTrees.length > 0) {
+          return NextResponse.json({ 
+            error: 'Cannot reference trees from a different project' 
+          }, { status: 400 })
+        }
+      }
+    }
+
     // Create the node with unified system support
     const nodeData: any = {
       tree_id: treeId,
       name: name.trim(),
       description: description?.trim() || null,
-      position: position || 1
+      position: position || 1,
+      referenced_tree_ids: (referenced_tree_ids && Array.isArray(referenced_tree_ids)) 
+        ? [...new Set(referenced_tree_ids.filter(id => id))] 
+        : []
     }
 
     // Handle unified system: if node_type is a UUID (block ID), use it as block_id

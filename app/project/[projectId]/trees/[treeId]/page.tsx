@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, ChevronRightIcon, EllipsisVerticalIcon } from "@heroicons/react/24/outline"
+import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, ChevronRightIcon, EllipsisVerticalIcon, LinkIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
@@ -43,6 +43,14 @@ interface ExperimentNode {
     description: string
     link_type: string
   }>
+  referenced_tree_ids: string[]
+  referenced_trees: Array<{
+    id: string
+    name: string
+    description: string
+    status: string
+    error?: 'not_found' | 'access_denied'
+  }>
   metadata: {
     created: string
     updated: string
@@ -76,6 +84,19 @@ export default function SimpleExperimentTreePage() {
   
   // Track which block to add nodes to
   const [targetBlockForNewNode, setTargetBlockForNewNode] = useState<string | null>(null)
+  
+  // Navigation context for back button
+  const [navContext, setNavContext] = useState<{fromTreeId: string, fromProjectId: string, fromNodeId: string} | null>(null)
+  
+  // Nesting context for breadcrumb
+  const [nestingContext, setNestingContext] = useState<{
+    current: {id: string, name: string, description: string, status: string, project_id: string},
+    parents: Array<{tree_id: string, tree_name: string, node_id: string, node_name: string}>,
+    children: Array<{tree_id: string, tree_name: string, node_id: string, node_name: string}>
+  } | null>(null)
+  const [showHierarchyModal, setShowHierarchyModal] = useState(false)
+  const [showReferenceModal, setShowReferenceModal] = useState(false)
+  const [referenceModalNode, setReferenceModalNode] = useState<ExperimentNode | null>(null)
   
   // Tab editing states
   const [editingContent, setEditingContent] = useState(false)
@@ -728,6 +749,66 @@ export default function SimpleExperimentTreePage() {
     }
   }, [treeId, currentUser, userLoading])
 
+  // Check for navigation context from sessionStorage
+  useEffect(() => {
+    const contextStr = sessionStorage.getItem('tree_nav_context')
+    if (contextStr) {
+      try {
+        const context = JSON.parse(contextStr)
+        setNavContext(context)
+        
+        // Scroll to the node after a short delay to ensure DOM is rendered
+        setTimeout(() => {
+          const nodeElement = document.getElementById(`node-${context.fromNodeId}`)
+          if (nodeElement) {
+            nodeElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }, 500)
+      } catch (err) {
+        console.error('Error parsing navigation context:', err)
+      }
+    }
+  }, [treeId])
+
+  // Function to handle back navigation
+  const handleBackNavigation = () => {
+    if (navContext) {
+      router.push(`/project/${navContext.fromProjectId}/trees/${navContext.fromTreeId}`)
+      // Clear the context as we're going back
+      sessionStorage.removeItem('tree_nav_context')
+    }
+  }
+
+  // Fetch nesting context for breadcrumb
+  useEffect(() => {
+    const fetchNestingContext = async () => {
+      try {
+        let headers: HeadersInit = {}
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`
+          }
+        }
+
+        const response = await fetch(`/api/trees/${treeId}/nesting-context`, {
+          headers
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          setNestingContext(data)
+        }
+      } catch (err) {
+        console.error('Error fetching nesting context:', err)
+      }
+    }
+
+    if (!userLoading) {
+      fetchNestingContext()
+    }
+  }, [treeId, currentUser, userLoading])
+
   // Fetch blocks and ordering
   useEffect(() => {
     const fetchBlocks = async () => {
@@ -848,7 +929,7 @@ export default function SimpleExperimentTreePage() {
   }, [draggedItem, autoScrollDirection])
 
   // Create new node
-  const createNode = async (name: string, description: string, nodeType: string) => {
+  const createNode = async (name: string, description: string, nodeType: string, referencedTreeIds: string[] = []) => {
     try {
       setCreating(true)
       
@@ -866,7 +947,8 @@ export default function SimpleExperimentTreePage() {
         description,
         node_type: actualNodeType,
         position: nextPosition,
-        content: '' // Empty content initially
+        content: '', // Empty content initially
+        referenced_tree_ids: referencedTreeIds
       }
       
       console.log('Creating node with data:', requestData)
@@ -913,7 +995,9 @@ export default function SimpleExperimentTreePage() {
       }
       
       // Refresh nodes from API to get the complete data
-      const nodesResponse = await fetch(`/api/trees/${treeId}/nodes`)
+      const nodesResponse = await authFetch(`/api/trees/${treeId}/nodes`, {
+        requireAuth: true
+      })
       if (nodesResponse.ok) {
         const nodesData = await nodesResponse.json()
         setExperimentNodes(nodesData.nodes)
@@ -937,7 +1021,7 @@ export default function SimpleExperimentTreePage() {
   }
 
   // Edit node
-  const editNode = async (nodeId: string, name: string, description: string, nodeType: string) => {
+  const editNode = async (nodeId: string, name: string, description: string, nodeType: string, referencedTreeIds: string[] = []) => {
     try {
       setEditing(true)
       
@@ -950,7 +1034,8 @@ export default function SimpleExperimentTreePage() {
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim(),
-          node_type: nodeType
+          node_type: nodeType,
+          referenced_tree_ids: referencedTreeIds
         }),
         requireAuth: true
       })
@@ -960,12 +1045,18 @@ export default function SimpleExperimentTreePage() {
         throw new Error(errorData.error || 'Failed to update node')
       }
       
-      // Refresh the nodes list by updating the state
-      setExperimentNodes(prev => prev.map(node => 
-        node.id === nodeId 
-          ? { ...node, title: name, description, type: nodeType }
-          : node
-      ))
+      // Refresh nodes from API to get complete updated data including referenced_tree metadata
+      const nodesResponse = await authFetch(`/api/trees/${treeId}/nodes`, {
+        requireAuth: true
+      })
+      if (nodesResponse.ok) {
+        const nodesData = await nodesResponse.json()
+        setExperimentNodes(nodesData.nodes)
+        
+        // Keep the same node selected
+        setSelectedNodeId(nodeId)
+      }
+      
       setShowEditForm(false)
     } catch (err) {
       if (handleAuthError(err)) return
@@ -1496,15 +1587,29 @@ export default function SimpleExperimentTreePage() {
       <div className="container mx-auto px-4 py-8 pt-20">
         {/* Header with Back Button and Search */}
         <div className="mb-6 flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push(`/project/${projectId}`)}
-            className="flex items-center space-x-2"
-          >
-            <ArrowLeftIcon className="h-4 w-4" />
-            <span>Back to {projectInfo?.name || 'Project'}</span>
-          </Button>
+          <div className="flex items-center space-x-2">
+            {navContext ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleBackNavigation}
+                className="flex items-center space-x-2"
+              >
+                <ArrowLeftIcon className="h-4 w-4" />
+                <span>Back to previous tree</span>
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push(`/project/${projectId}`)}
+                className="flex items-center space-x-2"
+              >
+                <ArrowLeftIcon className="h-4 w-4" />
+                <span>Back to {projectInfo?.name || 'Project'}</span>
+              </Button>
+            )}
+          </div>
           
             {/* Search Tool */}
             <SearchTool 
@@ -1559,6 +1664,48 @@ export default function SimpleExperimentTreePage() {
               }}
             />
         </div>
+
+        {/* Nesting Context Breadcrumb */}
+        {nestingContext && (nestingContext.parents.length > 0 || nestingContext.children.length > 0) && (
+          <div className="mb-4">
+            <Card className="border-border bg-card">
+              <CardContent className="py-1.5 px-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-sm">
+                    {nestingContext.parents.length > 0 && (
+                      <div className="flex items-center space-x-1">
+                        <span className="text-muted-foreground">
+                          {nestingContext.parents.length} parent tree{nestingContext.parents.length > 1 ? 's' : ''}
+                        </span>
+                        <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex items-center space-x-1">
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Current</Badge>
+                      <span className="font-medium">{nestingContext.current.name}</span>
+                    </div>
+                    {nestingContext.children.length > 0 && (
+                      <div className="flex items-center space-x-1">
+                        <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">
+                          {nestingContext.children.length} nested tree{nestingContext.children.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowHierarchyModal(true)}
+                    className="text-xs"
+                  >
+                    View Hierarchy
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Tree Information Header */}
         {treeInfo && (
@@ -1633,6 +1780,11 @@ export default function SimpleExperimentTreePage() {
                     allBlockTypes.map((nodeType) => {
                       const nodes = groupedNodes[nodeType] || []
                       const isCollapsed = collapsedBlocks.has(nodeType)
+                      // Calculate total references count in this block (sum of all references across all nodes)
+                      const totalReferencesInBlock = nodes.reduce((sum: number, node: ExperimentNode) => {
+                        return sum + (node.referenced_trees?.filter(tree => !tree.error).length || 0)
+                      }, 0)
+                      const hasReferencedNodes = totalReferencesInBlock > 0
                       const getStatusColor = (status: string) => {
                         switch (status) {
                           case 'completed': return 'bg-green-500'
@@ -1672,6 +1824,16 @@ export default function SimpleExperimentTreePage() {
                               >
                                 <span className="text-lg flex-shrink-0">{getBlockIcon(nodeType)}</span>
                                 <span className="text-sm font-medium flex-1 min-w-0">{getBlockTitle(nodeType)}</span>
+                                {hasReferencedNodes && (
+                                  <div className="flex items-center space-x-1 flex-shrink-0">
+                                    <LinkIcon className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+                                    {totalReferencesInBlock > 1 && (
+                                      <Badge variant="secondary" className="text-xs h-5 px-1.5">
+                                        {totalReferencesInBlock}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
                                 <Badge variant="secondary" className="text-xs">
                                   {nodes.length}
                                 </Badge>
@@ -1747,7 +1909,11 @@ export default function SimpleExperimentTreePage() {
                                     onDragLeave={(e) => handleDragLeave(e, 'node')}
                                     onDrop={(e) => handleDrop(e, 'node', node.id, nodeType)}
                                     onDragEnd={handleDragEnd}
-                                    className={`border rounded-lg p-3 transition-all duration-200 cursor-move ${
+                                    onClick={() => {
+                                      // Always select the node when clicking anywhere on the card
+                                      setSelectedNodeId(node.id)
+                                    }}
+                                    className={`border rounded-lg p-3 transition-all duration-200 cursor-pointer ${
                                       isSelected 
                                         ? 'bg-primary/10 border-primary shadow-md' 
                                         : 'hover:bg-muted/50'
@@ -1757,15 +1923,55 @@ export default function SimpleExperimentTreePage() {
                                       dragOverItem?.type === 'node' && dragOverItem.id === node.id ? 'border-primary bg-primary/10' : ''
                                     }`}
                                   >
-                                    <div className="flex items-center justify-between">
-                                      <div 
-                                        className="flex items-center space-x-2 cursor-pointer flex-1"
-                                        onClick={() => setSelectedNodeId(node.id)}
-                                      >
-                                        <div className={`w-2 h-2 ${getStatusColor(node.status)} rounded-full`}></div>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center space-x-2 flex-1 min-w-0">
+                                        <div className={`w-2 h-2 ${getStatusColor(node.status)} rounded-full flex-shrink-0`}></div>
                                         <span className={`text-sm font-medium ${isSelected ? 'text-primary' : ''}`}>
                                           {node.title}
                                         </span>
+                                        {/* Navigate button for references */}
+                                        {node.referenced_trees && node.referenced_trees.filter(tree => !tree.error).length > 0 && (
+                                          <>
+                                            {node.referenced_trees.filter(tree => !tree.error).length === 1 ? (
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 px-2 text-xs hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-black dark:hover:text-blue-400"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  const tree = node.referenced_trees.find(t => !t.error)
+                                                  if (tree) {
+                                                    sessionStorage.setItem('tree_nav_context', JSON.stringify({
+                                                      fromTreeId: treeId,
+                                                      fromProjectId: projectId,
+                                                      fromNodeId: node.id
+                                                    }))
+                                                    router.push(`/project/${projectId}/trees/${tree.id}`)
+                                                  }
+                                                }}
+                                                title={`Navigate to ${node.referenced_trees.find(t => !t.error)?.name}`}
+                                              >
+                                                <LinkIcon className="h-3 w-3 text-blue-500 dark:text-blue-400 mr-1" />
+                                                Navigate
+                                              </Button>
+                                            ) : (
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 px-2 text-xs hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-black dark:hover:text-blue-400"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  setReferenceModalNode(node)
+                                                  setShowReferenceModal(true)
+                                                }}
+                                                title="Select tree to navigate"
+                                              >
+                                                <LinkIcon className="h-3 w-3 text-blue-500 dark:text-blue-400 mr-1" />
+                                                Navigate ({node.referenced_trees.filter(t => !t.error).length})
+                                              </Button>
+                                            )}
+                                          </>
+                                        )}
                                       </div>
                                       
                                       {/* Node Management Buttons */}
@@ -1802,6 +2008,27 @@ export default function SimpleExperimentTreePage() {
                                     <p className="text-xs text-muted-foreground mt-1">
                                       {node.status === 'completed' ? '(Completed)' : node.status === 'in-progress' ? '(In Progress)' : ''}
                                     </p>
+                                    {/* Show error badges for broken references */}
+                                    {node.referenced_trees && node.referenced_trees.some(tree => tree.error) && (
+                                      <div className="mt-2 space-y-1">
+                                        {node.referenced_trees.map((tree, idx) => {
+                                          if (!tree.error) return null
+                                          return (
+                                            <div key={`${node.id}-${tree.id || `error-${idx}`}`} className="text-xs">
+                                              {tree.error === 'not_found' ? (
+                                                <Badge variant="destructive" className="text-xs">
+                                                  Referenced tree deleted
+                                                </Badge>
+                                              ) : tree.error === 'access_denied' ? (
+                                                <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-700">
+                                                  No access to referenced tree
+                                                </Badge>
+                                              ) : null}
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                 )
                               })}
@@ -1824,11 +2051,43 @@ export default function SimpleExperimentTreePage() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <div>
+                    <div className="flex-1">
                       <CardTitle>{selectedNode.title}</CardTitle>
                       <CardDescription>
                         {selectedNode.description}
                       </CardDescription>
+                      {/* Reference badges - below description, stacked vertically */}
+                      {selectedNode.referenced_trees && selectedNode.referenced_trees.length > 0 && (
+                        <div className="flex flex-col space-y-1 mt-3">
+                          {selectedNode.referenced_trees
+                            .filter(tree => !tree.error)
+                            .map((tree) => (
+                              <Badge
+                                key={tree.id}
+                                variant="outline"
+                                className="text-xs cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200 whitespace-nowrap w-fit"
+                                onClick={() => {
+                                  // Store navigation context
+                                  sessionStorage.setItem('tree_nav_context', JSON.stringify({
+                                    fromTreeId: treeId,
+                                    fromProjectId: projectId,
+                                    fromNodeId: selectedNode.id
+                                  }))
+                                  // Navigate to referenced tree
+                                  router.push(`/project/${projectId}/trees/${tree.id}`)
+                                }}
+                                title={`Navigate to ${tree.name}`}
+                              >
+                                {tree.name}
+                              </Badge>
+                            ))}
+                          {selectedNode.referenced_trees.some(tree => tree.error) && (
+                            <Badge variant="destructive" className="text-xs whitespace-nowrap w-fit">
+                              Error
+                            </Badge>
+                          )}
+                        </div>
+                      )}
                     </div>
                     {hasEditPermission && (
                       <div className="flex items-center space-x-2">
@@ -2231,6 +2490,8 @@ export default function SimpleExperimentTreePage() {
           <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold mb-4">Create New Node</h3>
             <CreateNodeForm
+              projectId={projectId}
+              currentTreeId={treeId}
               onSubmit={createNode}
               onCancel={() => setShowCreateForm(false)}
               loading={creating}
@@ -2246,8 +2507,10 @@ export default function SimpleExperimentTreePage() {
             <h3 className="text-lg font-semibold mb-4">Edit Node</h3>
             <EditNodeForm
               node={selectedNode}
-              onSubmit={(name, description, nodeType) => 
-                editNode(selectedNode.id, name, description, nodeType)
+              projectId={projectId}
+              currentTreeId={treeId}
+              onSubmit={(name, description, nodeType, referencedTreeIds) => 
+                editNode(selectedNode.id, name, description, nodeType, referencedTreeIds)
               }
               onCancel={() => setShowEditForm(false)}
               loading={editing}
@@ -2485,28 +2748,207 @@ export default function SimpleExperimentTreePage() {
           </div>
         </div>
       )}
+
+      {/* Hierarchy Modal */}
+      {showHierarchyModal && nestingContext && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Tree Hierarchy</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowHierarchyModal(false)}
+              >
+                ✕
+              </Button>
+            </div>
+            
+            <div className="space-y-6">
+              {/* Parent Trees */}
+              {nestingContext.parents.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-3 text-muted-foreground">Parent Trees ({nestingContext.parents.length})</h4>
+                  <div className="space-y-2">
+                    {nestingContext.parents.map((parent) => (
+                      <div
+                        key={parent.node_id}
+                        className="p-3 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => {
+                          sessionStorage.setItem('tree_nav_context', JSON.stringify({
+                            fromTreeId: treeId,
+                            fromProjectId: projectId,
+                            fromNodeId: parent.node_id
+                          }))
+                          router.push(`/project/${projectId}/trees/${parent.tree_id}`)
+                        }}
+                      >
+                        <div className="font-medium">{parent.tree_name}</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Referenced by node: {parent.node_name}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Current Tree */}
+              <div>
+                <h4 className="text-sm font-medium mb-3 text-muted-foreground">Current Tree</h4>
+                <div className="p-3 border-2 border-primary rounded-lg bg-primary/5">
+                  <div className="font-medium">{nestingContext.current.name}</div>
+                  <Badge variant="outline" className="mt-2">{nestingContext.current.status}</Badge>
+                </div>
+              </div>
+
+              {/* Child Trees */}
+              {nestingContext.children.length > 0 && (
+                <div>
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">Nested Trees ({nestingContext.children.length})</h4>
+                    <div className="space-y-2">
+                      {nestingContext.children.map((child, index) => (
+                        <div
+                          key={`${child.tree_id}-${child.node_id}-${index}`}
+                          className="p-3 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => {
+                          sessionStorage.setItem('tree_nav_context', JSON.stringify({
+                            fromTreeId: treeId,
+                            fromProjectId: projectId,
+                            fromNodeId: child.node_id
+                          }))
+                          router.push(`/project/${projectId}/trees/${child.tree_id}`)
+                        }}
+                      >
+                        <div className="font-medium">{child.tree_name}</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Referenced by node: {child.node_name}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reference Selection Modal */}
+      {showReferenceModal && referenceModalNode && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Select Tree to Navigate</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowReferenceModal(false)
+                  setReferenceModalNode(null)
+                }}
+              >
+                ✕
+              </Button>
+            </div>
+            
+            <div className="space-y-2">
+              {referenceModalNode.referenced_trees
+                .filter(tree => !tree.error)
+                .map((tree) => (
+                  <div
+                    key={tree.id}
+                    className="p-3 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                    onClick={() => {
+                      sessionStorage.setItem('tree_nav_context', JSON.stringify({
+                        fromTreeId: treeId,
+                        fromProjectId: projectId,
+                        fromNodeId: referenceModalNode.id
+                      }))
+                      router.push(`/project/${projectId}/trees/${tree.id}`)
+                      setShowReferenceModal(false)
+                      setReferenceModalNode(null)
+                    }}
+                  >
+                    <div className="font-medium">{tree.name}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {tree.description || 'No description'}
+                    </div>
+                    <Badge variant="outline" className="mt-2 text-xs">
+                      {tree.status}
+                    </Badge>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // Create Node Form Component
-function CreateNodeForm({ 
+function CreateNodeForm({
+  projectId,
+  currentTreeId,
   onSubmit, 
   onCancel, 
   loading 
 }: { 
-  onSubmit: (name: string, description: string, nodeType: string) => void
+  projectId: string
+  currentTreeId: string
+  onSubmit: (name: string, description: string, nodeType: string, referencedTreeIds: string[]) => void
   onCancel: () => void
   loading: boolean
 }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [nodeType, setNodeType] = useState('protocol')
+  const [referencedTreeIds, setReferencedTreeIds] = useState<string[]>([])
+  const [availableTrees, setAvailableTrees] = useState<Array<{id: string, name: string}>>([])
+
+  // Fetch available trees from the same project
+  useEffect(() => {
+    const fetchTrees = async () => {
+      try {
+        const response = await authFetch(`/api/projects/${projectId}/trees`, {
+          requireAuth: true
+        })
+        if (response.ok) {
+          const data = await response.json()
+          // Filter out the current tree
+          const trees = (data.trees || []).filter((tree: any) => tree.id !== currentTreeId)
+          setAvailableTrees(trees)
+        }
+      } catch (err) {
+        console.error('Error fetching trees:', err)
+      }
+    }
+    fetchTrees()
+  }, [projectId, currentTreeId])
+
+  const toggleTreeReference = (treeId: string) => {
+    setReferencedTreeIds(prev => {
+      if (prev.includes(treeId)) {
+        return prev.filter(id => id !== treeId)
+      } else {
+        if (prev.length >= 3) {
+          alert('Maximum of 3 tree references allowed per node')
+          return prev
+        }
+        return [...prev, treeId]
+      }
+    })
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (name.trim()) {
-      onSubmit(name.trim(), description.trim(), nodeType)
+      if (referencedTreeIds.length > 3) {
+        alert('Maximum of 3 tree references allowed per node')
+        return
+      }
+      onSubmit(name.trim(), description.trim(), nodeType, referencedTreeIds)
     }
   }
 
@@ -2547,6 +2989,43 @@ function CreateNodeForm({
           <option value="data_creation">Data Creation</option>
           <option value="results">Results</option>
         </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">
+          Reference Trees (Optional - Max 3)
+        </label>
+        <div className="border border-input rounded-md p-3 max-h-48 overflow-y-auto">
+          {availableTrees.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No other trees available in this project</p>
+          ) : (
+            <div className="space-y-2">
+              {availableTrees.map((tree) => (
+                <label
+                  key={tree.id}
+                  className="flex items-center space-x-2 cursor-pointer hover:bg-muted/50 p-2 rounded"
+                >
+                  <input
+                    type="checkbox"
+                    checked={referencedTreeIds.includes(tree.id)}
+                    onChange={() => toggleTreeReference(tree.id)}
+                    disabled={!referencedTreeIds.includes(tree.id) && referencedTreeIds.length >= 3}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-sm flex-1">{tree.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          {referencedTreeIds.length > 0 && (
+            <span className="text-blue-600 dark:text-blue-400">
+              {referencedTreeIds.length} of 3 selected
+            </span>
+          )}
+          {referencedTreeIds.length === 0 && 'Select trees to reference (maximum 3 per node)'}
+        </p>
       </div>
       
       <div className="flex space-x-3 pt-4">
@@ -2563,23 +3042,67 @@ function CreateNodeForm({
 
 function EditNodeForm({ 
   node,
+  projectId,
+  currentTreeId,
   onSubmit, 
   onCancel, 
   loading 
 }: { 
   node: ExperimentNode
-  onSubmit: (name: string, description: string, nodeType: string) => void
+  projectId: string
+  currentTreeId: string
+  onSubmit: (name: string, description: string, nodeType: string, referencedTreeIds: string[]) => void
   onCancel: () => void
   loading: boolean
 }) {
   const [name, setName] = useState(node.title)
-  const [description, setDescription] = useState(node.description)
+  const [description, setDescription] = useState(node.description || '')
   const [nodeType, setNodeType] = useState(node.type)
+  const [referencedTreeIds, setReferencedTreeIds] = useState<string[]>(node.referenced_tree_ids || [])
+  const [availableTrees, setAvailableTrees] = useState<Array<{id: string, name: string}>>([])
+
+  // Fetch available trees from the same project
+  useEffect(() => {
+    const fetchTrees = async () => {
+      try {
+        const response = await authFetch(`/api/projects/${projectId}/trees`, {
+          requireAuth: true
+        })
+        if (response.ok) {
+          const data = await response.json()
+          // Filter out the current tree
+          const trees = (data.trees || []).filter((tree: any) => tree.id !== currentTreeId)
+          setAvailableTrees(trees)
+        }
+      } catch (err) {
+        console.error('Error fetching trees:', err)
+      }
+    }
+    fetchTrees()
+  }, [projectId, currentTreeId])
+
+  const toggleTreeReference = (treeId: string) => {
+    setReferencedTreeIds(prev => {
+      if (prev.includes(treeId)) {
+        return prev.filter(id => id !== treeId)
+      } else {
+        if (prev.length >= 3) {
+          alert('Maximum of 3 tree references allowed per node')
+          return prev
+        }
+        return [...prev, treeId]
+      }
+    })
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (name.trim()) {
-      onSubmit(name.trim(), description.trim(), nodeType)
+      if (referencedTreeIds.length > 3) {
+        alert('Maximum of 3 tree references allowed per node')
+        return
+      }
+      onSubmit(name.trim(), description.trim(), nodeType, referencedTreeIds)
     }
   }
 
@@ -2620,6 +3143,43 @@ function EditNodeForm({
           <option value="data_creation">Data Creation</option>
           <option value="results">Results</option>
         </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">
+          Reference Trees (Optional - Max 3)
+        </label>
+        <div className="border border-input rounded-md p-3 max-h-48 overflow-y-auto">
+          {availableTrees.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No other trees available in this project</p>
+          ) : (
+            <div className="space-y-2">
+              {availableTrees.map((tree) => (
+                <label
+                  key={tree.id}
+                  className="flex items-center space-x-2 cursor-pointer hover:bg-muted/50 p-2 rounded"
+                >
+                  <input
+                    type="checkbox"
+                    checked={referencedTreeIds.includes(tree.id)}
+                    onChange={() => toggleTreeReference(tree.id)}
+                    disabled={!referencedTreeIds.includes(tree.id) && referencedTreeIds.length >= 3}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-sm flex-1">{tree.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          {referencedTreeIds.length > 0 && (
+            <span className="text-blue-600 dark:text-blue-400">
+              {referencedTreeIds.length} of 3 selected
+            </span>
+          )}
+          {referencedTreeIds.length === 0 && 'Select trees to reference (maximum 3 per node)'}
+        </p>
       </div>
       
       <div className="flex space-x-3 pt-4">
