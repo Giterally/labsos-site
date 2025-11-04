@@ -134,6 +134,70 @@ export async function GET(
       }
     }
 
+    // Fetch all dependencies for nodes in this tree
+    const nodeIds = nodes.map(n => n.id)
+    let dependenciesMap = new Map<string, Array<{
+      id: string
+      to_node_id: string
+      to_node_name: string
+      dependency_type: string
+      evidence_text?: string
+    }>>()
+    
+    if (nodeIds.length > 0) {
+      // Fetch dependencies using node_id (current schema)
+      const { data: dependencies, error: depsError } = await client
+        .from('node_dependencies')
+        .select(`
+          id,
+          node_id,
+          depends_on_node_id,
+          dependency_type
+        `)
+        .in('node_id', nodeIds)
+      
+      if (!depsError && dependencies && dependencies.length > 0) {
+        // Get all target node IDs
+        const targetNodeIds = new Set<string>()
+        dependencies.forEach(dep => {
+          if (dep.depends_on_node_id) targetNodeIds.add(dep.depends_on_node_id)
+        })
+        
+        // Fetch target node names
+        let targetNodesMap = new Map<string, string>()
+        if (targetNodeIds.size > 0) {
+          const { data: targetNodes, error: targetError } = await client
+            .from('tree_nodes')
+            .select('id, name')
+            .in('id', Array.from(targetNodeIds))
+          
+          if (!targetError && targetNodes) {
+            targetNodes.forEach(n => {
+              targetNodesMap.set(n.id, n.name)
+            })
+          }
+        }
+        
+        // Build dependencies map
+        dependencies.forEach(dep => {
+          if (!dep.node_id || !dep.depends_on_node_id) return
+          
+          const toNodeName = targetNodesMap.get(dep.depends_on_node_id) || 'Unknown node'
+          
+          if (!dependenciesMap.has(dep.node_id)) {
+            dependenciesMap.set(dep.node_id, [])
+          }
+          
+          dependenciesMap.get(dep.node_id)!.push({
+            id: dep.id,
+            to_node_id: dep.depends_on_node_id,
+            to_node_name: toNodeName,
+            dependency_type: dep.dependency_type || 'requires'
+          })
+        })
+      }
+    }
+
     // Transform the data to match the expected format
     const transformedNodes = nodes.map(node => {
       const referencedTreesData: Array<{
@@ -159,6 +223,9 @@ export async function GET(
         })
       }
       
+      // Get dependencies for this node
+      const dependencies = dependenciesMap.get(node.id) || []
+      
       return {
         id: node.id,
         title: node.name,
@@ -171,6 +238,7 @@ export async function GET(
         links: node.node_links || [],
         referenced_tree_ids: node.referenced_tree_ids || [],
         referenced_trees: referencedTreesData,
+        dependencies: dependencies,
         metadata: {
           created: node.created_at,
           updated: node.updated_at,

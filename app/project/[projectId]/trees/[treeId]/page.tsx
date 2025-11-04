@@ -51,6 +51,13 @@ interface ExperimentNode {
     status: string
     error?: 'not_found' | 'access_denied'
   }>
+  dependencies?: Array<{
+    id: string
+    to_node_id: string
+    to_node_name: string
+    dependency_type: string
+    evidence_text?: string
+  }>
   metadata: {
     created: string
     updated: string
@@ -102,6 +109,10 @@ export default function SimpleExperimentTreePage() {
   const [editingContent, setEditingContent] = useState(false)
   const [editingAttachments, setEditingAttachments] = useState(false)
   const [editingLinks, setEditingLinks] = useState(false)
+  const [editingDependencies, setEditingDependencies] = useState(false)
+  const [showAddDependencyModal, setShowAddDependencyModal] = useState(false)
+  const [showEditDependencyModal, setShowEditDependencyModal] = useState(false)
+  const [editingDependency, setEditingDependency] = useState<{ id: string; to_node_id: string; to_node_name: string; dependency_type: string } | null>(null)
   const [editingMetadata, setEditingMetadata] = useState(false)
   // Centralized auth error handler
   const handleAuthError = (err: unknown): boolean => {
@@ -1379,6 +1390,151 @@ export default function SimpleExperimentTreePage() {
     }
   }
 
+  // Dependency management functions
+  const addDependency = async (to_node_id: string, dependency_type: string) => {
+    if (!selectedNode) return
+    
+    try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/dependencies`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          to_node_id,
+          dependency_type
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to add dependency')
+      }
+      
+      const { dependency } = await response.json()
+      
+      // Update local state - ensure to_node_name is resolved from current nodes
+      setExperimentNodes(prev => {
+        const targetNode = prev.find(n => n.id === dependency.to_node_id)
+        const resolvedDependency = {
+          ...dependency,
+          to_node_name: targetNode?.title || dependency.to_node_name || 'Unknown node'
+        }
+        
+        return prev.map(node => 
+          node.id === selectedNode.id 
+            ? { ...node, dependencies: [...(node.dependencies || []), resolvedDependency] }
+            : node
+        )
+      })
+      
+      setShowAddDependencyModal(false)
+    } catch (err) {
+      console.error('Error adding dependency:', err)
+      alert(err instanceof Error ? err.message : 'Failed to add dependency')
+    }
+  }
+
+  const updateDependency = async (dependencyId: string, to_node_id: string, dependency_type: string) => {
+    if (!selectedNode) return
+    
+    try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/dependencies/${dependencyId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          to_node_id,
+          dependency_type
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to update dependency')
+      }
+      
+      const { dependency } = await response.json()
+      
+      // Update local state - ensure to_node_name is resolved from current nodes
+      setExperimentNodes(prev => {
+        const targetNode = prev.find(n => n.id === dependency.to_node_id)
+        const resolvedDependency = {
+          ...dependency,
+          to_node_name: targetNode?.title || dependency.to_node_name || 'Unknown node'
+        }
+        
+        return prev.map(node => 
+          node.id === selectedNode.id 
+            ? { 
+                ...node, 
+                dependencies: (node.dependencies || []).map(dep => 
+                  dep.id === dependencyId ? resolvedDependency : dep
+                )
+              }
+            : node
+        )
+      })
+      
+      setShowEditDependencyModal(false)
+      setEditingDependency(null)
+    } catch (err) {
+      console.error('Error updating dependency:', err)
+      alert(err instanceof Error ? err.message : 'Failed to update dependency')
+    }
+  }
+
+  const deleteDependency = async (dependencyId: string) => {
+    if (!selectedNode) return
+    
+    try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+      
+      const response = await fetch(`/api/trees/${treeId}/nodes/${selectedNode.id}/dependencies/${dependencyId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete dependency')
+      }
+      
+      // Update local state
+      setExperimentNodes(prev => prev.map(node => 
+        node.id === selectedNode.id 
+          ? { 
+              ...node, 
+              dependencies: (node.dependencies || []).filter(dep => dep.id !== dependencyId)
+            }
+          : node
+      ))
+    } catch (err) {
+      console.error('Error deleting dependency:', err)
+      alert('Failed to delete dependency')
+    }
+  }
+
   // Metadata editing functions
   const startEditingMetadata = () => {
     if (selectedNode) {
@@ -2124,18 +2280,113 @@ export default function SimpleExperimentTreePage() {
 
                     <TabsContent value="content">
                       <div id="content" className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="font-medium">Content</h4>
-                          {!editingContent && hasEditPermission && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={startEditingContent}
-                              className="flex items-center space-x-1"
-                            >
-                              <PencilIcon className="h-4 w-4" />
-                              <span>Edit</span>
-                            </Button>
+                        <div className="flex items-center justify-end gap-2 mb-4">
+                          {hasEditPermission && (
+                            <>
+                              {!editingContent && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={startEditingContent}
+                                  className="flex items-center space-x-1"
+                                >
+                                  <PencilIcon className="h-4 w-4" />
+                                  <span>Edit Content</span>
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setEditingDependencies(!editingDependencies)}
+                                className="flex items-center space-x-1"
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                                <span>{editingDependencies ? 'Done' : 'Edit Dependencies'}</span>
+                              </Button>
+                              {editingDependencies && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setShowAddDependencyModal(true)}
+                                  className="flex items-center space-x-1"
+                                >
+                                  <PlusIcon className="h-4 w-4" />
+                                  <span>Add</span>
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        
+                        {/* Dependencies section */}
+                        <div className="mb-4 pb-4 border-b">
+                          <div className="mb-2">
+                            <h5 className="text-sm font-medium">Dependencies</h5>
+                          </div>
+                          
+                          {selectedNode && selectedNode.dependencies && selectedNode.dependencies.length > 0 ? (
+                            <div className="space-y-2">
+                              {selectedNode.dependencies.map((dep) => {
+                                const depLabels: Record<string, string> = {
+                                  requires: 'Requires',
+                                  uses_output: 'Uses Output',
+                                  follows: 'Follows',
+                                  validates: 'Validates',
+                                }
+                                const depLabel = depLabels[dep.dependency_type] || dep.dependency_type
+                                
+                                return (
+                                  <div key={dep.id} className="flex items-center justify-between p-2 border rounded-lg">
+                                    <div className="flex items-center gap-2 text-sm flex-1">
+                                      <Badge variant="outline" className="text-xs">
+                                        {depLabel}
+                                      </Badge>
+                                      <button
+                                        onClick={() => setSelectedNodeId(dep.to_node_id)}
+                                        className="text-primary hover:underline cursor-pointer"
+                                        disabled={editingDependencies}
+                                      >
+                                        {dep.to_node_name}
+                                      </button>
+                                    </div>
+                                    {editingDependencies && (
+                                      <div className="flex items-center gap-2">
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm"
+                                          onClick={() => {
+                                            setEditingDependency(dep)
+                                            setShowEditDependencyModal(true)
+                                          }}
+                                        >
+                                          <PencilIcon className="h-4 w-4" />
+                                        </Button>
+                                        <Button 
+                                          variant="outline" 
+                                          size="sm"
+                                          onClick={() => {
+                                            if (confirm('Are you sure you want to delete this dependency?')) {
+                                              deleteDependency(dep.id)
+                                            }
+                                          }}
+                                          className="text-destructive hover:text-destructive"
+                                        >
+                                          <TrashIcon className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-muted-foreground">
+                              {editingDependencies ? (
+                                <p className="italic">No dependencies yet. Click "Add" to create one.</p>
+                              ) : (
+                                <p className="italic">No dependencies</p>
+                              )}
+                            </div>
                           )}
                         </div>
                         
@@ -2176,8 +2427,7 @@ export default function SimpleExperimentTreePage() {
 
                     <TabsContent value="attachments">
                       <div id="attachments" className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="font-medium">Attachments</h4>
+                        <div className="flex items-center justify-end mb-4">
                           {hasEditPermission && (
                             <Button
                               variant="outline"
@@ -2301,8 +2551,7 @@ export default function SimpleExperimentTreePage() {
 
                     <TabsContent value="links">
                       <div id="links" className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="font-medium">Links</h4>
+                        <div className="flex items-center justify-end mb-4">
                           {hasEditPermission && (
                             <Button
                               variant="outline"
@@ -2403,8 +2652,7 @@ export default function SimpleExperimentTreePage() {
 
                     <TabsContent value="metadata">
                       <div className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="font-medium">Metadata</h4>
+                        <div className="flex items-center justify-end mb-4">
                           {!editingMetadata && hasEditPermission && (
                             <Button
                               variant="outline"
@@ -2587,6 +2835,44 @@ export default function SimpleExperimentTreePage() {
               onCancel={() => {
                 setShowEditLinkModal(false)
                 setEditingLink(null)
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Add Dependency Modal */}
+      {showAddDependencyModal && selectedNode && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Add Dependency</h3>
+            <AddDependencyForm
+              currentNodeId={selectedNode.id}
+              experimentNodes={experimentNodes}
+              onSubmit={(to_node_id, dependency_type) => {
+                addDependency(to_node_id, dependency_type)
+              }}
+              onCancel={() => setShowAddDependencyModal(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Edit Dependency Modal */}
+      {showEditDependencyModal && editingDependency && selectedNode && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Edit Dependency</h3>
+            <EditDependencyForm
+              dependency={editingDependency}
+              currentNodeId={selectedNode.id}
+              experimentNodes={experimentNodes}
+              onSubmit={(to_node_id, dependency_type) => {
+                updateDependency(editingDependency.id, to_node_id, dependency_type)
+              }}
+              onCancel={() => {
+                setShowEditDependencyModal(false)
+                setEditingDependency(null)
               }}
             />
           </div>
@@ -3895,6 +4181,154 @@ function EditBlockForm({
       <div className="flex space-x-3 pt-4">
         <Button type="submit" className="flex-1" disabled={!newBlockName.trim()}>
           Update Block
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Add Dependency Form Component
+function AddDependencyForm({ 
+  currentNodeId,
+  experimentNodes,
+  onSubmit, 
+  onCancel
+}: { 
+  currentNodeId: string
+  experimentNodes: ExperimentNode[]
+  onSubmit: (to_node_id: string, dependency_type: string) => void
+  onCancel: () => void
+}) {
+  const [to_node_id, setToNodeId] = useState('')
+  const [dependency_type, setDependencyType] = useState('requires')
+
+  // Filter out current node and nodes that already have a dependency from current node
+  const availableNodes = experimentNodes.filter(node => 
+    node.id !== currentNodeId
+  )
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (to_node_id && dependency_type) {
+      onSubmit(to_node_id, dependency_type)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Dependency Type</label>
+        <select
+          value={dependency_type}
+          onChange={(e) => setDependencyType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        >
+          <option value="requires">Requires</option>
+          <option value="uses_output">Uses Output</option>
+          <option value="follows">Follows</option>
+          <option value="validates">Validates</option>
+        </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Target Node</label>
+        <select
+          value={to_node_id}
+          onChange={(e) => setToNodeId(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        >
+          <option value="">Select a node...</option>
+          {availableNodes.map(node => (
+            <option key={node.id} value={node.id}>
+              {node.title}
+            </option>
+          ))}
+        </select>
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={!to_node_id || !dependency_type} className="flex-1">
+          Add Dependency
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Edit Dependency Form Component
+function EditDependencyForm({ 
+  dependency,
+  currentNodeId,
+  experimentNodes,
+  onSubmit, 
+  onCancel
+}: { 
+  dependency: NonNullable<ExperimentNode['dependencies']>[0]
+  currentNodeId: string
+  experimentNodes: ExperimentNode[]
+  onSubmit: (to_node_id: string, dependency_type: string) => void
+  onCancel: () => void
+}) {
+  const [to_node_id, setToNodeId] = useState(dependency?.to_node_id || '')
+  const [dependency_type, setDependencyType] = useState(dependency?.dependency_type || 'requires')
+
+  // Filter out current node
+  const availableNodes = experimentNodes.filter(node => 
+    node.id !== currentNodeId
+  )
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (to_node_id && dependency_type) {
+      onSubmit(to_node_id, dependency_type)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Dependency Type</label>
+        <select
+          value={dependency_type}
+          onChange={(e) => setDependencyType(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        >
+          <option value="requires">Requires</option>
+          <option value="uses_output">Uses Output</option>
+          <option value="follows">Follows</option>
+          <option value="validates">Validates</option>
+        </select>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-2">Target Node</label>
+        <select
+          value={to_node_id}
+          onChange={(e) => setToNodeId(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+          required
+        >
+          <option value="">Select a node...</option>
+          {availableNodes.map(node => (
+            <option key={node.id} value={node.id}>
+              {node.title}
+            </option>
+          ))}
+        </select>
+      </div>
+      
+      <div className="flex space-x-3 pt-4">
+        <Button type="submit" disabled={!to_node_id || !dependency_type} className="flex-1">
+          Update Dependency
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
