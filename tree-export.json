@@ -1,0 +1,516 @@
+{
+  "tree": {
+    "id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+    "name": "[Plant Tissue Consumption Preferences under Oil Exposure] Study",
+    "description": "Experiment tree generated from uploaded files",
+    "status": "draft",
+    "category": "protocol",
+    "node_count": 0,
+    "node_types": {
+      "results": 0,
+      "analysis": 0,
+      "protocol": 0,
+      "data_creation": 0
+    },
+    "created_by": "4a549ffb-a245-429a-9ff6-1f66b4ca925c",
+    "created_at": "2025-11-04T20:29:13.191602Z",
+    "updated_at": "2025-11-04T20:29:13.191602Z"
+  },
+  "blocks": [
+    {
+      "id": "0722e9de-164b-47f7-8f82-ea4a8a32e2c1",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "name": "Protocol Block",
+      "description": "Block containing protocol nodes",
+      "position": 1,
+      "block_type": "custom",
+      "created_at": "2025-11-04T20:29:13.272Z",
+      "updated_at": "2025-11-04T20:29:13.272Z"
+    },
+    {
+      "id": "e4a69f7f-c3d3-4f63-9096-ad591470b0be",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "name": "Data Creation Block",
+      "description": "Block containing data_creation nodes",
+      "position": 2,
+      "block_type": "custom",
+      "created_at": "2025-11-04T20:29:13.272Z",
+      "updated_at": "2025-11-04T20:29:13.272Z"
+    },
+    {
+      "id": "26d5370a-d41b-4685-b06e-9f177991b32c",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "name": "Analysis Block",
+      "description": "Block containing analysis nodes",
+      "position": 3,
+      "block_type": "custom",
+      "created_at": "2025-11-04T20:29:13.272Z",
+      "updated_at": "2025-11-04T20:29:13.272Z"
+    },
+    {
+      "id": "c574a8d8-77af-46d2-8c69-34fcdeb4a805",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "name": "Results Block",
+      "description": "Block containing results nodes",
+      "position": 4,
+      "block_type": "custom",
+      "created_at": "2025-11-04T20:29:13.272Z",
+      "updated_at": "2025-11-04T20:29:13.272Z"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "b76e223d-4dfb-485b-a231-7b980e09c52e",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "Oil Exposure Experiment",
+      "description": "Previously, Martin et al.[6] reported on the growth, reproduction, and morphological characteristics",
+      "node_type": "protocol",
+      "position": 8,
+      "status": "draft",
+      "block_id": "0722e9de-164b-47f7-8f82-ea4a8a32e2c1",
+      "block_name": "Protocol Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "Previously, Martin et al.[6] reported on the growth, reproduction, and morphological characteristics of Ruppia grown under 4 oil concentrations: none (0 m L oil/L tank), low (0.26 m L oil/L tank volum",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "02698875-f0ad-4f67-9096-31f81602bce1",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "91430425-267f-43e1-a01f-b68c05f5702e",
+        "content": "Previously, Martin et al.[6] reported on the growth, reproduction, and morphological characteristics of Ruppia grown under 4 oil concentrations: none (0 m L oil/L tank), low (0.26 m L oil/L tank volume), medium (0.53 m L oil/L tank volume), and high (1.05 m L oil/L tank volume) oil. Plants were grown in randomized, aerated mesocosms and harvested after 1 month. These concentrations were within the range found under coastal Louisiana field conditions [27]. Additional experimental details and results can be found in Martin et al.[6].",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "93915007-e6f0-4302-84c0-ee4d33cfabf5",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    },
+    {
+      "id": "9bbda563-b01f-4670-85e1-2f6c571f80a1",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "Plant Tissue Collection",
+      "description": "Available plant leaf material, likely the most susceptible and frequently grazed portion of the plan",
+      "node_type": "protocol",
+      "position": 7,
+      "status": "draft",
+      "block_id": "0722e9de-164b-47f7-8f82-ea4a8a32e2c1",
+      "block_name": "Protocol Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "Available plant leaf material, likely the most susceptible and frequently grazed portion of the plant, was analyzed for chemical composition to determine the carbon: nitrogen (C:N) ratio, as C:N ratio",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          },
+          {
+            "snippet": "Available plant leaf material, likely the most susceptible and frequently grazed portion of the plant, was analyzed for chemical composition to determine the carbon: nitrogen (C:N) ratio, as C:N ratio",
+            "chunk_id": "Valentine and Heck 2001",
+            "source_type": "unknown"
+          },
+          {
+            "snippet": "Available plant leaf material, likely the most susceptible and frequently grazed portion of the plant, was analyzed for chemical composition to determine the carbon: nitrogen (C:N) ratio, as C:N ratio",
+            "chunk_id": "Herman et al. 2017",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "abac9474-9223-4d2e-9b06-91a43fd9bef4",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "3eb13a67-8bac-4f11-bcc6-d21e3eb1cf0e",
+        "content": "Available plant leaf material, likely the most susceptible and frequently grazed portion of the plant, was analyzed for chemical composition to determine the carbon: nitrogen (C:N) ratio, as C:N ratio has been found to be a strong determinant for herbivore preference [26]. Leaves were removed from the stem, dried to a constant weight at 60 ̊C, ground to a powder using a mortar and pestle, and analyzed for C:N content using established methods [28,29]. Ten replicates were conducted for each oil treatment.",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "acc50bc9-0da2-4d55-bb1e-7a2781526281",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        },
+        {
+          "id": "3bf129a2-c16e-49f1-84fe-9cc828fef3ef",
+          "name": "Valentine and Heck 2001.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 1
+        },
+        {
+          "id": "517a23d1-ea5a-4b0e-b533-d32d4f18d93c",
+          "name": "Herman et al. 2017.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 2
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    },
+    {
+      "id": "87932ed4-92b6-4ca6-99e4-d9d8de828e2f",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "Choice Tests",
+      "description": "In choice tests, each herbivore was offered a choice between an artificial leaf from 2 of the previo",
+      "node_type": "protocol",
+      "position": 6,
+      "status": "draft",
+      "block_id": "e4a69f7f-c3d3-4f63-9096-ad591470b0be",
+      "block_name": "Data Creation Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "In choice tests, each herbivore was offered a choice between an artificial leaf from 2 of the previously mentioned oil treatments. Each pairwise comparison was tested: None vs Low, None vs Medium, Non",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "ca6cefbb-4ab1-4b14-a2ad-3e300fba3138",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "440e055e-d022-4c2f-8ce9-f70cecf483b4",
+        "content": "In choice tests, each herbivore was offered a choice between an artificial leaf from 2 of the previously mentioned oil treatments. Each pairwise comparison was tested: None vs Low, None vs Medium, None vs High, Low vs Medium, Low vs High, and Medium vs High. Shrimp or amphipods were allowed to feed for 24 hours before the trial ended and artificial leaves removed, patted dry with a paper towel, and reweighed. Each unique choice comparison was replicated 12 times.",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "95f329de-7d63-4c49-9468-ca5216753177",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    },
+    {
+      "id": "b590d204-41dc-48a5-aade-42d3972b3f70",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "No-Choice Tests",
+      "description": "In foraging rate tests, we determined the rate at which herbivores feed on oil-contaminated tissues ",
+      "node_type": "protocol",
+      "position": 5,
+      "status": "draft",
+      "block_id": "e4a69f7f-c3d3-4f63-9096-ad591470b0be",
+      "block_name": "Data Creation Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "In foraging rate tests, we determined the rate at which herbivores feed on oil-contaminated tissues in the aforementioned concentrations. We offered herbivores one leaf (i.e., no choice) from each tre",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "eecefd8b-6cd0-4a10-af19-f8a5c001aa79",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "6a65c3ed-ddce-43cd-9876-81e609815441",
+        "content": "In foraging rate tests, we determined the rate at which herbivores feed on oil-contaminated tissues in the aforementioned concentrations. We offered herbivores one leaf (i.e., no choice) from each treatment. In this experiment, shrimp were allowed to feed for 24 hours and each treatment replicated 12 times. Amphipods were also allowed to feed for 24 hours. However, due to little feeding the experiment was repeated over 48 hours. Trials using amphipods in this experiment were replicated 18 times.",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "a28fd9ca-2161-4991-b542-63941261fb9f",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    },
+    {
+      "id": "28e2296d-6761-488d-8259-4322f7cac711",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "Plant C:N Ratio Analysis",
+      "description": "Prior to any analysis, assumptions of parametric statistics (normality and homogeneity of variance) ",
+      "node_type": "protocol",
+      "position": 4,
+      "status": "draft",
+      "block_id": "26d5370a-d41b-4685-b06e-9f177991b32c",
+      "block_name": "Analysis Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "Prior to any analysis, assumptions of parametric statistics (normality and homogeneity of variance) were tested and transformed if necessary. Plant C:N ratio was analyzed using a one-way analysis of v",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "346da4be-934e-4908-afa9-3ea94ee18e29",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "350b8548-64cf-4a32-bf4b-b93f6b3a99c8",
+        "content": "Prior to any analysis, assumptions of parametric statistics (normality and homogeneity of variance) were tested and transformed if necessary. Plant C:N ratio was analyzed using a one-way analysis of variance with Tukey's post-hoc analysis to determine which treatments differed.",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "a6d6a6ae-bdfb-42b5-bfaf-17ca1f265e34",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    },
+    {
+      "id": "7343fc9d-5c5f-425a-92e3-d8dd6a6b84d4",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "Herbivore Preference Analysis",
+      "description": "Choice tests were analyzed using paired t-tests for each individual comparison. Foraging rate compar",
+      "node_type": "protocol",
+      "position": 3,
+      "status": "draft",
+      "block_id": "26d5370a-d41b-4685-b06e-9f177991b32c",
+      "block_name": "Analysis Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "Choice tests were analyzed using paired t-tests for each individual comparison. Foraging rate comparisons were made using a one-way analysis of variance, again with Tukey's posthoc pairwise comparison",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "25fcddf9-5200-4674-bd83-de672ff562bd",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "e3c5dce6-5808-4786-b5ae-b654fb08dd2b",
+        "content": "Choice tests were analyzed using paired t-tests for each individual comparison. Foraging rate comparisons were made using a one-way analysis of variance, again with Tukey's posthoc pairwise comparisons. In choice and foraging rate tests, each herbivore was tested separately. Results were considered significant at p<0.05.",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "b9a713b5-c7f2-4e8d-a7c9-164a38fe5a90",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    },
+    {
+      "id": "f8f94cd9-d8a2-48a0-b5b6-6050444c413e",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "Plant C:N Ratio",
+      "description": "Plants grown in different oil concentrations had significantly different C:N ratios (F = 4.81, p = 0",
+      "node_type": "protocol",
+      "position": 2,
+      "status": "draft",
+      "block_id": "c574a8d8-77af-46d2-8c69-34fcdeb4a805",
+      "block_name": "Results Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "Plants grown in different oil concentrations had significantly different C:N ratios (F = 4.81, p = 0.006). A clear trend of decreasing C:N ratio with increasing oil exposure was detected (Fig 1), with",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "6b30d9e0-a149-4589-8e76-066711efcdc6",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "be4455cd-3282-4af7-b07b-01d5417fa4c3",
+        "content": "Plants grown in different oil concentrations had significantly different C:N ratios (F = 4.81, p = 0.006). A clear trend of decreasing C:N ratio with increasing oil exposure was detected (Fig 1), with posthoc comparisons indicating that no oil was significantly different than medium (p = 0.049) and high oil (p = 0.001). Average C:N ratio in no oil was approximately 27.5, and decreased to around 25.3, 23.0, and 21.7 in low, medium, and high oil, respectively.",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "e73ee110-b362-4816-9ba7-d2ab36e3293d",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    },
+    {
+      "id": "2bfef15a-4036-4084-8608-59414066daaf",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "Herbivore Preference",
+      "description": "Grass shrimp generally demonstrated preference patterns for grasses grown under higher oil concentra",
+      "node_type": "protocol",
+      "position": 1,
+      "status": "draft",
+      "block_id": "c574a8d8-77af-46d2-8c69-34fcdeb4a805",
+      "block_name": "Results Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "Grass shrimp generally demonstrated preference patterns for grasses grown under higher oil concentrations (Table 1, Fig 2). Significant differences in foraging were detected for comparisons of None vs",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "06138155-8ef3-4465-932a-434d2360f989",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "abb0e85b-f609-4243-ab33-73fe92ce93f0",
+        "content": "Grass shrimp generally demonstrated preference patterns for grasses grown under higher oil concentrations (Table 1, Fig 2). Significant differences in foraging were detected for comparisons of None vs Medium, None vs High, Low vs High, and Medium vs High (Table 1). In each case, more material was consumed in the tissue with oil higher exposure (Fig 2). In general, shrimp consumed between 5 and 30% of material during trials, within the optimal range for foraging trials [32].\n\nAmphipods also showed similar trends in consumption preferences, albeit with less amount of material consumed than grass shrimp (generally less than 10% of material consumed). Significant preferences (Table 1, Fig 3) were detected for the following comparisons: None vs High, Low vs High, and Medium vs High. Again, herbivores preferred plant tissue that had been grown under higher oil concentrations.",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "af3d1a62-bf6f-4663-946f-4432d16df001",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    },
+    {
+      "id": "2f819ecd-020e-4fa9-8df1-cada3ad1f462",
+      "tree_id": "be4f59ca-8b75-443c-afa9-85e450c6ea31",
+      "parent_id": null,
+      "name": "Foraging Rates",
+      "description": "When not given a choice between plant tissues, different trends were observed with a larger proporti",
+      "node_type": "protocol",
+      "position": 0,
+      "status": "draft",
+      "block_id": "c574a8d8-77af-46d2-8c69-34fcdeb4a805",
+      "block_name": "Results Block",
+      "referenced_tree_ids": [],
+      "confidence": "0.85",
+      "provenance": {
+        "sources": [
+          {
+            "snippet": "When not given a choice between plant tissues, different trends were observed with a larger proportion of tissue consumed in tissues with none/lower oil exposures. For grass shrimp, significant differ",
+            "chunk_id": "Martin et al. 2018",
+            "source_type": "unknown"
+          }
+        ],
+        "confidence": 0.85,
+        "proposal_id": "0111c261-970a-4be9-9589-2f4e6ff56037",
+        "generated_by": "fast-import-v1",
+        "mergeMetadata": null
+      },
+      "content": {
+        "id": "4141f7d6-4724-438c-903d-639fbacf923a",
+        "content": "When not given a choice between plant tissues, different trends were observed with a larger proportion of tissue consumed in tissues with none/lower oil exposures. For grass shrimp, significant differences were detected in the amount of plant tissue consumed among plants from different oil exposures (F3,44 = 20.294, p<0.001; Fig 4). More plant material was consumed from none (9.6%) and low (9.3%) treatments than from artificial leaves from medium (3.1%) and high (2.3%) oil concentrations.\n\nFor amphipods, no significant differences were detected in the 24 hour trials (F3,68 = 2.51, p = 0.066, Fig 5 A). However, amphipods consumed very little tissue during these trials (2.3% in no oil, and around 1% in other treatments). After a longer time to forage and almost twice the amount of plant material consumed, significant differences were detected (F3,68 = 7.14, p<0.001; Fig 5 B). In these 48 hour trials, significantly more plant material was consumed from the no oil treatment (4.4%) than from plants grown in low (1.8%), medium (2.0%), or high (1.5%) oil treatments.",
+        "status": "draft"
+      },
+      "attachments": [
+        {
+          "id": "50e0b8df-df5d-4abe-bfb7-32250de0086d",
+          "name": "Martin et al. 2018.pdf",
+          "file_type": "",
+          "file_size": 0,
+          "file_url": "",
+          "description": "",
+          "position": 0
+        }
+      ],
+      "links": [],
+      "dependencies": []
+    }
+  ],
+  "summary": {
+    "total_nodes": 9,
+    "total_blocks": 4,
+    "total_attachments": 11,
+    "total_links": 0,
+    "total_dependencies": 0,
+    "nodes_by_type": {
+      "protocol": 9,
+      "data_creation": 0,
+      "analysis": 0,
+      "results": 0
+    },
+    "nodes_by_block": {
+      "Protocol Block": 2,
+      "Data Creation Block": 2,
+      "Analysis Block": 2,
+      "Results Block": 3
+    }
+  }
+}
+

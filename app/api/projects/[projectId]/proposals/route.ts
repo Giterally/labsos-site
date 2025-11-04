@@ -1135,7 +1135,7 @@ async function buildTreeInBackground(
         }
       }
 
-      // Handle nested trees: Create separate trees for nodes marked as nested
+      // Handle nested trees: Create separate independent trees for nodes marked as nested
       await progressTracker.updateWithPersistence(trackingJobId, {
         stage: 'building_nodes',
         current: 97,
@@ -1143,7 +1143,6 @@ async function buildTreeInBackground(
         message: 'Creating nested trees for reusable procedures...',
       });
 
-      const nestedTreeReferences: any[] = [];
       let nestedTreeCount = 0;
 
       for (const createdNode of createdTreeNodes) {
@@ -1172,6 +1171,8 @@ async function buildTreeInBackground(
             const mainTreeName = mainTree?.name || 'experiment';
             const baseTreeName = proposal.node_json?.title || `${createdNode.name} Protocol`;
             const nestedTreeName = `${baseTreeName} (from ${mainTreeName})`;
+            
+            // Create the nested tree as an independent tree
             const { data: nestedTree, error: nestedTreeError } = await supabaseServer
               .from('experiment_trees')
               .insert({
@@ -1179,20 +1180,24 @@ async function buildTreeInBackground(
                 name: nestedTreeName,
                 description: `Reusable protocol extracted from ${experimentTreeId ? 'main experiment' : 'uploaded files'}`,
                 created_by: userId,
-                is_template: true,
-                template_category: proposal.node_json?.metadata?.node_type || 'protocol',
               })
               .select('id')
               .single();
 
             if (nestedTreeError || !nestedTree || !nestedTree.id) {
               console.error(`[BUILD_TREE] Failed to create nested tree for ${createdNode.name}:`, nestedTreeError);
-              // Fallback: Don't nest, just create regular node with full content
-              console.warn(`[BUILD_TREE] Continuing with regular node creation for ${createdNode.name}`);
+              await progressTracker.updateWithPersistence(trackingJobId, {
+                stage: 'building_nodes',
+                current: 97,
+                total: 100,
+                message: `Warning: Failed to create nested tree for ${createdNode.name}. Continuing...`,
+              });
               continue;
             }
 
-            // Create nodes for the nested tree (using the full content from the proposal)
+            console.log(`[BUILD_TREE] Created nested tree ${nestedTree.id} for ${createdNode.name}`);
+
+            // Get nested content from proposal
             const nestedContent = proposal.node_json?.content?.text || '';
             
             if (!nestedContent || nestedContent.trim().length === 0) {
@@ -1209,112 +1214,43 @@ async function buildTreeInBackground(
             const numberedSteps = parseStepsFromContent(nestedContent);
             const hasMultipleSteps = numberedSteps.length > 1 && numberedSteps.length <= 20;
 
+            // Create proposals array for nested tree (to use with createBlocksFromProposals)
+            const nestedProposals: any[] = [];
+            
             if (hasMultipleSteps) {
-              // Create multiple nodes for each step
-              const stepNodes = numberedSteps.map((step, idx) => ({
-                tree_id: nestedTree.id,
-                name: `${nestedTreeName} - Step ${idx + 1}`,
-                description: step.substring(0, 200).replace(/\n/g, ' '),
-                node_type: mapToValidNodeType(proposal.node_json?.metadata?.node_type || 'protocol'),
-                position: idx + 1,
-                status: 'draft',
-                created_by: userId,
-              }));
-              
-              const { data: createdStepNodes, error: stepNodesError } = await supabaseServer
-                .from('tree_nodes')
-                .insert(stepNodes)
-                .select('id');
-              
-              if (stepNodesError || !createdStepNodes || createdStepNodes.length === 0) {
-                console.error(`[BUILD_TREE] Failed to create step nodes for nested tree ${nestedTree.id}:`, stepNodesError);
-                // Fallback to single node
-                await supabaseServer
-                  .from('experiment_trees')
-                  .delete()
-                  .eq('id', nestedTree.id);
-                continue;
-              }
-
-              // Store content for each step node
-              for (let i = 0; i < createdStepNodes.length; i++) {
-                const { error: contentError } = await supabaseServer
-                  .from('node_content')
-                  .insert({
-                    node_id: createdStepNodes[i].id,
-                    content: numberedSteps[i],
-                    status: 'draft',
-                  });
-
-                if (contentError) {
-                  console.error(`[BUILD_TREE] Failed to store content for step node ${createdStepNodes[i].id}:`, contentError);
-                }
-              }
-
-              // Use first step node for reference
-              const firstStepNodeId = createdStepNodes[0].id;
-              
-              // Update parent node to reference nested tree
-              await supabaseServer
-                .from('tree_nodes')
-                .update({
-                  is_nested_tree_ref: true,
-                  nested_tree_id: nestedTree.id,
-                })
-                .eq('id', createdNode.id);
-
-              // Update node content to reference text
-              const referenceText = `Perform ${createdNode.name} using standard protocol. [View nested protocol →]`;
-              const { error: contentUpdateError } = await supabaseServer
-                .from('node_content')
-                .upsert({
-                  node_id: createdNode.id,
-                  content: referenceText,
-                  status: 'draft',
-                }, {
-                  onConflict: 'node_id',
+              // Create a proposal-like object for each step
+              numberedSteps.forEach((step, idx) => {
+                nestedProposals.push({
+                  id: randomUUID(),
+                  node_json: {
+                    title: `${nestedTreeName} - Step ${idx + 1}`,
+                    content: { text: step },
+                    metadata: {
+                      node_type: proposal.node_json?.metadata?.node_type || 'protocol',
+                    },
+                  },
                 });
-
-              if (contentUpdateError) {
-                console.error(`[BUILD_TREE] Failed to update node content for nested tree reference:`, contentUpdateError);
-                // Try update as fallback
-                await supabaseServer
-                  .from('node_content')
-                  .update({
-                    content: referenceText,
-                  })
-                  .eq('node_id', createdNode.id);
-              }
-
-              // Store nested tree reference
-              nestedTreeReferences.push({
-                parent_node_id: createdNode.id,
-                nested_tree_id: nestedTree.id,
               });
-
-              nestedTreeCount++;
-              console.log(`[BUILD_TREE] Created nested tree ${nestedTree.id} with ${createdStepNodes.length} steps for node ${createdNode.name}`);
-              continue;
+            } else {
+              // Single node proposal
+              nestedProposals.push({
+                id: randomUUID(),
+                node_json: {
+                  title: nestedTreeName,
+                  content: { text: nestedContent },
+                  metadata: {
+                    node_type: proposal.node_json?.metadata?.node_type || 'protocol',
+                  },
+                },
+              });
             }
 
-            // Create a single node in the nested tree with full content
-            const { data: nestedNode, error: nestedNodeError } = await supabaseServer
-              .from('tree_nodes')
-              .insert({
-                tree_id: nestedTree.id,
-                name: nestedTreeName,
-                description: nestedContent.substring(0, 200),
-                node_type: mapToValidNodeType(proposal.node_json?.metadata?.node_type || 'protocol'),
-                position: 1,
-                status: 'draft',
-                created_by: userId,
-              })
-              .select('id')
-              .single();
+            // Create blocks for nested tree (same as main tree)
+            const { blockInserts: nestedBlockInserts, nodeBlockMapping: nestedNodeBlockMapping } = 
+              await createBlocksFromProposals(nestedProposals, nestedTree.id);
 
-            if (nestedNodeError || !nestedNode || !nestedNode.id) {
-              console.error(`[BUILD_TREE] Failed to create nested node for nested tree ${nestedTree.id}:`, nestedNodeError);
-              // Clean up the nested tree we just created
+            if (nestedBlockInserts.length === 0) {
+              console.error(`[BUILD_TREE] Failed to create blocks for nested tree ${nestedTree.id}`);
               await supabaseServer
                 .from('experiment_trees')
                 .delete()
@@ -1322,77 +1258,137 @@ async function buildTreeInBackground(
               continue;
             }
 
-            if (nestedNode) {
-              // Store node content
+            // Insert blocks for nested tree
+            const { data: nestedBlocks, error: nestedBlockError } = await supabaseServer
+              .from('tree_blocks')
+              .insert(nestedBlockInserts)
+              .select('id, position');
+
+            if (nestedBlockError || !nestedBlocks || nestedBlocks.length === 0) {
+              console.error(`[BUILD_TREE] Failed to insert blocks for nested tree ${nestedTree.id}:`, nestedBlockError);
               await supabaseServer
+                .from('experiment_trees')
+                .delete()
+                .eq('id', nestedTree.id);
+              continue;
+            }
+
+            // Create mapping from proposal IDs to actual block IDs
+            const nestedBlockMap = new Map<string, string>();
+            nestedBlocks.forEach((block, idx) => {
+              const blockInsert = nestedBlockInserts[idx];
+              // Find proposals that map to this block
+              nestedProposals.forEach(proposal => {
+                const mappedBlockId = nestedNodeBlockMapping.get(proposal.id);
+                if (mappedBlockId === blockInsert.id) {
+                  nestedBlockMap.set(proposal.id, block.id);
+                }
+              });
+            });
+
+            // Create nodes for nested tree
+            const nestedNodesToInsert = nestedProposals.map((nestedProposal, idx) => {
+              const blockId = nestedBlockMap.get(nestedProposal.id) || nestedBlocks[0].id;
+              return {
+                tree_id: nestedTree.id,
+                name: nestedProposal.node_json.title,
+                description: hasMultipleSteps 
+                  ? numberedSteps[idx].substring(0, 200).replace(/\n/g, ' ')
+                  : nestedContent.substring(0, 200),
+                node_type: mapToValidNodeType(nestedProposal.node_json.metadata?.node_type || 'protocol'),
+                position: idx + 1,
+                status: 'draft',
+                created_by: userId,
+                block_id: blockId,
+              };
+            });
+
+            const { data: createdNestedNodes, error: nestedNodesError } = await supabaseServer
+              .from('tree_nodes')
+              .insert(nestedNodesToInsert)
+              .select('id, name');
+
+            if (nestedNodesError || !createdNestedNodes || createdNestedNodes.length === 0) {
+              console.error(`[BUILD_TREE] Failed to create nodes for nested tree ${nestedTree.id}:`, nestedNodesError);
+              await supabaseServer
+                .from('experiment_trees')
+                .delete()
+                .eq('id', nestedTree.id);
+              continue;
+            }
+
+            // Store content for each nested node
+            for (let i = 0; i < createdNestedNodes.length; i++) {
+              const content = hasMultipleSteps ? numberedSteps[i] : nestedContent;
+              const { error: contentError } = await supabaseServer
                 .from('node_content')
                 .insert({
-                  node_id: nestedNode.id,
-                  content: nestedContent,
+                  node_id: createdNestedNodes[i].id,
+                  content: content,
                   status: 'draft',
                 });
 
-              // Update parent node to reference nested tree instead of containing full content
-              const referenceText = `Perform ${createdNode.name} using standard protocol. [View nested protocol →]`;
-              
-              await supabaseServer
-                .from('tree_nodes')
-                .update({
-                  is_nested_tree_ref: true,
-                  nested_tree_id: nestedTree.id,
-                })
-                .eq('id', createdNode.id);
-
-              // Update node content to reference text (use upsert to handle edge cases)
-              const { error: contentUpdateError } = await supabaseServer
-                .from('node_content')
-                .upsert({
-                  node_id: createdNode.id,
-                  content: referenceText,
-                  status: 'draft',
-                }, {
-                  onConflict: 'node_id',
-                });
-
-              if (contentUpdateError) {
-                console.error(`[BUILD_TREE] Failed to update node content for nested tree reference:`, contentUpdateError);
-                // Try update as fallback
-                await supabaseServer
-                  .from('node_content')
-                  .update({
-                    content: referenceText,
-                  })
-                  .eq('node_id', createdNode.id);
+              if (contentError) {
+                console.error(`[BUILD_TREE] Failed to store content for nested node ${createdNestedNodes[i].id}:`, contentError);
               }
+            }
 
-              // Store nested tree reference
-              nestedTreeReferences.push({
-                parent_node_id: createdNode.id,
-                nested_tree_id: nestedTree.id,
+            // Update parent node to reference the nested tree using referenced_tree_ids array
+            // First, get the current referenced_tree_ids from the database
+            const { data: currentNode, error: fetchError } = await supabaseServer
+              .from('tree_nodes')
+              .select('referenced_tree_ids')
+              .eq('id', createdNode.id)
+              .single();
+            
+            const currentRefs = (currentNode?.referenced_tree_ids as string[]) || [];
+            const updatedRefs = [...currentRefs, nestedTree.id];
+            
+            const { error: updateRefError } = await supabaseServer
+              .from('tree_nodes')
+              .update({
+                referenced_tree_ids: updatedRefs,
+              })
+              .eq('id', createdNode.id);
+
+            if (updateRefError) {
+              console.error(`[BUILD_TREE] Failed to update parent node to reference nested tree:`, updateRefError);
+            }
+
+            // Update parent node content to reference text
+            const referenceText = `Perform ${createdNode.name} using standard protocol. [View nested protocol →]`;
+            const { error: contentUpdateError } = await supabaseServer
+              .from('node_content')
+              .upsert({
+                node_id: createdNode.id,
+                content: referenceText,
+                status: 'draft',
+              }, {
+                onConflict: 'node_id',
               });
 
-              nestedTreeCount++;
-              console.log(`[BUILD_TREE] Created nested tree ${nestedTree.id} for node ${createdNode.name}`);
+            if (contentUpdateError) {
+              // Try update as fallback
+              await supabaseServer
+                .from('node_content')
+                .update({
+                  content: referenceText,
+                })
+                .eq('node_id', createdNode.id);
             }
+
+            nestedTreeCount++;
+            console.log(`[BUILD_TREE] ✓ Created nested tree ${nestedTree.id} with ${createdNestedNodes.length} nodes for ${createdNode.name}`);
           } catch (error: any) {
             console.error(`[BUILD_TREE] Error creating nested tree for ${createdNode.name}:`, error);
+            console.error(`[BUILD_TREE] Error details:`, error.message, error.stack);
             // Continue with other nodes
           }
         }
       }
 
-      // Insert nested tree references
-      if (nestedTreeReferences.length > 0) {
-        console.log(`[BUILD_TREE] Inserting ${nestedTreeReferences.length} nested tree references`);
-        const { error: nestedRefError } = await supabaseServer
-          .from('nested_tree_references')
-          .insert(nestedTreeReferences);
-
-        if (nestedRefError) {
-          console.error('[BUILD_TREE] Failed to create nested tree references:', nestedRefError);
-        } else {
-          console.log(`[BUILD_TREE] Successfully created ${nestedTreeCount} nested trees`);
-        }
+      if (nestedTreeCount > 0) {
+        console.log(`[BUILD_TREE] Successfully created ${nestedTreeCount} nested trees`);
       }
 
       // Mark as complete
