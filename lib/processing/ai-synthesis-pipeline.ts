@@ -1,10 +1,57 @@
 import { supabaseServer } from '../supabase-server';
-import { clusterChunks, storeClusteringResults } from '../ai/clustering';
-import { synthesizeNode, storeSynthesizedNode, calculateConfidence } from '../ai/synthesis';
-import { detectDuplicates, mergeNodes } from '../ai/deduplication';
 import { progressTracker } from '../progress-tracker';
-import { generateWorkflowOutline, type WorkflowOutline, summarizeOutline, getDependencySections } from '../ai/planning-agent';
-import { retrieveContextForSynthesis, checkDuplication } from '../ai/rag-retriever';
+import { extractWorkflow } from '../ai/workflow-extractor';
+import { mergeMultiDocumentWorkflows } from '../ai/multi-document-synthesis';
+import { resolveAttachments } from './attachment-resolver';
+import { extractDependenciesRuleBased } from './dependency-extractor';
+import { detectNestedTrees } from './nested-tree-detector';
+import { storeSynthesizedNode } from '../ai/synthesis';
+import { cleanStructuredDocument } from './document-cleaner';
+import type { StructuredDocument } from './parsers/pdf-parser';
+import type { WorkflowExtractionResult, ExtractedNode } from '../ai/schemas/workflow-extraction-schema';
+import { formatStructuredDocumentForLLM } from '../ai/workflow-extractor';
+
+/**
+ * Extract key topics from a structured document for matching
+ * Used to match nodes to documents when attachments are missing
+ */
+function extractTopicsFromDocument(doc: StructuredDocument): string[] {
+  const topics = new Set<string>();
+  
+  // Extract from filename (remove extension, split on underscores/hyphens)
+  const filenameParts = doc.fileName
+    .replace(/\.(pdf|xlsx?|txt|md|mp4|mp3|wav)$/i, '')
+    .split(/[-_\s]+/)
+    .filter(p => p.length > 3);
+  filenameParts.forEach(p => topics.add(p.toLowerCase()));
+  
+  // Extract from section titles
+  for (const section of doc.sections) {
+    if (section.title) {
+      // Extract key words from title (remove common words)
+      const words = section.title
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(w => w.length > 3 && !['the', 'and', 'for', 'with', 'from', 'using'].includes(w));
+      words.forEach(w => topics.add(w));
+    }
+  }
+  
+  // Extract from first paragraph (often contains key terms)
+  if (doc.sections[0]?.content && doc.sections[0].content.length > 0) {
+    const firstContent = doc.sections[0].content[0];
+    if (firstContent.type === 'text' && 'text' in firstContent) {
+      const firstText = (firstContent as any).text || '';
+      const keywords = firstText
+        .substring(0, 500)
+        .toLowerCase()
+        .match(/\b[a-z]{4,}\b/g) || [];
+      keywords.slice(0, 10).forEach(k => topics.add(k));
+    }
+  }
+  
+  return Array.from(topics);
+}
 
 // Helper function to check if job was cancelled
 async function checkCancellation(jobId: string): Promise<boolean> {
@@ -17,17 +64,20 @@ async function checkCancellation(jobId: string): Promise<boolean> {
     
     const cancelled = job?.status === 'cancelled';
     if (cancelled) {
-      console.log('[AI SYNTHESIS] Cancellation detected for job:', jobId);
+      console.log('[FAST_IMPORT] Cancellation detected for job:', jobId);
     }
     return cancelled;
   } catch (error) {
-    console.error('[AI SYNTHESIS] Error checking cancellation:', error);
+    console.error('[FAST_IMPORT] Error checking cancellation:', error);
     return false;
   }
 }
 
+/**
+ * Generate proposals using the new fast import pipeline
+ * Single LLM call per document, no embeddings/clustering
+ */
 export async function generateProposals(projectId: string, jobId?: string) {
-  // Generate jobId if not provided
   const trackingJobId = jobId || `proposals_${projectId}_${Date.now()}`;
   
   // Initialize progress
@@ -35,715 +85,544 @@ export async function generateProposals(projectId: string, jobId?: string) {
     stage: 'initializing',
     current: 0,
     total: 100,
-    message: 'Initializing proposal generation...',
+    message: 'Initializing fast import pipeline...',
   });
-  console.log('[AI SYNTHESIS] Progress updated: 0/100 (0%) - Initializing');
+  
+  console.log('[FAST_IMPORT] ===== Starting proposal generation =====');
+  console.log('[FAST_IMPORT] Project ID:', projectId);
+  console.log('[FAST_IMPORT] Job ID:', trackingJobId);
+  
+  // Check for cancellation immediately after initialization
+  if (await checkCancellation(trackingJobId)) {
+    console.log('[FAST_IMPORT] Job was cancelled before processing started');
+    await progressTracker.updateWithPersistence(trackingJobId, {
+      stage: 'complete',
+      current: 100,
+      total: 100,
+      message: 'Generation cancelled by user',
+    });
+    return {
+      success: false,
+      proposalsGenerated: 0,
+      nestedTreeCandidates: 0,
+      cancelled: true,
+    };
+  }
+  
   try {
-    console.log(`[AI SYNTHESIS] Starting proposal generation for project: ${projectId}`);
+    // Validate configuration before starting
+    const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+    const hasOpenAIKey = !!process.env.OPENAI_API_KEY;
+    
+    if (!hasAnthropicKey && !hasOpenAIKey) {
+      const errorMsg = 'No LLM API key found (ANTHROPIC_API_KEY or OPENAI_API_KEY not set)';
+      console.error('[FAST_IMPORT] Configuration error:', errorMsg);
+      await progressTracker.errorWithPersistence(trackingJobId, errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    console.log(`[FAST_IMPORT] LLM Provider: ${hasAnthropicKey ? 'Anthropic' : 'OpenAI'}`);
 
-    // NOTE: Do NOT clear existing proposals upfront.
-    // We will generate new proposals first and only delete older ones after success.
+    // Get project context
+    console.log('[FAST_IMPORT] Loading project context...');
+    const { data: project, error: projectError } = await supabaseServer
+      .from('projects')
+      .select('name, description')
+      .eq('id', projectId)
+      .single();
 
-    // Get all preprocessed chunks for the project
-    let chunks;
-    try {
-      const { data: chunksData, error: chunksError } = await supabaseServer
-        .from('chunks')
-        .select('id, text, source_type, source_ref, metadata, embedding')
-        .eq('project_id', projectId);
-
-      if (chunksError) {
-        throw new Error(`Database error fetching chunks: ${chunksError.message}`);
-      }
-
-      if (!chunksData || chunksData.length === 0) {
-        throw new Error('No preprocessed chunks found for project. Please ensure files have been uploaded and processed successfully.');
-      }
-
-      // Validate embeddings exist
-      const chunksWithoutEmbeddings = chunksData.filter(c => !c.embedding);
-      if (chunksWithoutEmbeddings.length > 0) {
-        console.warn(`[AI SYNTHESIS] Warning: ${chunksWithoutEmbeddings.length}/${chunksData.length} chunks missing embeddings`);
-      }
-
-      chunks = chunksData;
-      console.log(`[AI SYNTHESIS] Found ${chunks.length} preprocessed chunks (${chunks.length - chunksWithoutEmbeddings.length} with embeddings)`);
-    } catch (error: any) {
-      await progressTracker.errorWithPersistence(trackingJobId, `Failed to fetch chunks: ${error.message}`);
-      throw error;
+    if (projectError) {
+      console.error('[FAST_IMPORT] Failed to load project:', projectError);
+      throw new Error(`Failed to load project: ${projectError.message}`);
     }
 
-    // Step 0: Generate workflow outline using Planning Agent
-    let workflowOutline: WorkflowOutline | null = null;
-    try {
-      await progressTracker.updateWithPersistence(trackingJobId, {
-        stage: 'initializing',
-        current: 5,
-        total: 100,
-        message: 'Analyzing document structure with Planning Agent...',
-      });
-      
-      console.log(`[AI SYNTHESIS] Generating workflow outline with Planning Agent...`);
-      workflowOutline = await generateWorkflowOutline(projectId);
-      
-      console.log(`[AI SYNTHESIS] Planning Agent generated outline:`);
-      console.log(summarizeOutline(workflowOutline));
-      
-      // Store outline in project metadata for user review
-      await supabaseServer
-        .from('projects')
-        .update({
-          metadata: {
-            workflowOutline,
-            outlineGeneratedAt: new Date().toISOString(),
-          }
-        })
-        .eq('id', projectId);
-      
-      console.log('[AI SYNTHESIS] About to update progress after Planning Agent success...');
-      console.log('[AI SYNTHESIS] Planning Agent result:', {
-        phases: workflowOutline.phases.length,
-        estimatedNodes: workflowOutline.estimatedNodes,
-        title: workflowOutline.title
-      });
+    const projectContext = project ? {
+      name: project.name,
+      description: project.description || undefined,
+    } : undefined;
 
-      try {
-        await progressTracker.updateWithPersistence(trackingJobId, {
-          stage: 'initializing',
-          current: 15,
-          total: 100,
-          message: `Outline complete: ${workflowOutline.phases.length} phases, ~${workflowOutline.estimatedNodes} nodes`,
-        });
-        console.log('[AI SYNTHESIS] Progress update successful!');
-        console.log('[AI SYNTHESIS] Progress updated: 15/100 (15%) - Planning Agent complete');
-      } catch (progressError) {
-        console.error('[AI SYNTHESIS] Progress update failed:', progressError);
-        console.error('[AI SYNTHESIS] Progress error details:', {
-          error: progressError.message,
-          stack: progressError.stack,
-          trackingJobId: trackingJobId
-        });
-        // Continue anyway - don't let progress update failure stop the pipeline
-        console.log('[AI SYNTHESIS] Continuing pipeline despite progress update failure...');
-      }
-    } catch (planningError: any) {
-      console.error('[AI SYNTHESIS] Planning Agent failed, continuing without outline:', planningError);
-      // Continue without outline - clustering will still work
-      workflowOutline = null;
-      
-      // Update progress to indicate we're moving forward despite the error
-      await progressTracker.updateWithPersistence(trackingJobId, {
-        stage: 'initializing',
-        current: 10,
-        total: 100,
-        message: 'Planning Agent skipped, proceeding to clustering...',
-      });
-      console.log('[AI SYNTHESIS] Progress updated: 10/100 (10%) - Planning Agent skipped');
+    console.log(`[FAST_IMPORT] Project: "${project?.name || 'Unknown'}"`);
+
+    // Step 1: Load structured documents
+    await progressTracker.updateWithPersistence(trackingJobId, {
+      stage: 'loading',
+      current: 10,
+      total: 100,
+      message: 'Loading structured documents...',
+    });
+
+    console.log('[FAST_IMPORT] Querying structured documents...');
+    const { data: structuredDocs, error: docsError } = await supabaseServer
+      .from('structured_documents')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false });
+
+    if (docsError) {
+      console.error('[FAST_IMPORT] Database error loading documents:', docsError);
+      throw new Error(`Failed to load structured documents: ${docsError.message}`);
     }
 
-    // Step 1: Cluster chunks
-    let clusters;
-    try {
-      await progressTracker.updateWithPersistence(trackingJobId, {
-        stage: 'clustering',
-        current: 15,
-        total: 100,
-        message: `Clustering ${chunks.length} chunks...`,
-      });
-      console.log('[AI SYNTHESIS] Progress updated: 15/100 (15%) - Clustering');
-      
-      console.log(`[AI SYNTHESIS] Clustering chunks`);
-      clusters = await clusterChunks(projectId, {
-        minClusterSize: 1, // Allow single-chunk nodes for hash-based embeddings
-        maxClusterSize: 10,
-        similarityThreshold: 0.3, // Lowered for hash-based embeddings
-        maxClusters: 20,
-      });
-
-      await storeClusteringResults(projectId, clusters);
-      console.log(`[AI SYNTHESIS] Generated ${clusters.length} clusters`);
-      
-      await progressTracker.updateWithPersistence(trackingJobId, {
-        stage: 'clustering',
-        current: 25,
-        total: 100,
-        message: `Generated ${clusters.length} clusters, starting synthesis...`,
-      });
-      console.log('[AI SYNTHESIS] Progress updated: 25/100 (25%) - Clustering complete');
-    } catch (error: any) {
-      const errorMsg = `Clustering failed: ${error.message}`;
-      console.error(`[AI SYNTHESIS] ${errorMsg}`, error);
+    if (!structuredDocs || structuredDocs.length === 0) {
+      const errorMsg = 'No structured documents found. Please ensure files have been uploaded and preprocessed.';
+      console.warn('[FAST_IMPORT]', errorMsg);
       await progressTracker.errorWithPersistence(trackingJobId, errorMsg);
       throw new Error(errorMsg);
     }
 
-    // Step 2: Synthesize nodes from clusters (and unclustered later)
-    // Pre-compute unclustered chunks to set an accurate total upfront
-    const clusteredChunkIds = new Set();
-    clusters.forEach(cluster => {
-      cluster.chunkIds.forEach(id => clusteredChunkIds.add(id));
-    });
-    const unclusteredChunksPre = chunks.filter(chunk => !clusteredChunkIds.has(chunk.id));
-
-    const totalItemsToSynthesize =
-      clusters.length +
-      (chunks.length === 1 && clusters.length === 0 ? 1 : 0) +
-      unclusteredChunksPre.length;
-
-    await progressTracker.updateWithPersistence(trackingJobId, {
-      stage: 'synthesizing',
-      current: 25,
-      total: 100,
-      message: `Synthesizing nodes from ${clusters.length} clusters (0/${totalItemsToSynthesize})...`,
-    });
-    console.log('[AI SYNTHESIS] Progress updated: 25/100 (25%) - Starting synthesis');
+    console.log(`[FAST_IMPORT] Found ${structuredDocs.length} structured document(s)`);
     
-    console.log(`[AI SYNTHESIS] Synthesizing nodes`);
-    const proposedNodes = [];
-    let synthesizedCount = 0;
+    // Log document details
+    structuredDocs.forEach((doc, i) => {
+      const structuredDoc = doc.document_json as StructuredDocument;
+      console.log(`[FAST_IMPORT]   Document ${i + 1}: "${structuredDoc.fileName}" (${structuredDoc.sections?.length || 0} sections)`);
+    });
 
-    // Handle single chunks that didn't get clustered
-    if (chunks.length === 1 && clusters.length === 0) {
-      console.log(`[AI SYNTHESIS] Single chunk detected, creating individual node`);
+    // Step 2: Extract workflow from each document (single LLM call per document)
+    await progressTracker.updateWithPersistence(trackingJobId, {
+      stage: 'extracting',
+      current: 20,
+      total: 100,
+      message: `Extracting workflows from ${structuredDocs.length} documents...`,
+    });
+
+    const allProposedNodes: ExtractedNode[] = [];
+    const extractionResults: WorkflowExtractionResult[] = [];
+    const extractionAttempts: Array<{
+      documentIndex: number;
+      fileName: string;
+      success: boolean;
+      nodesExtracted: number;
+      error?: string;
+      duration?: number;
+    }> = [];
+
+    // Process documents in batches to avoid rate limiting
+    const batchSize = 5;
+    const delayMs = 1000; // 1 second between batches
+    const EXTRACTION_TIMEOUT = 120000; // 2 minutes per document
+
+    console.log(`[FAST_IMPORT] Starting extraction from ${structuredDocs.length} documents (batch size: ${batchSize})`);
+
+    for (let batchStart = 0; batchStart < structuredDocs.length; batchStart += batchSize) {
+      const batch = structuredDocs.slice(batchStart, batchStart + batchSize);
+      const batchNumber = Math.floor(batchStart / batchSize) + 1;
+      const totalBatches = Math.ceil(structuredDocs.length / batchSize);
       
-      // Get project context
-      const { data: project } = await supabaseServer
-        .from('projects')
-        .select('name, description')
-        .eq('id', projectId)
-        .single();
+      console.log(`[FAST_IMPORT] ===== Processing batch ${batchNumber}/${totalBatches} (${batch.length} documents) =====`);
 
-      // Create a mock cluster for the single chunk
-      const singleChunk = chunks[0];
-      const mockCluster = {
-        id: `single_${singleChunk.id}`,
-        chunks: [{
-          id: singleChunk.id,
-          text: singleChunk.text,
-          sourceType: singleChunk.source_type,
-          sourceRef: singleChunk.source_ref,
-          metadata: singleChunk.metadata,
-        }],
-        centroid: singleChunk.embedding,
-        size: 1,
-        coherence: 1.0,
-      };
-
-      // Synthesize node from single chunk
-      const synthesizedNode = await synthesizeNode({
-        chunks: mockCluster.chunks,
-        projectContext: project ? {
-          name: project.name,
-          description: project.description,
-        } : undefined,
-      });
-      
-      // Calculate confidence
-      const confidence = calculateConfidence(synthesizedNode);
-
-      // Store synthesized node
-      const nodeId = await storeSynthesizedNode(
-        projectId,
-        synthesizedNode,
-        'proposed'
-      );
-      proposedNodes.push({ nodeId, confidence });
-      synthesizedCount++;
-
-      const progressPercent = Math.round(25 + (synthesizedCount / totalItemsToSynthesize) * 60);
-      await progressTracker.updateWithPersistence(trackingJobId, {
-        stage: 'synthesizing',
-        current: progressPercent,
-        total: 100,
-        message: `Synthesizing nodes: ${synthesizedCount}/${totalItemsToSynthesize} complete...`,
-      });
-
-      console.log(`[AI SYNTHESIS] Synthesized single-chunk node ${nodeId} with confidence ${confidence}`);
-    }
-
-    // Process regular clusters
-    for (const cluster of clusters) {
-      // Check for cancellation before processing each cluster
-      if (await checkCancellation(trackingJobId)) {
-        console.log(`[AI SYNTHESIS] Generation cancelled by user after creating ${proposedNodes.length} nodes`);
-        await progressTracker.completeWithPersistence(
-          trackingJobId, 
-          `Generation stopped. Created ${proposedNodes.length} proposed nodes.`
-        );
-        return {
-          success: true,
-          clustersGenerated: clusters.length,
-          nodesGenerated: proposedNodes.length,
-          cancelled: true,
-        };
-      }
-
-      try {
-        // Get chunks for this cluster
-        const { data: clusterChunks, error: chunksError } = await supabaseServer
-          .from('chunks')
-          .select('id, text, source_type, source_ref, metadata')
-          .eq('project_id', projectId)
-          .in('id', cluster.chunkIds);
-
-        if (chunksError || !clusterChunks) {
-          console.error(`[AI SYNTHESIS] Failed to fetch chunks for cluster ${cluster.clusterId}:`, chunksError);
-          continue;
+      // Process batch in parallel
+      const batchPromises = batch.map(async (doc, batchIndex) => {
+        const i = batchStart + batchIndex;
+        const startTime = Date.now();
+        
+        // Check for cancellation
+        if (await checkCancellation(trackingJobId)) {
+          throw new Error('Job was cancelled');
         }
 
-        // Get project context
-        const { data: project } = await supabaseServer
-          .from('projects')
-          .select('name, description')
-          .eq('id', projectId)
-          .single();
+        let structuredDoc = doc.document_json as StructuredDocument;
+        const originalFileName = structuredDoc.fileName;
+        
+        // Clean the document before extraction (removes noise, fixes formatting)
+        structuredDoc = cleanStructuredDocument(structuredDoc);
+        
+        // Check if document has meaningful content after cleaning
+        const formattedDoc = formatStructuredDocumentForLLM(structuredDoc);
+        const docLength = formattedDoc.length;
+        
+        console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Processing: "${originalFileName}"`);
+        console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Sections: ${structuredDoc.sections.length} (after cleaning)`);
+        console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Formatted length: ${docLength} chars`);
 
-        // Create cluster object for synthesis
-        const clusterObj = {
-          id: cluster.clusterId,
-          chunks: clusterChunks.map(chunk => ({
-            id: chunk.id,
-            text: chunk.text,
-            sourceType: chunk.source_type,
-            sourceRef: chunk.source_ref,
-            metadata: chunk.metadata,
-          })),
-          centroid: cluster.centroid,
-          size: cluster.size,
-          coherence: 1.0, // Default coherence for cluster objects
-        };
+        if (docLength < 100) {
+          const warning = `Document too short after cleaning (${docLength} chars), skipping extraction`;
+          console.warn(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ${warning}`);
+          extractionAttempts.push({
+            documentIndex: i,
+            fileName: originalFileName,
+            success: false,
+            nodesExtracted: 0,
+            error: warning,
+            duration: Date.now() - startTime,
+          });
+          return { success: false, error: warning, index: i };
+        }
 
-        // Use RAG to retrieve additional context
-        let ragContext = null;
-        if (workflowOutline) {
-          try {
-            // Try to find matching section in outline
-            const clusterText = clusterObj.chunks.map(c => c.text).join(' ').substring(0, 500);
-            const matchingSection = workflowOutline.phases
-              .flatMap(p => p.sections)
-              .find(s => clusterText.toLowerCase().includes(s.title.toLowerCase().substring(0, 20)));
-            
-            if (matchingSection) {
-              console.log(`[AI SYNTHESIS] Retrieving RAG context for section: "${matchingSection.title}"`);
-              ragContext = await retrieveContextForSynthesis(
-                projectId,
-                clusterObj.chunks.map(c => c.id),
-                matchingSection,
-                { maxRelatedChunks: 8, maxDependencyChunks: 4 }
-              );
-              
-              // Check for duplication
-              const dupCheck = checkDuplication(matchingSection.title, ragContext.existingNodes);
-              if (dupCheck.isDuplicate) {
-                console.log(`[AI SYNTHESIS] Skipping duplicate node: "${matchingSection.title}" (${(dupCheck.similarity * 100).toFixed(0)}% similar to "${dupCheck.duplicateOf?.title}")`);
-                continue; // Skip this cluster, it's a duplicate
-              }
+        await progressTracker.updateWithPersistence(trackingJobId, {
+          stage: 'extracting',
+          current: 20 + Math.floor((i / structuredDocs.length) * 60),
+          total: 100,
+          message: `Extracting from ${originalFileName} (${structuredDoc.sections.length} sections)...`,
+        });
+
+        try {
+          // Wrap extraction in timeout
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Starting LLM extraction (timeout: ${EXTRACTION_TIMEOUT}ms)...`);
+          
+          const extractionPromise = extractWorkflow(structuredDoc, projectContext);
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`Extraction timeout after ${EXTRACTION_TIMEOUT}ms`)), EXTRACTION_TIMEOUT);
+          });
+
+          const extractionResult = await Promise.race([extractionPromise, timeoutPromise]);
+          const duration = Date.now() - startTime;
+
+          const totalNodes = extractionResult.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ✓ Extraction successful: ${extractionResult.blocks.length} blocks, ${totalNodes} nodes in ${duration}ms`);
+
+          if (totalNodes > 0) {
+            // Log sample node
+            const firstBlock = extractionResult.blocks[0];
+            if (firstBlock && firstBlock.nodes.length > 0) {
+              const sampleNode = firstBlock.nodes[0];
+              console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Sample node: "${sampleNode.title}" (type: ${sampleNode.type})`);
             }
-          } catch (ragError: any) {
-            console.warn(`[AI SYNTHESIS] RAG retrieval failed, continuing without context:`, ragError.message);
+          } else {
+            console.warn(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ⚠ Extraction returned 0 nodes`);
+          }
+
+          extractionAttempts.push({
+            documentIndex: i,
+            fileName: originalFileName,
+            success: true,
+            nodesExtracted: totalNodes,
+            duration,
+          });
+
+          return { success: true, result: extractionResult, index: i };
+        } catch (error: any) {
+          const duration = Date.now() - startTime;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          
+          console.error(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ✗ Extraction failed:`, errorMessage);
+          
+          // Log more details for debugging
+          if (error instanceof Error && error.stack) {
+            const stackPreview = error.stack.split('\n').slice(0, 3).join('\n');
+            console.error(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Stack trace:`, stackPreview);
+          }
+
+          // Log specific error types
+          if (error.name === 'ZodError') {
+            console.error(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Schema validation failed:`, error.errors?.slice(0, 3));
+          }
+
+          extractionAttempts.push({
+            documentIndex: i,
+            fileName: originalFileName,
+            success: false,
+            nodesExtracted: 0,
+            error: errorMessage,
+            duration,
+          });
+
+          return { success: false, error: errorMessage, index: i };
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+
+      // Process successful results
+      for (const batchResult of batchResults) {
+        if (batchResult.success && batchResult.result) {
+          const extractionResult = batchResult.result;
+          extractionResults.push(extractionResult);
+
+          const totalNodes = extractionResult.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
+          console.log(`[FAST_IMPORT] Batch result: Extracted ${extractionResult.blocks.length} blocks, ${totalNodes} nodes`);
+
+          // Flatten nodes from all blocks
+          for (const block of extractionResult.blocks) {
+            for (const node of block.nodes) {
+              // Add block context to node
+              node.metadata = {
+                ...node.metadata,
+                blockName: block.blockName,
+                blockType: block.blockType,
+              };
+              allProposedNodes.push(node);
+            }
+          }
+        } else {
+          const attempt = extractionAttempts.find(a => a.documentIndex === batchResult.index);
+          console.error(`[FAST_IMPORT] Batch extraction failed for document ${batchResult.index + 1}: ${attempt?.error || 'Unknown error'}`);
+        }
+      }
+
+      // Delay between batches (except for last batch)
+      if (batchStart + batchSize < structuredDocs.length) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+    
+    // Log comprehensive extraction summary
+    console.log(`[FAST_IMPORT] ===== EXTRACTION SUMMARY =====`);
+    console.log(`[FAST_IMPORT] Total documents processed: ${extractionAttempts.length}`);
+    const successfulExtractions = extractionAttempts.filter(a => a.success);
+    const failedExtractions = extractionAttempts.filter(a => !a.success);
+    console.log(`[FAST_IMPORT] Successful: ${successfulExtractions.length}/${extractionAttempts.length}`);
+    console.log(`[FAST_IMPORT] Failed: ${failedExtractions.length}/${extractionAttempts.length}`);
+    console.log(`[FAST_IMPORT] Total nodes extracted: ${allProposedNodes.length}`);
+    
+    if (successfulExtractions.length > 0) {
+      console.log(`[FAST_IMPORT] Successful extractions:`);
+      successfulExtractions.forEach(s => {
+        console.log(`[FAST_IMPORT]   ✓ "${s.fileName}": ${s.nodesExtracted} nodes in ${s.duration}ms`);
+      });
+    }
+    
+    if (failedExtractions.length > 0) {
+      console.log(`[FAST_IMPORT] Failed extractions:`);
+      failedExtractions.forEach(f => {
+        console.log(`[FAST_IMPORT]   ✗ "${f.fileName}": ${f.error} (${f.duration}ms)`);
+      });
+    }
+
+    if (allProposedNodes.length === 0) {
+      const errorDetails = failedExtractions.length > 0
+        ? ` All ${failedExtractions.length} extraction(s) failed. ` +
+          `Sample errors: ${failedExtractions.slice(0, 3).map(f => `"${f.fileName}": ${f.error}`).join('; ')}`
+        : ' All extractions returned empty results.';
+      throw new Error(`No nodes extracted from any documents.${errorDetails}`);
+    }
+
+    console.log(`[FAST_IMPORT] Extracted ${allProposedNodes.length} nodes total`);
+
+    // Step 2.5: Merge multi-document workflows if we have multiple documents
+    if (extractionResults.length > 1) {
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'merging',
+        current: 55,
+        total: 100,
+        message: `Merging ${extractionResults.length} document workflows...`,
+      });
+
+      console.log(`[FAST_IMPORT] Merging ${extractionResults.length} document workflows into single coherent workflow`);
+      
+      try {
+        const mergedWorkflow = await mergeMultiDocumentWorkflows(extractionResults, projectContext);
+        
+        // Replace extraction results with merged workflow
+        extractionResults.length = 0;
+        extractionResults.push(mergedWorkflow);
+        
+        // Rebuild allProposedNodes from merged workflow
+        allProposedNodes.length = 0;
+        for (const block of mergedWorkflow.blocks) {
+          for (const node of block.nodes) {
+            node.metadata = {
+              ...node.metadata,
+              blockName: block.blockName,
+              blockType: block.blockType,
+            };
+            allProposedNodes.push(node);
           }
         }
-
-        // Synthesize node from chunks with RAG context
-        const synthesizedNode = await synthesizeNode({
-          chunks: clusterObj.chunks,
-          projectContext: project ? {
-            name: project.name,
-            description: project.description,
-          } : undefined,
-          retrievedContext: ragContext,
-        });
-
-        // Calculate confidence
-        const confidence = calculateConfidence(synthesizedNode);
-
-        // Store synthesized node
-        const nodeId = await storeSynthesizedNode(
-          projectId,
-          synthesizedNode,
-          'proposed'
-        );
-        proposedNodes.push({ nodeId, confidence });
-        synthesizedCount++;
-
-        const progressPercent = Math.round(25 + (synthesizedCount / totalItemsToSynthesize) * 60);
-        await progressTracker.updateWithPersistence(trackingJobId, {
-          stage: 'synthesizing',
-          current: progressPercent,
-          total: 100,
-          message: `Synthesized ${synthesizedCount}/${totalItemsToSynthesize} nodes...`,
-        });
-
-        console.log(`[AI SYNTHESIS] Synthesized node ${nodeId} with confidence ${confidence}`);
-      } catch (clusterError: any) {
-        console.error(`[AI SYNTHESIS] Failed to synthesize cluster ${cluster.clusterId}:`, clusterError);
-        // Continue with other clusters even if one fails
-        const progressPercent = Math.round(25 + (synthesizedCount / totalItemsToSynthesize) * 60);
-        await progressTracker.updateWithPersistence(trackingJobId, {
-          stage: 'synthesizing',
-          current: progressPercent,
-          total: 100,
-          message: `Warning: Failed to synthesize 1 cluster. Continuing... (${synthesizedCount}/${totalItemsToSynthesize})`,
-        });
-      }
-    }
-
-    // Step 3: Handle unclustered chunks (fallback for hash-based embeddings)
-    const unclusteredChunks = chunks.filter(chunk => !clusteredChunkIds.has(chunk.id));
-    
-    if (unclusteredChunks.length > 0) {
-      console.log(`[AI SYNTHESIS] Processing ${unclusteredChunks.length} unclustered chunks in parallel batches`);
-      
-      // Get project context once
-      const { data: project } = await supabaseServer
-        .from('projects')
-        .select('name, description')
-        .eq('id', projectId)
-        .single();
-
-      // Process chunks in parallel batches
-      const batchSize = 8; // Process 8 chunks in parallel
-      const batches = [];
-      
-      for (let i = 0; i < unclusteredChunks.length; i += batchSize) {
-        const batch = unclusteredChunks.slice(i, i + batchSize);
-        batches.push(batch);
-      }
-
-      console.log(`[AI SYNTHESIS] Processing ${batches.length} batches of unclustered chunks`);
-
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        // Check for cancellation before each batch
-        if (await checkCancellation(trackingJobId)) {
-          console.log(`[AI SYNTHESIS] Generation cancelled during unclustered processing after ${proposedNodes.length} nodes`);
-          await progressTracker.completeWithPersistence(
-            trackingJobId, 
-            `Generation stopped. Created ${proposedNodes.length} proposed nodes.`
-          );
-          return {
-            success: true,
-            clustersGenerated: clusters.length,
-            nodesGenerated: proposedNodes.length,
-            cancelled: true,
+        
+        console.log(`[FAST_IMPORT] Merged workflow: ${mergedWorkflow.blocks.length} blocks, ${allProposedNodes.length} nodes`);
+        
+        // Store merge metadata in extraction results for later use in tree building
+        (extractionResults[0] as any).mergeMetadata = {
+          sourceDocumentCount: extractionResults.length,
+          mergedAt: new Date().toISOString(),
+          mergeStrategy: 'llm',
+        };
+      } catch (error: any) {
+        console.error(`[FAST_IMPORT] Failed to merge workflows, using fallback concatenation:`, error);
+        // Fallback merge already handled in mergeMultiDocumentWorkflows
+        const fallbackResult = extractionResults.length > 0 ? extractionResults[0] : null;
+        if (fallbackResult) {
+          (fallbackResult as any).mergeMetadata = {
+            sourceDocumentCount: extractionResults.length,
+            mergedAt: new Date().toISOString(),
+            mergeStrategy: 'fallback',
           };
         }
-
-        const batch = batches[batchIndex];
-        console.log(`[AI SYNTHESIS] Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} chunks)`);
-
-        // Process batch in parallel
-        const batchPromises = batch.map(async (chunk) => {
-          try {
-            // Create a mock cluster for the unclustered chunk
-            const mockCluster = {
-              id: `unclustered_${chunk.id}`,
-              chunks: [{
-                id: chunk.id,
-                text: chunk.text,
-                sourceType: chunk.source_type,
-                sourceRef: chunk.source_ref,
-                metadata: chunk.metadata,
-              }],
-              centroid: chunk.embedding,
-              size: 1,
-              avgSimilarity: 1.0,
-              coherence: 1.0,
-            };
-
-            // Synthesize node from unclustered chunk
-            const synthesizedNode = await synthesizeNode({
-              chunks: mockCluster.chunks,
-              projectContext: project ? {
-                name: project.name,
-                description: project.description,
-              } : undefined,
-            });
-
-            // Calculate confidence
-            const confidence = calculateConfidence(synthesizedNode);
-
-            // Store synthesized node
-            const nodeId = await storeSynthesizedNode(
-              projectId,
-              synthesizedNode,
-              'proposed'
-            );
-
-            console.log(`[AI SYNTHESIS] Synthesized unclustered chunk node ${nodeId} with confidence ${confidence}`);
-            
-            // Update overall synthesized count and progress
-            synthesizedCount++;
-            const progressPercent = Math.round(25 + (synthesizedCount / totalItemsToSynthesize) * 60);
-            await progressTracker.updateWithPersistence(trackingJobId, {
-              stage: 'synthesizing',
-              current: progressPercent,
-              total: 100,
-              message: `Synthesized ${synthesizedCount}/${totalItemsToSynthesize} nodes...`,
-            });
-
-            return { nodeId, confidence };
-          } catch (error) {
-            console.error(`[AI SYNTHESIS] Failed to process unclustered chunk ${chunk.id}:`, error);
-            return null; // Return null for failed chunks
-          }
-        });
-
-        // Wait for batch to complete
-        const batchResults = await Promise.all(batchPromises);
-        
-        // Add successful results to proposedNodes
-        batchResults.forEach(result => {
-          if (result) {
-            proposedNodes.push(result);
-          }
-        });
-
-        console.log(`[AI SYNTHESIS] Completed batch ${batchIndex + 1}/${batches.length}`);
       }
     }
 
-    console.log(`[AI SYNTHESIS] Proposal generation completed for project ${projectId}`);
-    console.log(`[AI SYNTHESIS] Generated ${proposedNodes.length} proposed nodes`);
-
-    // Step 4: Deduplication pass
+    // Step 3: Resolve attachments
     await progressTracker.updateWithPersistence(trackingJobId, {
-      stage: 'deduplicating',
+      stage: 'resolving',
+      current: 60,
+      total: 100,
+      message: 'Resolving attachments...',
+    });
+
+    for (const doc of structuredDocs) {
+      const structuredDoc = doc.document_json as StructuredDocument;
+      
+      // Process ALL nodes for this document, not just those with existing attachments
+      const nodesForDoc = allProposedNodes.filter(n => {
+        // Check if node has attachments pointing to this document
+        const hasAttachmentsForDoc = n.attachments.some(a => a.sourceId === structuredDoc.sourceId);
+        
+        // Also process nodes that have no attachments yet (they might need figure/table detection)
+        const hasNoAttachments = n.attachments.length === 0;
+        
+        // Check if node content mentions topics from this document (extract from section titles)
+        const docTopics = extractTopicsFromDocument(structuredDoc);
+        const contentMentionsDoc = hasNoAttachments && docTopics.some(topic => 
+          n.content.text.toLowerCase().includes(topic.toLowerCase())
+        );
+        
+        return hasAttachmentsForDoc || contentMentionsDoc;
+      });
+      
+      if (nodesForDoc.length > 0) {
+        await resolveAttachments(nodesForDoc, structuredDoc);
+      }
+    }
+
+    console.log(`[FAST_IMPORT] Resolved attachments for all nodes`);
+
+    // Step 4: Extract dependencies (rule-based)
+    await progressTracker.updateWithPersistence(trackingJobId, {
+      stage: 'dependencies',
+      current: 70,
+      total: 100,
+      message: 'Extracting dependencies...',
+    });
+
+    extractDependenciesRuleBased(allProposedNodes);
+    console.log(`[FAST_IMPORT] Extracted dependencies`);
+
+    // Step 5: Detect nested trees
+    await progressTracker.updateWithPersistence(trackingJobId, {
+      stage: 'nesting',
+      current: 80,
+      total: 100,
+      message: 'Detecting nested trees...',
+    });
+
+    const nestedTreeCandidates = detectNestedTrees(allProposedNodes);
+    console.log(`[FAST_IMPORT] Found ${nestedTreeCandidates.length} nested tree candidates`);
+
+    // Step 6: Store proposals
+    await progressTracker.updateWithPersistence(trackingJobId, {
+      stage: 'storing',
       current: 85,
       total: 100,
-      message: `Detecting and merging duplicate nodes...`,
+      message: `Storing ${allProposedNodes.length} proposals...`,
     });
+
+    const storedNodeIds: string[] = [];
     
-    console.log(`[AI SYNTHESIS] Running deduplication pass...`);
-    
-    if (proposedNodes.length > 1) {
-      try {
-        // Fetch all proposed nodes with their full data
-        const { data: fullProposedNodes, error: fetchError } = await supabaseServer
-          .from('proposed_nodes')
-          .select('*')
-          .eq('project_id', projectId)
-          .eq('status', 'proposed');
-
-        if (fetchError || !fullProposedNodes) {
-          console.warn('[AI SYNTHESIS] Failed to fetch nodes for deduplication:', fetchError);
-        } else {
-          // Detect duplicates
-          const duplicates = await detectDuplicates(fullProposedNodes);
-
-          if (duplicates.length > 0) {
-            console.log(`[AI SYNTHESIS] Found ${duplicates.length} duplicate pairs, merging...`);
-            
-            await progressTracker.updateWithPersistence(trackingJobId, {
-              stage: 'deduplicating',
-              current: 90,
-              total: 100,
-              message: `Merging ${duplicates.length} duplicate pairs...`,
-            });
-            
-            // Track which nodes to delete
-            const nodesToDelete = new Set<string>();
-            const nodesToUpdate: any[] = [];
-
-            // Process each duplicate pair
-            for (const dup of duplicates) {
-              // Check for cancellation before processing each duplicate
-              if (await checkCancellation(trackingJobId)) {
-                console.log(`[AI SYNTHESIS] Generation cancelled during deduplication after processing ${nodesToDelete.size} duplicates`);
-                await progressTracker.completeWithPersistence(
-                  trackingJobId, 
-                  `Generation stopped. Created ${proposedNodes.length} proposed nodes, merged ${nodesToDelete.size} duplicates.`
-                );
-                return {
-                  success: true,
-                  clustersGenerated: clusters.length,
-                  nodesGenerated: proposedNodes.length,
-                  cancelled: true,
-                };
-              }
-
-              // Skip if already marked for deletion
-              if (nodesToDelete.has(dup.node1Id) || nodesToDelete.has(dup.node2Id)) {
-                continue;
-              }
-
-              // Find the actual node objects
-              const node1 = fullProposedNodes.find(n => n.id === dup.node1Id);
-              const node2 = fullProposedNodes.find(n => n.id === dup.node2Id);
-
-              if (!node1 || !node2) continue;
-
-              // Merge the nodes
-              const mergedNode = mergeNodes(node1, node2);
-              
-              // Mark lower confidence node for deletion
-              const toDelete = node1.confidence >= node2.confidence ? node2.id : node1.id;
-              const toUpdate = node1.confidence >= node2.confidence ? node1.id : node2.id;
-              
-              nodesToDelete.add(toDelete);
-              nodesToUpdate.push({
-                id: toUpdate,
-                node_json: mergedNode.node_json,
-                confidence: mergedNode.confidence,
-              });
-
-              console.log(`[AI SYNTHESIS] Merged duplicate: "${node1.node_json.title}" + "${node2.node_json.title}" (${dup.similarity.toFixed(1)}% similar)`);
-            }
-
-            // Delete duplicate nodes
-            if (nodesToDelete.size > 0) {
-              const { error: deleteError } = await supabaseServer
-                .from('proposed_nodes')
-                .delete()
-                .in('id', Array.from(nodesToDelete));
-
-              if (deleteError) {
-                console.error('[AI SYNTHESIS] Failed to delete duplicate nodes:', deleteError);
-              } else {
-                console.log(`[AI SYNTHESIS] Deleted ${nodesToDelete.size} duplicate nodes`);
-              }
-            }
-
-            // Update merged nodes
-            for (const update of nodesToUpdate) {
-              // Check for cancellation before each update
-              if (await checkCancellation(trackingJobId)) {
-                console.log(`[AI SYNTHESIS] Generation cancelled during node updates`);
-                await progressTracker.completeWithPersistence(
-                  trackingJobId,
-                  `Generation stopped. Created ${proposedNodes.length} nodes, partially merged duplicates.`
-                );
-                return {
-                  success: true,
-                  clustersGenerated: clusters.length,
-                  nodesGenerated: proposedNodes.length,
-                  cancelled: true,
-                };
-              }
-
-              const { error: updateError } = await supabaseServer
-                .from('proposed_nodes')
-                .update({
-                  node_json: update.node_json,
-                  confidence: update.confidence,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', update.id);
-
-              if (updateError) {
-                console.error(`[AI SYNTHESIS] Failed to update merged node ${update.id}:`, updateError);
-              }
-            }
-
-            console.log(`[AI SYNTHESIS] Deduplication complete: ${nodesToDelete.size} duplicates removed, ${nodesToUpdate.length} nodes merged`);
-            
-            // Update progress to show finalization phase
-            await progressTracker.updateWithPersistence(trackingJobId, {
-              stage: 'complete',
-              current: 95,
-              total: 100,
-              message: 'Finalizing and cleaning up...',
-            });
-            console.log('[AI SYNTHESIS] Progress updated: 95/100 (95%) - Finalizing');
-          } else {
-            console.log(`[AI SYNTHESIS] No duplicates found`);
-            
-            // Update progress to show finalization phase even when no duplicates
-            await progressTracker.updateWithPersistence(trackingJobId, {
-              stage: 'complete',
-              current: 95,
-              total: 100,
-              message: 'Finalizing and cleaning up...',
-            });
-            console.log('[AI SYNTHESIS] Progress updated: 95/100 (95%) - Finalizing');
-          }
-        }
-      } catch (dedupError) {
-        console.error('[AI SYNTHESIS] Deduplication failed, continuing without it:', dedupError);
-        
-        // Check for cancellation even if dedup failed
-        if (await checkCancellation(trackingJobId)) {
-          console.log(`[AI SYNTHESIS] Generation cancelled after deduplication error`);
-          await progressTracker.completeWithPersistence(
-            trackingJobId,
-            `Generation stopped. Created ${proposedNodes.length} nodes.`
-          );
-          return {
-            success: true,
-            clustersGenerated: clusters.length,
-            nodesGenerated: proposedNodes.length,
-            cancelled: true,
-          };
-        }
-      }
-    } else {
-      console.log(`[AI SYNTHESIS] Skipping deduplication (only ${proposedNodes.length} node)`);
-    }
-
-    // Finalize: keep only the proposals created in this run (safe regeneration)
-    const createdIds = proposedNodes.map(p => p.nodeId);
-
-    // Delete older proposals that are not part of this generation
-    if (createdIds.length > 0) {
-      // Check for cancellation before cleanup
+    for (let i = 0; i < allProposedNodes.length; i++) {
+      const node = allProposedNodes[i];
+      
+      // Check for cancellation
       if (await checkCancellation(trackingJobId)) {
-        console.log(`[AI SYNTHESIS] Generation cancelled before finalization`);
-        await progressTracker.completeWithPersistence(
-          trackingJobId,
-          `Generation stopped. Created ${proposedNodes.length} nodes successfully.`
-        );
-        return {
-          success: true,
-          clustersGenerated: clusters.length,
-          nodesGenerated: proposedNodes.length,
-          cancelled: true,
-        };
+        throw new Error('Job was cancelled');
       }
 
-      // Fetch existing proposed IDs
-      const { data: existingProposed } = await supabaseServer
-        .from('proposed_nodes')
-        .select('id')
-        .eq('project_id', projectId)
-        .eq('status', 'proposed');
+      try {
+        // Convert ExtractedNode to SynthesizedNode format for storage
+        const synthesizedNode = {
+          title: node.title,
+          short_summary: node.content.text.substring(0, 100),
+          content: {
+            text: node.content.text,
+            structured_steps: node.content.preservedFormatting?.isNumberedList && node.content.preservedFormatting.listItems
+              ? node.content.preservedFormatting.listItems.map((item, idx) => ({
+                  step_no: idx + 1,
+                  action: item,
+                  params: {},
+                }))
+              : [],
+          },
+          metadata: {
+            node_type: node.nodeType,
+            tags: node.metadata?.tags || [],
+            status: node.status,
+            parameters: node.parameters || {},
+            estimated_time_minutes: node.metadata?.estimatedTimeMinutes,
+            blockName: node.metadata?.blockName,
+            blockType: node.metadata?.blockType,
+            isNestedTree: node.isNestedTree,
+          },
+          dependencies: node.dependencies.map(dep => ({
+            referenced_title: dep.referencedNodeTitle,
+            dependency_type: dep.dependencyType,
+            extractedPhrase: dep.extractedPhrase || '',
+            evidence: dep.extractedPhrase || '',
+            confidence: 0.8, // Default confidence for rule-based
+          })),
+          attachments: node.attachments.map(att => ({
+            id: att.sourceId,
+            name: att.fileName,
+            range: att.pageRange ? `${att.pageRange[0]}-${att.pageRange[1]}` : undefined,
+          })),
+          provenance: {
+            sources: node.attachments.map(att => ({
+              chunk_id: att.sourceId,
+              source_type: structuredDocs.find(d => (d.document_json as StructuredDocument).sourceId === att.sourceId)?.document_json?.type || 'unknown',
+              snippet: node.content.text.substring(0, 200),
+            })),
+            generated_by: 'fast-import-v1',
+            confidence: 0.85,
+            mergeMetadata: extractionResults.length > 1 ? (extractionResults[0] as any).mergeMetadata || null : null,
+          },
+        };
 
-      const idsToDelete = (existingProposed || [])
-        .map((r: any) => r.id)
-        .filter((id: string) => !createdIds.includes(id));
+        const nodeId = await storeSynthesizedNode(projectId, synthesizedNode, 'proposed');
+        storedNodeIds.push(nodeId);
 
-      if (idsToDelete.length > 0) {
-        const { error: cleanupError } = await supabaseServer
-          .from('proposed_nodes')
-          .delete()
-          .in('id', idsToDelete);
-        if (cleanupError) {
-          console.warn('[AI SYNTHESIS] Cleanup of old proposals failed:', cleanupError);
-        } else {
-          console.log(`[AI SYNTHESIS] Removed ${idsToDelete.length} old proposals`);
+        // Update progress
+        if ((i + 1) % 10 === 0 || i === allProposedNodes.length - 1) {
+          await progressTracker.updateWithPersistence(trackingJobId, {
+            stage: 'storing',
+            current: 85 + Math.floor(((i + 1) / allProposedNodes.length) * 10),
+            total: 100,
+            message: `Stored ${i + 1}/${allProposedNodes.length} proposals...`,
+          });
         }
+      } catch (error: any) {
+        console.error(`[FAST_IMPORT] Failed to store node ${node.nodeId}:`, error);
+        // Continue with other nodes
       }
     }
 
-    const finalCount = createdIds.length;
-    console.log(`[AI SYNTHESIS] Final node count: ${finalCount}`);
+    console.log(`[FAST_IMPORT] Stored ${storedNodeIds.length} proposals`);
 
-    // Mark as complete
-    await progressTracker.completeWithPersistence(trackingJobId, `Generated ${finalCount} nodes successfully`);
+    // Step 7: Complete
+    await progressTracker.updateWithPersistence(trackingJobId, {
+      stage: 'complete',
+      current: 100,
+      total: 100,
+      message: `Completed: ${storedNodeIds.length} proposals generated`,
+    });
+
+    console.log(`[FAST_IMPORT] ✓ Proposal generation completed: ${storedNodeIds.length} proposals`);
 
     return {
       success: true,
-      clustersGenerated: clusters.length,
-      nodesGenerated: finalCount,
-      proposedNodes: proposedNodes,
-      duplicatesRemoved: proposedNodes.length - finalCount,
-      jobId: trackingJobId,
+      proposalsGenerated: storedNodeIds.length,
+      nestedTreeCandidates: nestedTreeCandidates.length,
     };
 
   } catch (error: any) {
-    console.error(`[AI SYNTHESIS] Error generating proposals for project ${projectId}:`, error);
+    console.error('[FAST_IMPORT] Error generating proposals:', error);
     
-    // Mark as error
-    await progressTracker.errorWithPersistence(trackingJobId, error.message || 'Failed to generate proposals');
+    // Check if error was due to cancellation
+    if (error.message?.includes('cancelled') || await checkCancellation(trackingJobId)) {
+      console.log('[FAST_IMPORT] Error was due to cancellation');
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'complete',
+        current: 100,
+        total: 100,
+        message: 'Generation cancelled by user',
+      });
+      return {
+        success: false,
+        proposalsGenerated: 0,
+        nestedTreeCandidates: 0,
+        cancelled: true,
+      };
+    }
     
+    await progressTracker.errorWithPersistence(trackingJobId, `Failed to generate proposals: ${error.message}`);
     throw error;
   }
 }

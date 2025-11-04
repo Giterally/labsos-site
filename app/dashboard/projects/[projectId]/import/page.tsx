@@ -188,9 +188,9 @@ export default function ImportPage() {
       });
       
       if (stuckFiles.length > 0) {
-        console.log(`[IMPORT] Auto-detecting ${stuckFiles.length} stuck files, marking as failed...`);
+        console.log(`[IMPORT] Auto-detecting ${stuckFiles.length} stuck files, retrying processing...`);
         
-        // Mark stuck files as failed (fire and forget, don't block UI)
+        // Retry processing for stuck files (fire and forget, don't block UI)
         Promise.all(stuckFiles.map(async (source: IngestionSource) => {
           try {
             await fetch(`/api/projects/${projectId}/fix-stuck-files`, {
@@ -199,15 +199,54 @@ export default function ImportPage() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session?.access_token}`,
               },
-              body: JSON.stringify({ sourceIds: [source.id] }),
+              body: JSON.stringify({ 
+                retry: true,
+                sourceIds: [source.id] 
+              }),
             });
-            console.log(`[IMPORT] Marked stuck file as failed: ${source.source_name}`);
+            console.log(`[IMPORT] Retrying processing for: ${source.source_name}`);
           } catch (err) {
-            console.error(`[IMPORT] Failed to mark stuck file: ${source.source_name}`, err);
+            console.error(`[IMPORT] Failed to retry processing for: ${source.source_name}`, err);
           }
         })).then(() => {
-          // Refresh data after fixing stuck files
-          setTimeout(() => fetchData(), 2000);
+          // Refresh data after retrying
+          setTimeout(() => fetchData(), 3000);
+        });
+      }
+      
+      // Auto-retry files in 'uploaded' status that were recently stuck (within last 15 minutes)
+      const recentlyStuckFiles = fetchedSources.filter((source: IngestionSource) => {
+        if (source.status !== 'uploaded') return false;
+        const updatedAt = new Date(source.updated_at).getTime();
+        const age = now - updatedAt;
+        // Files that were reset to 'uploaded' within the last 15 minutes
+        return age < 15 * 60 * 1000 && age > 0;
+      });
+      
+      if (recentlyStuckFiles.length > 0) {
+        console.log(`[IMPORT] Auto-retrying ${recentlyStuckFiles.length} recently reset files...`);
+        
+        // Retry processing for recently reset files
+        Promise.all(recentlyStuckFiles.map(async (source: IngestionSource) => {
+          try {
+            await fetch(`/api/projects/${projectId}/fix-stuck-files`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session?.access_token}`,
+              },
+              body: JSON.stringify({ 
+                retry: true,
+                sourceIds: [source.id] 
+              }),
+            });
+            console.log(`[IMPORT] Auto-retrying: ${source.source_name}`);
+          } catch (err) {
+            console.error(`[IMPORT] Failed to auto-retry: ${source.source_name}`, err);
+          }
+        })).then(() => {
+          // Refresh data after retrying
+          setTimeout(() => fetchData(), 3000);
         });
       }
       
@@ -450,8 +489,9 @@ export default function ImportPage() {
                 console.log('[IMPORT] Resuming polling for progress...');
                 const pollInterval = setInterval(async () => {
                   const status = await pollProgress(storedJobId);
-                  if (status === 'complete' || status === 'error') {
+                  if (status === 'complete' || status === 'error' || status === 'cancelled') {
                     clearInterval(pollInterval);
+                    (window as any).__progressPollInterval = null;
                   }
                 }, 1000);
                 
@@ -829,8 +869,9 @@ export default function ImportPage() {
       // Start polling for progress
       const pollInterval = setInterval(async () => {
         const status = await pollProgress(jobId);
-        if (status === 'complete' || status === 'error') {
+        if (status === 'complete' || status === 'error' || status === 'cancelled') {
           clearInterval(pollInterval);
+          (window as any).__progressPollInterval = null;
         }
       }, 1000); // Poll every 1 second
 
@@ -975,17 +1016,30 @@ export default function ImportPage() {
       setGenerationProgress(percentage);
       setGenerationStatus(progress.message || 'Processing...');
 
+      // Check if cancelled (check message first for immediate response)
+      const wasCancelled = progress.message?.toLowerCase().includes('cancelled') || 
+                           progress.message?.toLowerCase().includes('stopped') ||
+                           progress.message?.toLowerCase().includes('cancel');
+      
+      if (wasCancelled) {
+        console.log('[POLL] Generation cancelled!');
+        // Immediately stop polling and clear UI
+        clearStoredJobId(projectId);
+        setGeneratingProposals(false);
+        setGenerationProgress(0);
+        setGenerationStatus('');
+        setCurrentJobId(null);
+        setSuccess(progress.message || 'Generation cancelled. Nodes created are preserved.');
+        fetchData();
+        return 'cancelled';
+      }
+
       // Check if complete
       if (progress.stage === 'complete') {
         console.log('[POLL] Generation complete!');
         // Update UI first
         setGenerationProgress(100);
         setGenerationStatus(progress.message || 'Complete!');
-        
-        const wasCancelled = progress.message?.includes('stopped') || 
-                             progress.message?.includes('cancelled');
-        
-        console.log('[POLL] Completion type:', wasCancelled ? 'CANCELLED' : 'NORMAL');
         
         // Small delay to show 100% completion
         setTimeout(() => {
@@ -996,14 +1050,8 @@ export default function ImportPage() {
           setCurrentJobId(null);
           // Refresh data to show new proposals
           fetchData();
-          
-          if (wasCancelled) {
-            setSuccess(progress.message || 'Generation stopped. Nodes created are preserved.');
-            // Stay on current tab
-          } else {
-            setActiveTab('proposals');
-            setSuccess('Generated proposals successfully!');
-          }
+          setActiveTab('proposals');
+          setSuccess('Generated proposals successfully!');
         }, 1500);
         
         return 'complete';
@@ -1186,8 +1234,15 @@ export default function ImportPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to clear proposals');
+        let errorMessage = 'Failed to clear proposals';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch {
+          // If response is not JSON, use status text
+          errorMessage = response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       await fetchData();
@@ -2127,6 +2182,11 @@ export default function ImportPage() {
                               {source.file_size ? formatFileSize(source.file_size) : 'Unknown size'} • 
                               {source.created_at ? new Date(source.created_at).toLocaleDateString() : 'Unknown date'}
                             </p>
+                            {source.status === 'failed' && source.error_message && (
+                              <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                                {source.error_message}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">

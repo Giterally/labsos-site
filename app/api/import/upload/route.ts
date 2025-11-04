@@ -5,6 +5,11 @@ import { preprocessFile } from '../../../../lib/processing/preprocessing-pipelin
 import { authenticateRequest, AuthError } from '@/lib/auth-middleware';
 import { PermissionService } from '@/lib/permission-service';
 
+// Ensure Node.js runtime for PDF processing (requires Buffer)
+export const runtime = 'nodejs';
+// Allow up to 5 minutes for PDF processing (PDF parsing can be slow)
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -134,16 +139,78 @@ export async function POST(request: NextRequest) {
     
     if (isLocalDev) {
       // Use preprocessing pipeline directly in development
+      // Run preprocessing in background to avoid blocking the upload response
       console.log('[UPLOAD] Using preprocessing pipeline for development');
-      try {
-        const result = await preprocessFile(source.id, resolvedProjectId);
-        console.log('[UPLOAD] Preprocessing completed successfully:', result);
-        processingStarted = true;
-      } catch (preprocessingError) {
-        console.error('[UPLOAD] Preprocessing failed:', preprocessingError);
-        processingError = preprocessingError instanceof Error ? preprocessingError.message : 'Unknown preprocessing error';
-        // Source status will be updated to 'failed' by the preprocessing pipeline
-      }
+      console.log('[UPLOAD] Starting preprocessFile in background for:', { sourceId: source.id, sourceType, fileName: file.name });
+      
+      // Don't await - let it run in background
+      // Add a safety timeout to ensure status is always updated
+      const safetyTimeout = setTimeout(async () => {
+        // Check if file is still processing after 3 minutes - mark as failed
+        const { data: checkSource } = await supabaseServer
+          .from('ingestion_sources')
+          .select('status')
+          .eq('id', source.id)
+          .single();
+        
+        if (checkSource?.status === 'processing') {
+          console.error(`[UPLOAD] Safety timeout: File ${source.id} still processing after 3 minutes, marking as failed`);
+          await supabaseServer
+            .from('ingestion_sources')
+            .update({ 
+              status: 'failed', 
+              error_message: 'Processing timed out after 3 minutes. The file may be too large or corrupted.',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', source.id);
+        }
+      }, 3 * 60 * 1000); // 3 minutes safety timeout
+      
+      preprocessFile(source.id, resolvedProjectId)
+        .then((result) => {
+          clearTimeout(safetyTimeout);
+          console.log('[UPLOAD] Preprocessing completed successfully:', result);
+        })
+        .catch(async (preprocessingError) => {
+          clearTimeout(safetyTimeout);
+          console.error('[UPLOAD] Preprocessing failed:', preprocessingError);
+          console.error('[UPLOAD] Error details:', {
+            message: preprocessingError instanceof Error ? preprocessingError.message : 'Unknown error',
+            stack: preprocessingError instanceof Error ? preprocessingError.stack : 'No stack trace',
+            name: preprocessingError instanceof Error ? preprocessingError.name : 'Unknown'
+          });
+          
+          // Double-check status is updated - if preprocessing pipeline didn't update it, do it here
+          try {
+            const { data: currentSource } = await supabaseServer
+              .from('ingestion_sources')
+              .select('status')
+              .eq('id', source.id)
+              .single();
+            
+            if (currentSource?.status === 'processing') {
+              const errorMessage = preprocessingError instanceof Error 
+                ? preprocessingError.message 
+                : 'Unknown preprocessing error';
+              
+              await supabaseServer
+                .from('ingestion_sources')
+                .update({ 
+                  status: 'failed', 
+                  error_message: errorMessage,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', source.id);
+              
+              console.log(`[UPLOAD] Updated source ${source.id} status to failed (fallback)`);
+            }
+          } catch (updateError) {
+            console.error('[UPLOAD] Failed to update status in catch block:', updateError);
+          }
+        });
+      
+      // Mark as processing started (we don't wait for completion)
+      processingStarted = true;
     } else {
       // Use Inngest in production
       try {

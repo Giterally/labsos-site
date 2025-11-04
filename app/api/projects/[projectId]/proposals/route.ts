@@ -28,7 +28,7 @@ function mapToValidNodeType(nodeType: string | undefined): string {
     console.log(`[MAP_NODE_TYPE] Normalized: "${normalized}"`);
     
     // Valid types that match database constraint
-    const validTypes = ['protocol', 'data_creation', 'analysis', 'results'];
+    const validTypes = ['protocol', 'data_creation', 'analysis', 'results', 'software'];
     
     // If already valid, return as-is (lowercase)
     if (validTypes.includes(normalized)) {
@@ -185,6 +185,48 @@ function getBlockDisplayName(nodeType: string): string {
   };
   
   return displayNames[nodeType] || `${nodeType.charAt(0).toUpperCase() + nodeType.slice(1)} Block`;
+}
+
+/**
+ * Parse numbered steps from content, handling multi-line steps
+ * Handles patterns like "1. ", "2. ", "3.a ", "10. ", etc.
+ */
+function parseStepsFromContent(content: string): string[] {
+  const lines = content.split('\n');
+  const steps: string[] = [];
+  let currentStep = '';
+
+  for (const line of lines) {
+    // Matches: "1. ", "2. ", "3.a ", "10. ", etc. (number followed by period and space or letter)
+    if (/^\d+\.(\s|\w\.?\s)/.test(line)) {
+      // If we have a previous step, save it
+      if (currentStep.trim()) {
+        steps.push(currentStep.trim());
+      }
+      // Start new step
+      currentStep = line;
+    } else if (currentStep) {
+      // Continue accumulating multi-line step (non-empty line or continuation)
+      if (line.trim() || currentStep.trim()) {
+        currentStep += '\n' + line;
+      }
+    }
+  }
+
+  // Don't forget the last step
+  if (currentStep.trim()) {
+    steps.push(currentStep.trim());
+  }
+
+  // Filter out empty steps
+  const filteredSteps = steps.filter(s => s.length > 0);
+
+  // If no numbered steps found, return the whole content as a single step
+  if (filteredSteps.length === 0) {
+    return [content];
+  }
+
+  return filteredSteps;
 }
 
 export async function GET(
@@ -514,19 +556,40 @@ async function buildTreeInBackground(
         const { data: tree, error: treeError } = await supabaseServer
           .from('experiment_trees')
           .insert({
-          project_id: projectId,
+            project_id: projectId,
             name: treeName,
             description: 'Experiment tree generated from uploaded files',
-          created_by: userId,
+            created_by: userId,
           })
           .select('id')
           .single();
 
         if (treeError || !tree) {
-        await progressTracker.errorWithPersistence(trackingJobId, 'Failed to create experiment tree');
-        return;
+          console.error('[BUILD_TREE_BG] Failed to create experiment tree:', treeError);
+          await progressTracker.errorWithPersistence(
+            trackingJobId, 
+            `Failed to create experiment tree: ${treeError?.message || 'Unknown error'}`
+          );
+          return;
         }
         experimentTreeId = tree.id;
+      }
+
+      // Validate: Check if all proposals are nested (would create empty tree)
+      const nonNestedProposals = sortedProposals.filter(p => 
+        !p.node_json?.metadata?.isNestedTree && !p.node_json?.isNestedTree
+      );
+
+      if (nonNestedProposals.length === 0) {
+        const nestedCount = sortedProposals.filter(p => 
+          p.node_json?.metadata?.isNestedTree || p.node_json?.isNestedTree
+        ).length;
+        
+        await progressTracker.errorWithPersistence(
+          trackingJobId, 
+          `Cannot build tree: all ${nestedCount} selected proposals are nested procedures. Please select at least one main node.`
+        );
+        return;
       }
 
       // Analyze dependencies and create workflow-based blocks
@@ -616,41 +679,11 @@ async function buildTreeInBackground(
             
             console.log(`[BUILD_TREE] [${nodeId}] Raw content length: ${rawContent.length}, title: "${rawTitle.substring(0, 50)}..."`);
             
-            // Format content and generate summary
-            let formattedContent = rawContent;
-            let briefSummary = proposal.node_json?.short_summary || proposal.node_json?.description || '';
+            // Use exact text from source (no AI formatting/summarization)
+            const formattedContent = rawContent; // Exact text, no modifications
+            const briefSummary = proposal.node_json?.short_summary || proposal.node_json?.description || rawTitle.substring(0, 100);
             
-            try {
-              console.log(`[BUILD_TREE] [${nodeId}] Starting AI processing...`);
-              const aiStartTime = Date.now();
-              
-              // Run both AI calls in parallel for each node (2x speedup per node)
-              const [formatted, summary] = await Promise.all([
-                // Format the content for better presentation
-                (rawContent && rawContent.length > 0) 
-                  ? formatNodeContent(rawContent).catch(err => {
-                      console.error(`[BUILD_TREE] [${nodeId}] Format error:`, err.message);
-                      return rawContent;
-                    })
-                  : rawContent,
-                // Generate brief summary if not available or too long
-                ((!briefSummary || briefSummary.length > 100) && (rawContent || rawTitle))
-                  ? generateBriefSummary(rawContent || rawTitle).catch(err => {
-                      console.error(`[BUILD_TREE] [${nodeId}] Summary error:`, err.message);
-                      return briefSummary;
-                    })
-                  : briefSummary
-              ]);
-              
-              const aiElapsed = Date.now() - aiStartTime;
-              console.log(`[BUILD_TREE] [${nodeId}] AI processing complete in ${aiElapsed}ms`);
-              
-              formattedContent = formatted;
-              briefSummary = summary;
-            } catch (error: any) {
-              console.error(`[BUILD_TREE] [${nodeId}] AI processing error:`, error.message);
-              // Continue with original content
-            }
+            console.log(`[BUILD_TREE] [${nodeId}] Using exact text from source (${rawContent.length} chars)`);
             
             // Get position based on original order in sortedProposals array
             const originalIndex = sortedProposals.findIndex(p => p.id === proposal.id);
@@ -932,6 +965,114 @@ async function buildTreeInBackground(
         }
       }
 
+      // Store node dependencies
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'building_nodes',
+        current: 95,
+        total: 100,
+        message: 'Storing node dependencies...',
+      });
+
+      const dependencyEntries: any[] = [];
+      const nodeTitleToIdMap = new Map<string, string>();
+      
+      // Build map of node titles to IDs
+      for (const createdNode of createdTreeNodes) {
+        const proposal = createdNode.provenance?.proposal_id 
+          ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
+          : null;
+        
+        if (proposal && proposal.node_json?.title) {
+          nodeTitleToIdMap.set(proposal.node_json.title.toLowerCase(), createdNode.id);
+        }
+        // Also map by node name
+        nodeTitleToIdMap.set(createdNode.name.toLowerCase(), createdNode.id);
+      }
+
+      // Extract dependencies from proposals
+      for (const createdNode of createdTreeNodes) {
+        const proposal = createdNode.provenance?.proposal_id 
+          ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
+          : null;
+
+        if (proposal && proposal.node_json?.dependencies && Array.isArray(proposal.node_json.dependencies)) {
+          for (const dep of proposal.node_json.dependencies) {
+            const referencedTitle = dep.referenced_title || dep.referencedNodeTitle;
+            if (!referencedTitle) continue;
+
+            // Find referenced node by title
+            const referencedNodeId = nodeTitleToIdMap.get(referencedTitle.toLowerCase());
+            
+            if (referencedNodeId && referencedNodeId !== createdNode.id) {
+              dependencyEntries.push({
+                from_node_id: createdNode.id,
+                to_node_id: referencedNodeId,
+                dependency_type: dep.dependency_type || dep.dependencyType || 'requires',
+                evidence_text: dep.extractedPhrase || dep.evidence || '',
+                confidence: dep.confidence || 0.8,
+              });
+            }
+          }
+        }
+      }
+
+       // Validate dependencies before inserting (remove orphaned references)
+       const allNodeIds = new Set(createdTreeNodes.map(n => n.id));
+       const nodeTitleMap = new Map(createdTreeNodes.map(n => [n.id, n.name]));
+       
+       const unresolvedDependencies: any[] = [];
+       const validDependencies = dependencyEntries.filter(dep => {
+         const targetExists = allNodeIds.has(dep.to_node_id);
+         if (!targetExists) {
+           unresolvedDependencies.push({
+             fromNode: nodeTitleMap.get(dep.from_node_id) || 'Unknown',
+             toNode: dep.evidence_text || 'Unknown',
+             evidence: dep.evidence_text || '',
+           });
+           console.warn(`[BUILD_TREE] Removing orphaned dependency to non-existent node: ${dep.to_node_id}`);
+         }
+         return targetExists;
+       });
+
+       // Store unresolved dependencies in tree metadata for later resolution
+       if (unresolvedDependencies.length > 0) {
+         const { data: existingTree } = await supabaseServer
+           .from('experiment_trees')
+           .select('metadata')
+           .eq('id', experimentTreeId)
+           .single();
+
+         const updatedMetadata = {
+           ...(existingTree?.metadata || {}),
+           unresolvedDependencies: unresolvedDependencies,
+           unresolvedDependencyCount: unresolvedDependencies.length,
+         };
+
+         await supabaseServer
+           .from('experiment_trees')
+           .update({ metadata: updatedMetadata })
+           .eq('id', experimentTreeId);
+
+         console.log(`[BUILD_TREE] Stored ${unresolvedDependencies.length} unresolved dependencies in tree metadata`);
+       }
+
+       // Insert valid dependencies
+       if (validDependencies.length > 0) {
+         console.log(`[BUILD_TREE] Inserting ${validDependencies.length} dependency entries (${dependencyEntries.length - validDependencies.length} unresolved)`);
+         const { error: depError } = await supabaseServer
+           .from('node_dependencies')
+           .insert(validDependencies);
+
+         if (depError) {
+           console.error('[BUILD_TREE] Failed to create node dependencies:', depError);
+           console.warn('[BUILD_TREE] Continuing despite dependency creation failure');
+         } else {
+           console.log('[BUILD_TREE] Successfully created node dependency entries');
+         }
+       } else if (dependencyEntries.length > 0) {
+         console.warn(`[BUILD_TREE] All ${dependencyEntries.length} dependencies were unresolved`);
+       }
+
       // Create attachment entries for each node
       const attachmentEntries: any[] = [];
       let attachmentMatchedCount = 0;
@@ -994,15 +1135,279 @@ async function buildTreeInBackground(
         }
       }
 
+      // Handle nested trees: Create separate trees for nodes marked as nested
+      await progressTracker.updateWithPersistence(trackingJobId, {
+        stage: 'building_nodes',
+        current: 97,
+        total: 100,
+        message: 'Creating nested trees for reusable procedures...',
+      });
+
+      const nestedTreeReferences: any[] = [];
+      let nestedTreeCount = 0;
+
+      for (const createdNode of createdTreeNodes) {
+        // Match node back to proposal
+        const proposal = createdNode.provenance?.proposal_id 
+          ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
+          : null;
+
+        if (!proposal) continue;
+
+        // Check if this node should be a nested tree
+        const isNestedTree = proposal.node_json?.metadata?.isNestedTree || 
+                            proposal.node_json?.isNestedTree;
+
+        if (isNestedTree) {
+          console.log(`[BUILD_TREE] Creating nested tree for node: ${createdNode.name}`);
+          
+          try {
+            // Get main tree name for unique nested tree naming
+            const { data: mainTree } = await supabaseServer
+              .from('experiment_trees')
+              .select('name')
+              .eq('id', experimentTreeId)
+              .single();
+            
+            const mainTreeName = mainTree?.name || 'experiment';
+            const baseTreeName = proposal.node_json?.title || `${createdNode.name} Protocol`;
+            const nestedTreeName = `${baseTreeName} (from ${mainTreeName})`;
+            const { data: nestedTree, error: nestedTreeError } = await supabaseServer
+              .from('experiment_trees')
+              .insert({
+                project_id: projectId,
+                name: nestedTreeName,
+                description: `Reusable protocol extracted from ${experimentTreeId ? 'main experiment' : 'uploaded files'}`,
+                created_by: userId,
+                is_template: true,
+                template_category: proposal.node_json?.metadata?.node_type || 'protocol',
+              })
+              .select('id')
+              .single();
+
+            if (nestedTreeError || !nestedTree || !nestedTree.id) {
+              console.error(`[BUILD_TREE] Failed to create nested tree for ${createdNode.name}:`, nestedTreeError);
+              // Fallback: Don't nest, just create regular node with full content
+              console.warn(`[BUILD_TREE] Continuing with regular node creation for ${createdNode.name}`);
+              continue;
+            }
+
+            // Create nodes for the nested tree (using the full content from the proposal)
+            const nestedContent = proposal.node_json?.content?.text || '';
+            
+            if (!nestedContent || nestedContent.trim().length === 0) {
+              console.error(`[BUILD_TREE] No content available for nested tree ${nestedTree.id}`);
+              // Clean up the nested tree we just created
+              await supabaseServer
+                .from('experiment_trees')
+                .delete()
+                .eq('id', nestedTree.id);
+              continue;
+            }
+
+            // Parse nested content into steps if it has numbered structure
+            const numberedSteps = parseStepsFromContent(nestedContent);
+            const hasMultipleSteps = numberedSteps.length > 1 && numberedSteps.length <= 20;
+
+            if (hasMultipleSteps) {
+              // Create multiple nodes for each step
+              const stepNodes = numberedSteps.map((step, idx) => ({
+                tree_id: nestedTree.id,
+                name: `${nestedTreeName} - Step ${idx + 1}`,
+                description: step.substring(0, 200).replace(/\n/g, ' '),
+                node_type: mapToValidNodeType(proposal.node_json?.metadata?.node_type || 'protocol'),
+                position: idx + 1,
+                status: 'draft',
+                created_by: userId,
+              }));
+              
+              const { data: createdStepNodes, error: stepNodesError } = await supabaseServer
+                .from('tree_nodes')
+                .insert(stepNodes)
+                .select('id');
+              
+              if (stepNodesError || !createdStepNodes || createdStepNodes.length === 0) {
+                console.error(`[BUILD_TREE] Failed to create step nodes for nested tree ${nestedTree.id}:`, stepNodesError);
+                // Fallback to single node
+                await supabaseServer
+                  .from('experiment_trees')
+                  .delete()
+                  .eq('id', nestedTree.id);
+                continue;
+              }
+
+              // Store content for each step node
+              for (let i = 0; i < createdStepNodes.length; i++) {
+                const { error: contentError } = await supabaseServer
+                  .from('node_content')
+                  .insert({
+                    node_id: createdStepNodes[i].id,
+                    content: numberedSteps[i],
+                    status: 'draft',
+                  });
+
+                if (contentError) {
+                  console.error(`[BUILD_TREE] Failed to store content for step node ${createdStepNodes[i].id}:`, contentError);
+                }
+              }
+
+              // Use first step node for reference
+              const firstStepNodeId = createdStepNodes[0].id;
+              
+              // Update parent node to reference nested tree
+              await supabaseServer
+                .from('tree_nodes')
+                .update({
+                  is_nested_tree_ref: true,
+                  nested_tree_id: nestedTree.id,
+                })
+                .eq('id', createdNode.id);
+
+              // Update node content to reference text
+              const referenceText = `Perform ${createdNode.name} using standard protocol. [View nested protocol →]`;
+              const { error: contentUpdateError } = await supabaseServer
+                .from('node_content')
+                .upsert({
+                  node_id: createdNode.id,
+                  content: referenceText,
+                  status: 'draft',
+                }, {
+                  onConflict: 'node_id',
+                });
+
+              if (contentUpdateError) {
+                console.error(`[BUILD_TREE] Failed to update node content for nested tree reference:`, contentUpdateError);
+                // Try update as fallback
+                await supabaseServer
+                  .from('node_content')
+                  .update({
+                    content: referenceText,
+                  })
+                  .eq('node_id', createdNode.id);
+              }
+
+              // Store nested tree reference
+              nestedTreeReferences.push({
+                parent_node_id: createdNode.id,
+                nested_tree_id: nestedTree.id,
+              });
+
+              nestedTreeCount++;
+              console.log(`[BUILD_TREE] Created nested tree ${nestedTree.id} with ${createdStepNodes.length} steps for node ${createdNode.name}`);
+              continue;
+            }
+
+            // Create a single node in the nested tree with full content
+            const { data: nestedNode, error: nestedNodeError } = await supabaseServer
+              .from('tree_nodes')
+              .insert({
+                tree_id: nestedTree.id,
+                name: nestedTreeName,
+                description: nestedContent.substring(0, 200),
+                node_type: mapToValidNodeType(proposal.node_json?.metadata?.node_type || 'protocol'),
+                position: 1,
+                status: 'draft',
+                created_by: userId,
+              })
+              .select('id')
+              .single();
+
+            if (nestedNodeError || !nestedNode || !nestedNode.id) {
+              console.error(`[BUILD_TREE] Failed to create nested node for nested tree ${nestedTree.id}:`, nestedNodeError);
+              // Clean up the nested tree we just created
+              await supabaseServer
+                .from('experiment_trees')
+                .delete()
+                .eq('id', nestedTree.id);
+              continue;
+            }
+
+            if (nestedNode) {
+              // Store node content
+              await supabaseServer
+                .from('node_content')
+                .insert({
+                  node_id: nestedNode.id,
+                  content: nestedContent,
+                  status: 'draft',
+                });
+
+              // Update parent node to reference nested tree instead of containing full content
+              const referenceText = `Perform ${createdNode.name} using standard protocol. [View nested protocol →]`;
+              
+              await supabaseServer
+                .from('tree_nodes')
+                .update({
+                  is_nested_tree_ref: true,
+                  nested_tree_id: nestedTree.id,
+                })
+                .eq('id', createdNode.id);
+
+              // Update node content to reference text (use upsert to handle edge cases)
+              const { error: contentUpdateError } = await supabaseServer
+                .from('node_content')
+                .upsert({
+                  node_id: createdNode.id,
+                  content: referenceText,
+                  status: 'draft',
+                }, {
+                  onConflict: 'node_id',
+                });
+
+              if (contentUpdateError) {
+                console.error(`[BUILD_TREE] Failed to update node content for nested tree reference:`, contentUpdateError);
+                // Try update as fallback
+                await supabaseServer
+                  .from('node_content')
+                  .update({
+                    content: referenceText,
+                  })
+                  .eq('node_id', createdNode.id);
+              }
+
+              // Store nested tree reference
+              nestedTreeReferences.push({
+                parent_node_id: createdNode.id,
+                nested_tree_id: nestedTree.id,
+              });
+
+              nestedTreeCount++;
+              console.log(`[BUILD_TREE] Created nested tree ${nestedTree.id} for node ${createdNode.name}`);
+            }
+          } catch (error: any) {
+            console.error(`[BUILD_TREE] Error creating nested tree for ${createdNode.name}:`, error);
+            // Continue with other nodes
+          }
+        }
+      }
+
+      // Insert nested tree references
+      if (nestedTreeReferences.length > 0) {
+        console.log(`[BUILD_TREE] Inserting ${nestedTreeReferences.length} nested tree references`);
+        const { error: nestedRefError } = await supabaseServer
+          .from('nested_tree_references')
+          .insert(nestedTreeReferences);
+
+        if (nestedRefError) {
+          console.error('[BUILD_TREE] Failed to create nested tree references:', nestedRefError);
+        } else {
+          console.log(`[BUILD_TREE] Successfully created ${nestedTreeCount} nested trees`);
+        }
+      }
+
       // Mark as complete
     console.log('[BUILD_TREE_BG] Marking tree building as complete...');
-    await progressTracker.completeWithPersistence(trackingJobId, `Tree built successfully! Tree ID: ${experimentTreeId}`);
+    await progressTracker.completeWithPersistence(trackingJobId, `Tree built successfully! Tree ID: ${experimentTreeId}, Nested trees: ${nestedTreeCount}`);
     
     // Also update job result field
     console.log('[BUILD_TREE_BG] Updating job result with tree ID...');
     await supabaseServer.from('jobs')
       .update({ 
-        result: { treeId: experimentTreeId, nodesCreated: createdTreeNodes.length },
+        result: { 
+          treeId: experimentTreeId, 
+          nodesCreated: createdTreeNodes.length,
+          nestedTreesCreated: nestedTreeCount,
+        },
         status: 'completed'
       })
       .eq('id', trackingJobId);
@@ -1025,5 +1430,87 @@ async function buildTreeInBackground(
         
         // Mark progress as error
     await progressTracker.errorWithPersistence(trackingJobId, `Tree building failed: ${treeBuildError.message}`);
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
+  try {
+    const { projectId } = await params;
+    const body = await request.json();
+    const { proposalIds, clearAll } = body;
+
+    // Authenticate request and check permissions
+    const authContext = await authenticateRequest(request);
+    const { user, supabase } = authContext;
+    
+    const permissionService = new PermissionService(supabase, user.id);
+    const access = await permissionService.checkProjectAccess(projectId);
+    
+    if (!access.canWrite) {
+      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
+    }
+
+    // Get the resolved project ID from the permission service
+    const actualProjectId = access.projectId;
+
+    if (clearAll) {
+      // Delete all proposals for this project
+      const { error: deleteError } = await supabaseServer
+        .from('proposed_nodes')
+        .delete()
+        .eq('project_id', actualProjectId);
+
+      if (deleteError) {
+        console.error('Error deleting all proposals:', deleteError);
+        return NextResponse.json({ 
+          error: 'Failed to delete proposals' 
+        }, { status: 500 });
+      }
+
+      console.log(`Cleared all proposals for project ${actualProjectId}`);
+      return NextResponse.json({ 
+        success: true, 
+        message: 'All proposals cleared successfully'
+      });
+
+    } else if (proposalIds && Array.isArray(proposalIds) && proposalIds.length > 0) {
+      // Delete specific proposals
+      const { error: deleteError } = await supabaseServer
+        .from('proposed_nodes')
+        .delete()
+        .eq('project_id', actualProjectId)
+        .in('id', proposalIds);
+
+      if (deleteError) {
+        console.error('Error deleting proposals:', deleteError);
+        return NextResponse.json({ 
+          error: 'Failed to delete proposals' 
+        }, { status: 500 });
+      }
+
+      console.log(`Deleted ${proposalIds.length} proposals for project ${actualProjectId}`);
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Proposals deleted successfully',
+        deletedCount: proposalIds.length
+      });
+
+    } else {
+      return NextResponse.json({ 
+        error: 'No proposal IDs provided or clearAll not specified' 
+      }, { status: 400 });
+    }
+
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
+    console.error('Delete proposals error:', error);
+    return NextResponse.json({ 
+      error: 'Internal server error' 
+    }, { status: 500 });
   }
 }

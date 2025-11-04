@@ -185,7 +185,13 @@ export class ClaudeProvider implements AIProvider {
 
   async generateJSON(prompt: string, schema?: any): Promise<any> {
     return this.retryWithBackoff(async () => {
-      const jsonPrompt = `${prompt}\n\nPlease respond with valid JSON${schema ? ` that matches this schema: ${JSON.stringify(schema, null, 2)}` : ''}. Do not include any markdown formatting or code blocks - just the raw JSON.`;
+      // If schema provided, enhance the prompt with schema information
+      let jsonPrompt = prompt;
+      if (schema) {
+        jsonPrompt = `${prompt}\n\nThe response must conform to this JSON schema:\n${JSON.stringify(schema, null, 2)}\n\nPlease respond with valid JSON that matches this schema. Do not include any markdown formatting or code blocks - just the raw JSON.`;
+      } else {
+        jsonPrompt = `${prompt}\n\nPlease respond with valid JSON. Do not include any markdown formatting or code blocks - just the raw JSON.`;
+      }
       
       try {
         const response = await this.client.messages.create({
@@ -292,7 +298,7 @@ export class OpenAIProvider implements AIProvider {
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
-      temperature: 0.3, // Lower temperature for more consistent JSON
+      temperature: 0.1, // Low temperature for consistency and exact extraction
     });
     
     const content = response.choices[0]?.message?.content || '{}';

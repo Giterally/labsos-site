@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { fixStuckFiles, getFileProcessingStats } from '@/lib/utils/fix-stuck-files';
+import { preprocessFile } from '@/lib/processing/preprocessing-pipeline';
+
+// Ensure Node.js runtime for PDF processing (requires Buffer)
+export const runtime = 'nodejs';
 
 export async function POST(
   request: NextRequest,
@@ -53,6 +57,69 @@ export async function POST(
 
     if (!projectMember) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    }
+
+    // Check if this is a retry request
+    const { retry = false, sourceIds } = body;
+    
+    if (retry && sourceIds && Array.isArray(sourceIds) && sourceIds.length > 0) {
+      // Retry processing for specific sources
+      console.log(`[RETRY] Retrying processing for ${sourceIds.length} sources`);
+      
+      const results = await Promise.allSettled(
+        sourceIds.map(async (sourceId: string) => {
+          try {
+            // Verify the source belongs to this project
+            const { data: source, error: sourceError } = await supabaseServer
+              .from('ingestion_sources')
+              .select('id, source_name, project_id, status')
+              .eq('id', sourceId)
+              .eq('project_id', resolvedProjectId)
+              .single();
+
+            if (sourceError || !source) {
+              throw new Error(`Source ${sourceId} not found or access denied`);
+            }
+
+            // Reset status to uploaded if it's failed or stuck in processing
+            if (source.status === 'failed' || source.status === 'processing') {
+              await supabaseServer
+                .from('ingestion_sources')
+                .update({ 
+                  status: 'uploaded',
+                  error_message: null,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', sourceId);
+            }
+
+            // Trigger preprocessing
+            await preprocessFile(sourceId, resolvedProjectId);
+            
+            return { sourceId, sourceName: source.source_name, success: true };
+          } catch (error: any) {
+            console.error(`[RETRY] Failed to retry source ${sourceId}:`, error);
+            return { 
+              sourceId, 
+              success: false, 
+              error: error.message || 'Unknown error' 
+            };
+          }
+        })
+      );
+
+      const successful = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+      const failed = results.length - successful;
+
+      return NextResponse.json({
+        success: true,
+        retriedCount: sourceIds.length,
+        successfulCount: successful,
+        failedCount: failed,
+        results: results.map(r => 
+          r.status === 'fulfilled' ? r.value : { success: false, error: r.reason?.message || 'Unknown error' }
+        )
+      });
     }
 
     // Fix stuck files

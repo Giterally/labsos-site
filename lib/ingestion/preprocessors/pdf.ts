@@ -25,7 +25,18 @@ export async function preprocessPDF(
 
     // Convert PDF buffer to text
     const pdfBuffer = await pdfData.arrayBuffer();
-    const pdf = (await import('pdf-parse')).default;
+    
+    // Load our vendored pdf-parse wrapper that bypasses the debug code issue
+    // This wrapper loads pdf-parse/lib/pdf-parse.js directly, bypassing index.js
+    let pdf: any;
+    try {
+      pdf = require('../../vendors/pdf-parse-fixed');
+      console.log('[PREPROCESS_PDF] Successfully loaded pdf-parse via vendored wrapper');
+    } catch (error: any) {
+      console.error('[PREPROCESS_PDF] Failed to load pdf-parse library:', error);
+      throw new Error(`Failed to load pdf-parse library: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    
     const pdfInfo = await pdf(Buffer.from(pdfBuffer));
     
     const text = pdfInfo.text;

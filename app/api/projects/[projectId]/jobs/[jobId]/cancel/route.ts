@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateRequest, AuthError } from '@/lib/auth-middleware';
 import { PermissionService } from '@/lib/permission-service';
+import { progressTracker } from '@/lib/progress-tracker';
 
 export async function POST(
   request: NextRequest,
@@ -56,6 +57,14 @@ export async function POST(
       console.error('[CANCEL_JOB] Failed to cancel job:', updateError);
       return NextResponse.json({ error: 'Failed to cancel job' }, { status: 500 });
     }
+
+    // Also update progress tracker cache so frontend sees it immediately
+    await progressTracker.updateWithPersistence(jobId, {
+      stage: 'complete',
+      current: 100,
+      total: 100,
+      message: 'Generation cancelled by user',
+    });
 
     console.log(`[CANCEL_JOB] Job ${jobId} cancelled successfully by user ${user.id}`);
 

@@ -206,6 +206,9 @@ importers:
       zod:
         specifier: 3.25.67
         version: 3.25.67
+      zod-to-json-schema:
+        specifier: ^3.24.6
+        version: 3.24.6(zod@3.25.67)
     devDependencies:
       '@types/node':
         specifier: ^22
@@ -3045,6 +3048,11 @@ packages:
   yargs@17.7.2:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
     engines: {node: '>=12'}
+
+  zod-to-json-schema@3.24.6:
+    resolution: {integrity: sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==}
+    peerDependencies:
+      zod: ^3.24.1
 
   zod@3.25.67:
     resolution: {integrity: sha512-idA2YXwpCdqUSKRCACDE6ItZD9TZzy3OZMtpfLoh6oPR47lipysRrJfjzMqFxQ3uJuUPyUeWe1r9vLH33xO/Qw==}
@@ -6046,5 +6054,9 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
+
+  zod-to-json-schema@3.24.6(zod@3.25.67):
+    dependencies:
+      zod: 3.25.67
 
   zod@3.25.67: {}

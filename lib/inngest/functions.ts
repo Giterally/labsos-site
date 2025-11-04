@@ -5,11 +5,7 @@ import { chunkText, chunkCode, chunkTable } from '@/lib/ingestion/chunker';
 import { clusterChunks } from '@/lib/ai/clustering';
 import { synthesizeNode } from '@/lib/ai/synthesis';
 import { calculateConfidence } from '@/lib/ai/confidence';
-import { preprocessText } from '@/lib/ingestion/preprocessors/text';
-import { preprocessPDF } from '@/lib/ingestion/preprocessors/pdf';
-import { preprocessExcel } from '@/lib/ingestion/preprocessors/excel';
-import { preprocessVideo, preprocessAudio } from '@/lib/ingestion/preprocessors/video';
-import { preprocessGitHub } from '@/lib/ingestion/preprocessors/github';
+import { preprocessFile as preprocessFileUnified } from '@/lib/processing/preprocessing-pipeline';
 
 // Job status helpers
 async function updateJobStatus(
@@ -64,85 +60,35 @@ export const preprocessFile = inngest.createFunction(
         if (!jobData) throw new Error('Failed to create job record');
         job = jobData;
 
-        // Update source status
+        // Update source status to processing
+        // Note: The unified preprocessFile function will also update status, but we do it here
+        // for immediate feedback and to match the old behavior
         await supabaseServer
           .from('ingestion_sources')
           .update({ status: 'processing', updated_at: new Date().toISOString() })
           .eq('id', sourceId);
 
-        // Preprocess the file based on type
-        console.log(`Preprocessing ${sourceType} file: ${storagePath}`);
-        
-        let preprocessedContent: { text?: string; tables?: string[][][]; code?: string; needsTranscription?: boolean; metadata?: any } = {};
-
-        switch (sourceType) {
-          case 'pdf':
-            preprocessedContent = await preprocessPDF(storagePath, metadata);
-            break;
-          case 'excel':
-            preprocessedContent = await preprocessExcel(storagePath, metadata);
-            break;
-          case 'video':
-            preprocessedContent = await preprocessVideo(storagePath, metadata);
-            break;
-          case 'audio':
-            preprocessedContent = await preprocessAudio(storagePath, metadata);
-            break;
-          case 'text':
-          case 'markdown':
-            preprocessedContent = await preprocessText(storagePath, metadata);
-            break;
-          case 'github':
-            preprocessedContent = await preprocessGitHub(storagePath, metadata);
-            break;
-          default:
-            throw new Error(`Unsupported source type for preprocessing: ${sourceType}`);
-        }
+        // Use unified preprocessing pipeline (creates StructuredDocument)
+        // This function handles all file types, creates StructuredDocument objects,
+        // stores them in structured_documents table, and updates source status
+        console.log(`[INNGEST] Starting unified preprocessing for source: ${sourceId}`);
+        await preprocessFileUnified(sourceId, projectId);
+        console.log(`[INNGEST] Unified preprocessing completed for source: ${sourceId}`);
         
         // Update job status
         await updateJobStatus(job.id, 'completed', { 
-          message: 'Preprocessing completed',
-          content: preprocessedContent
-        });
-
-        // Update source status
-        await supabaseServer
-          .from('ingestion_sources')
-          .update({ 
-            status: 'completed', 
-            updated_at: new Date().toISOString(),
-            metadata: { ...metadata, preprocessed: true }
-          })
-          .eq('id', sourceId);
-
-        // Trigger chunking pipeline
-        await inngest.send({
-          name: 'ingestion/process-chunks',
-          data: {
-            sourceId,
-            projectId,
-            preprocessedContent,
-          },
+          message: 'Preprocessing completed successfully',
         });
 
         return { success: true, jobId: job.id };
       } catch (error) {
-        console.error('Preprocessing error:', error);
+        console.error('[INNGEST] Preprocessing error:', error);
         
-        // Update job status
+        // Update job status for Inngest observability
+        // Note: The unified preprocessFile function already handles source status updates
         if (job) {
-          await updateJobStatus(job.id, 'failed', null, error.message);
+          await updateJobStatus(job.id, 'failed', null, error instanceof Error ? error.message : String(error));
         }
-
-        // Update source status
-        await supabaseServer
-          .from('ingestion_sources')
-          .update({ 
-            status: 'failed', 
-            error_message: error.message,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', sourceId);
 
         throw error;
       }
