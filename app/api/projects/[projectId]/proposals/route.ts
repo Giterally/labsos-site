@@ -471,6 +471,65 @@ export async function POST(
   }
 }
 
+/**
+ * Infer node type from block name, with fallbacks.
+ * 
+ * @param blockName - Name of the block (e.g., "Protocol Block", "Analysis Block")
+ * @param fallbackType1 - First fallback: proposal.node_json.metadata.node_type
+ * @param fallbackType2 - Second fallback: proposal.node_json.node_type
+ * @returns Valid node type
+ */
+function inferNodeTypeFromBlockName(
+  blockName: string,
+  fallbackType1?: string,
+  fallbackType2?: string
+): 'protocol' | 'data_creation' | 'analysis' | 'results' | 'software' {
+  
+  const blockNameLower = blockName.toLowerCase();
+  
+  // Try to infer from block name
+  if (blockNameLower.includes('protocol')) {
+    console.log(`[NODE_TYPE] Inferred "protocol" from block name "${blockName}"`);
+    return 'protocol';
+  }
+  
+  if (blockNameLower.includes('data creation') || blockNameLower.includes('data_creation')) {
+    console.log(`[NODE_TYPE] Inferred "data_creation" from block name "${blockName}"`);
+    return 'data_creation';
+  }
+  
+  if (blockNameLower.includes('analysis')) {
+    console.log(`[NODE_TYPE] Inferred "analysis" from block name "${blockName}"`);
+    return 'analysis';
+  }
+  
+  if (blockNameLower.includes('results')) {
+    console.log(`[NODE_TYPE] Inferred "results" from block name "${blockName}"`);
+    return 'results';
+  }
+  
+  if (blockNameLower.includes('software')) {
+    console.log(`[NODE_TYPE] Inferred "software" from block name "${blockName}"`);
+    return 'software';
+  }
+  
+  // Fallback 1: metadata.node_type
+  if (fallbackType1 && ['protocol', 'data_creation', 'analysis', 'results', 'software'].includes(fallbackType1)) {
+    console.log(`[NODE_TYPE] Block "${blockName}" unclear, using metadata fallback: "${fallbackType1}"`);
+    return fallbackType1 as any;
+  }
+  
+  // Fallback 2: node_type
+  if (fallbackType2 && ['protocol', 'data_creation', 'analysis', 'results', 'software'].includes(fallbackType2)) {
+    console.log(`[NODE_TYPE] Block "${blockName}" unclear, using node_type fallback: "${fallbackType2}"`);
+    return fallbackType2 as any;
+  }
+  
+  // Last resort
+  console.warn(`[NODE_TYPE] ⚠️  Defaulting to 'protocol' for block "${blockName}"`);
+  return 'protocol';
+}
+
 // Background tree building function
 async function buildTreeInBackground(
   projectId: string, 
@@ -624,6 +683,13 @@ async function buildTreeInBackground(
 
       console.log('Created blocks:', blocks);
 
+      // Create a mapping from actual database block IDs to block names
+      const actualBlockIdToNameMap = new Map<string, string>();
+      for (const block of blocks) {
+        actualBlockIdToNameMap.set(block.id, block.name);
+      }
+      console.log(`[BLOCK_MAP] Created mapping for ${actualBlockIdToNameMap.size} blocks`);
+
       // Create a mapping from our generated block IDs to actual database block IDs
       const generatedToActualBlockId = new Map<string, string>();
       blockInserts.forEach((insertBlock: any, index: number) => {
@@ -692,16 +758,25 @@ async function buildTreeInBackground(
             const nodeElapsed = Date.now() - nodeStartTime;
             console.log(`[BUILD_TREE] [${nodeId}] Node complete in ${nodeElapsed}ms (position: ${currentPosition})`);
             
-            const originalNodeType = proposal.node_json?.node_type;
-            const mappedNodeType = mapToValidNodeType(originalNodeType);
+            // Get block name for this node
+            const blockName = actualBlockId ? actualBlockIdToNameMap.get(actualBlockId) : undefined;
             
-            console.log(`[BUILD_TREE] [${nodeId}] Node type mapping: "${originalNodeType}" -> "${mappedNodeType}"`);
+            // Infer node type from block name, with fallbacks
+            const inferredNodeType = blockName 
+              ? inferNodeTypeFromBlockName(
+                  blockName,
+                  proposal.node_json?.metadata?.node_type,
+                  proposal.node_json?.node_type
+                )
+              : mapToValidNodeType(proposal.node_json?.node_type);
             
-            // INLINE VALIDATION: Double-check the mapped type is valid
+            console.log(`[NODE_TYPE] Node "${rawTitle}" in block "${blockName || 'unknown'}" → type: ${inferredNodeType}`);
+            
+            // INLINE VALIDATION: Double-check the inferred type is valid
             const validTypes = ['protocol', 'data_creation', 'analysis', 'results'];
-            let finalNodeType = mappedNodeType;
-            if (!validTypes.includes(mappedNodeType)) {
-              console.error(`[BUILD_TREE] [${nodeId}] CRITICAL: mapToValidNodeType returned invalid type "${mappedNodeType}"!`);
+            let finalNodeType = inferredNodeType;
+            if (!validTypes.includes(inferredNodeType)) {
+              console.error(`[BUILD_TREE] [${nodeId}] CRITICAL: inferredNodeType returned invalid type "${inferredNodeType}"!`);
               console.error(`[BUILD_TREE] [${nodeId}] Force-correcting to 'protocol'`);
               finalNodeType = 'protocol'; // Force override
             }
