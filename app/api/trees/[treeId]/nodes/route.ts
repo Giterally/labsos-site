@@ -145,22 +145,52 @@ export async function GET(
     }>>()
     
     if (nodeIds.length > 0) {
-      // Fetch dependencies using node_id (current schema)
-      const { data: dependencies, error: depsError } = await client
+      // Fetch dependencies using from_node_id (new schema from migration 035)
+      // Support both old (node_id) and new (from_node_id) columns for backwards compatibility
+      // Query for new schema first
+      const { data: newDeps, error: newDepsError } = await client
         .from('node_dependencies')
         .select(`
           id,
+          from_node_id,
+          to_node_id,
           node_id,
           depends_on_node_id,
-          dependency_type
+          dependency_type,
+          evidence_text,
+          confidence
+        `)
+        .in('from_node_id', nodeIds)
+      
+      // Query for old schema (for backwards compatibility)
+      const { data: oldDeps, error: oldDepsError } = await client
+        .from('node_dependencies')
+        .select(`
+          id,
+          from_node_id,
+          to_node_id,
+          node_id,
+          depends_on_node_id,
+          dependency_type,
+          evidence_text,
+          confidence
         `)
         .in('node_id', nodeIds)
+        .is('from_node_id', null) // Only get old schema entries
+      
+      // Combine results, preferring new schema
+      const dependencies = [
+        ...(newDeps || []),
+        ...(oldDeps || [])
+      ]
+      const depsError = newDepsError || oldDepsError
       
       if (!depsError && dependencies && dependencies.length > 0) {
-        // Get all target node IDs
+        // Get all target node IDs (support both old and new schema)
         const targetNodeIds = new Set<string>()
         dependencies.forEach(dep => {
-          if (dep.depends_on_node_id) targetNodeIds.add(dep.depends_on_node_id)
+          const targetId = dep.to_node_id || dep.depends_on_node_id
+          if (targetId) targetNodeIds.add(targetId)
         })
         
         // Fetch target node names
@@ -178,21 +208,25 @@ export async function GET(
           }
         }
         
-        // Build dependencies map
+        // Build dependencies map (support both old and new schema)
         dependencies.forEach(dep => {
-          if (!dep.node_id || !dep.depends_on_node_id) return
+          const fromNodeId = dep.from_node_id || dep.node_id
+          const toNodeId = dep.to_node_id || dep.depends_on_node_id
           
-          const toNodeName = targetNodesMap.get(dep.depends_on_node_id) || 'Unknown node'
+          if (!fromNodeId || !toNodeId) return
           
-          if (!dependenciesMap.has(dep.node_id)) {
-            dependenciesMap.set(dep.node_id, [])
+          const toNodeName = targetNodesMap.get(toNodeId) || 'Unknown node'
+          
+          if (!dependenciesMap.has(fromNodeId)) {
+            dependenciesMap.set(fromNodeId, [])
           }
           
-          dependenciesMap.get(dep.node_id)!.push({
+          dependenciesMap.get(fromNodeId)!.push({
             id: dep.id,
-            to_node_id: dep.depends_on_node_id,
+            to_node_id: toNodeId,
             to_node_name: toNodeName,
-            dependency_type: dep.dependency_type || 'requires'
+            dependency_type: dep.dependency_type || 'requires',
+            evidence_text: dep.evidence_text
           })
         })
       }

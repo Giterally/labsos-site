@@ -41,35 +41,77 @@ export async function GET(
       )
     }
 
-    // Get dependencies for the node
-    const { data: dependencies, error: depsError } = await supabase
+    // Get dependencies for the node (support both old and new schema)
+    // Query for new schema first
+    const { data: newDeps, error: newDepsError } = await supabase
       .from('node_dependencies')
       .select(`
         id,
+        from_node_id,
+        to_node_id,
         node_id,
         depends_on_node_id,
         dependency_type,
+        evidence_text,
+        confidence,
+        tree_nodes!node_dependencies_to_node_id_fkey (
+          id,
+          name
+        )
+      `)
+      .eq('from_node_id', nodeId)
+      .order('created_at', { ascending: true })
+    
+    // Query for old schema (for backwards compatibility)
+    const { data: oldDeps, error: oldDepsError } = await supabase
+      .from('node_dependencies')
+      .select(`
+        id,
+        from_node_id,
+        to_node_id,
+        node_id,
+        depends_on_node_id,
+        dependency_type,
+        evidence_text,
+        confidence,
         tree_nodes!node_dependencies_depends_on_node_id_fkey (
           id,
           name
         )
       `)
       .eq('node_id', nodeId)
+      .is('from_node_id', null)
       .order('created_at', { ascending: true })
+    
+    // Combine results
+    const dependencies = [
+      ...(newDeps || []),
+      ...(oldDeps || [])
+    ]
+    const depsError = newDepsError || oldDepsError
 
     if (depsError) {
       console.error('Error fetching dependencies:', depsError)
       return NextResponse.json({ error: 'Failed to fetch dependencies' }, { status: 500 })
     }
 
-    // Transform to include target node name
-    const transformedDeps = dependencies?.map(dep => ({
-      id: dep.id,
-      node_id: dep.node_id,
-      to_node_id: dep.depends_on_node_id,
-      to_node_name: (dep.tree_nodes as any)?.name || 'Unknown node',
-      dependency_type: dep.dependency_type
-    })) || []
+    // Transform to include target node name (support both old and new schema)
+    const transformedDeps = dependencies?.map(dep => {
+      const toNodeId = dep.to_node_id || dep.depends_on_node_id
+      const targetNode = Array.isArray(dep.tree_nodes) 
+        ? dep.tree_nodes[0] 
+        : dep.tree_nodes
+      
+      return {
+        id: dep.id,
+        node_id: dep.from_node_id || dep.node_id,
+        to_node_id: toNodeId,
+        to_node_name: (targetNode as any)?.name || 'Unknown node',
+        dependency_type: dep.dependency_type,
+        evidence_text: dep.evidence_text,
+        confidence: dep.confidence
+      }
+    }).filter(dep => dep.to_node_id) || []
 
     return NextResponse.json({ dependencies: transformedDeps })
   } catch (error) {
@@ -155,12 +197,12 @@ export async function POST(
       .eq('id', to_node_id)
       .single()
 
-    // Create the dependency
+    // Create the dependency using new schema (from_node_id, to_node_id)
     const { data: newDep, error: depError } = await supabase
       .from('node_dependencies')
       .insert({
-        node_id: nodeId,
-        depends_on_node_id: to_node_id,
+        from_node_id: nodeId,
+        to_node_id: to_node_id,
         dependency_type: dependency_type
       })
       .select()
@@ -177,8 +219,8 @@ export async function POST(
     return NextResponse.json({ 
       dependency: {
         id: newDep.id,
-        node_id: newDep.node_id,
-        to_node_id: newDep.depends_on_node_id,
+        node_id: newDep.from_node_id || newDep.node_id,
+        to_node_id: newDep.to_node_id || newDep.depends_on_node_id,
         to_node_name: targetNode?.name || 'Unknown node',
         dependency_type: newDep.dependency_type
       }

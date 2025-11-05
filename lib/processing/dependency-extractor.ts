@@ -1,266 +1,241 @@
-import { ExtractedNode } from '../ai/schemas/workflow-extraction-schema';
+import type { ExtractedNode } from '@/lib/ai/schemas/workflow-extraction-schema';
 
 /**
- * Extract dependencies between nodes using rule-based pattern matching
- * This is fast and free, but may miss implicit dependencies
+ * Rule-based dependency extraction using pattern matching
+ * Extracts dependencies that the LLM might have missed
  */
 export function extractDependenciesRuleBased(nodes: ExtractedNode[]): void {
-  console.log(`[DEPENDENCY_EXTRACTOR] Extracting dependencies using rule-based patterns for ${nodes.length} nodes`);
+  console.log(`[DEPENDENCY_EXTRACTOR] Extracting dependencies for ${nodes.length} nodes using rule-based patterns`);
 
-  // Build index of node titles for fuzzy matching
-  const nodeTitleIndex = nodes.map(n => ({
-    id: n.nodeId,
-    title: n.title.toLowerCase(),
-    fullTitle: n.title,
+  // Create an index of nodes by title for quick lookup
+  const nodeIndex: Array<{ id: string; title: string; keywords: string[] }> = nodes.map(node => ({
+    id: node.nodeId,
+    title: node.title,
+    keywords: extractKeywords(node.title),
   }));
 
-  let dependencyCount = 0;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const contentText = node.content.text || '';
+    
+    // Skip if already has dependencies (LLM already found them)
+    if (node.dependencies && node.dependencies.length > 0) {
+      continue;
+    }
 
-  for (const node of nodes) {
-    const contentLower = node.content.text.toLowerCase();
+    // Pattern 1: "Using X from Y" or "Using remaining X from Y"
+    const usingPattern = /using\s+(?:remaining\s+)?([^,;.]+?)\s+from\s+([^,;.]+)/gi;
+    let match;
+    while ((match = usingPattern.exec(contentText)) !== null) {
+      const referencedText = match[2].trim();
+      const referencedNode = findNodeByFuzzyMatch(nodes, nodeIndex, referencedText, contentText);
+      if (referencedNode && referencedNode.nodeId !== node.nodeId) {
+        addDependency(node, referencedNode, 'uses_output', match[0]);
+      }
+    }
 
-    // Pattern 1: "from step X" or "from Step X"
-    const stepRefs = contentLower.match(/from step\s+(\d+)/gi);
-    if (stepRefs) {
-      for (const ref of stepRefs) {
-        const stepNum = parseInt(ref.match(/\d+/)?.[0] || '0');
-        if (stepNum > 0) {
-          let referencedNode: ExtractedNode | undefined = undefined;
-          let matchedVia = 'none';
-          let confidence = 0.5;
+    // Pattern 2: "X was analyzed" or "X were analyzed" (linking analysis to data creation/protocol)
+    const analyzedPattern = /([^,;.]+?)\s+(?:was|were)\s+analyzed/gi;
+    while ((match = analyzedPattern.exec(contentText)) !== null) {
+      const referencedText = match[1].trim();
+      const referencedNode = findNodeByFuzzyMatch(nodes, nodeIndex, referencedText, contentText);
+      if (referencedNode && referencedNode.nodeId !== node.nodeId && node.nodeType === 'analysis') {
+        addDependency(node, referencedNode, 'uses_output', match[0]);
+      }
+    }
 
-          // Strategy 1: Title match with step number (exact)
-          referencedNode = nodes.find(n =>
-            n.title.match(new RegExp(`^${stepNum}[\\.:]`, 'i'))
-          );
-          if (referencedNode) {
-            matchedVia = 'title_exact';
-            confidence = 0.95;
-          }
+    // Pattern 3: "Based on X" or "Based on the results of X"
+    const basedOnPattern = /based\s+on(?:\s+the\s+(?:results?|outputs?)\s+of)?\s+([^,;.]+)/gi;
+    while ((match = basedOnPattern.exec(contentText)) !== null) {
+      const referencedText = match[1].trim();
+      const referencedNode = findNodeByFuzzyMatch(nodes, nodeIndex, referencedText, contentText);
+      if (referencedNode && referencedNode.nodeId !== node.nodeId) {
+        addDependency(node, referencedNode, 'uses_output', match[0]);
+      }
+    }
 
-          // Strategy 2: Title match with "step X" pattern
-          if (!referencedNode) {
-            referencedNode = nodes.find(n =>
-              n.title.match(new RegExp(`step\\s+${stepNum}`, 'i'))
-            );
-            if (referencedNode) {
-              matchedVia = 'title_regex';
-              confidence = 0.85;
-            }
-          }
+    // Pattern 4: "After X" or "Following X" (sequential dependencies)
+    const afterPattern = /(?:after|following)\s+([^,;.]+)/gi;
+    while ((match = afterPattern.exec(contentText)) !== null) {
+      const referencedText = match[1].trim();
+      const referencedNode = findNodeByFuzzyMatch(nodes, nodeIndex, referencedText, contentText);
+      if (referencedNode && referencedNode.nodeId !== node.nodeId) {
+        addDependency(node, referencedNode, 'follows', match[0]);
+      }
+    }
 
-          // Strategy 3: Position-based fallback (assuming extraction order = step order)
-          if (!referencedNode && stepNum > 0 && stepNum <= nodes.length) {
-            referencedNode = nodes[stepNum - 1];
-            if (referencedNode) {
-              matchedVia = 'position';
-              confidence = 0.7;
-              console.log(`[DEPENDENCY_EXTRACTOR] Using position fallback for step ${stepNum}`);
-            }
-          }
+    // Pattern 5: "Requires X" or "Requiring X"
+    const requiresPattern = /requir(?:es?|ing)\s+([^,;.]+)/gi;
+    while ((match = requiresPattern.exec(contentText)) !== null) {
+      const referencedText = match[1].trim();
+      const referencedNode = findNodeByFuzzyMatch(nodes, nodeIndex, referencedText, contentText);
+      if (referencedNode && referencedNode.nodeId !== node.nodeId) {
+        addDependency(node, referencedNode, 'requires', match[0]);
+      }
+    }
 
-          // Strategy 4: Content search (if node mentions "step X")
-          if (!referencedNode) {
-            referencedNode = nodes.find(n => {
-              const contentMatch = n.content.text.match(new RegExp(`(step|procedure)\\s+${stepNum}[\\.:]?`, 'i'));
-              return contentMatch !== null;
-            });
-            if (referencedNode) {
-              matchedVia = 'content_search';
-              confidence = 0.6;
-              console.log(`[DEPENDENCY_EXTRACTOR] Found step ${stepNum} via content search`);
-            }
-          }
-
-          if (!referencedNode) {
-            console.warn(`[DEPENDENCY_EXTRACTOR] Could not find node for "step ${stepNum}" reference in node "${node.title}"`);
-          }
-
-          if (referencedNode && referencedNode.nodeId !== node.nodeId) {
-            // Check if dependency already exists
-            const exists = node.dependencies.some(d =>
-              d.referencedNodeTitle === referencedNode.title
-            );
-
-            if (!exists) {
-              node.dependencies.push({
-                referencedNodeTitle: referencedNode.title,
-                dependencyType: 'uses_output',
-                extractedPhrase: ref,
-                confidence: confidence,
-                matchedVia: matchedVia,
-              });
-              dependencyCount++;
-            }
-          }
+    // Pattern 6: References to experiments/trials/tests by name (enhanced)
+    const experimentRefs = contentText.match(/\b(experiment|trial|test|assay)\s+[12][a-z]?\b/gi);
+    if (experimentRefs) {
+      for (const ref of experimentRefs) {
+        // Search for nodes with "experiment", "test", "trial", "assay" in title
+        const matchingNode = nodes.find(n => 
+          n.nodeId !== node.nodeId &&
+          (n.title.toLowerCase().includes('experiment') ||
+           n.title.toLowerCase().includes('test') ||
+           n.title.toLowerCase().includes('trial') ||
+           n.title.toLowerCase().includes('assay'))
+        );
+        
+        if (matchingNode) {
+          addDependency(node, matchingNode, 'uses_output', ref.trim(), 0.7);
         }
       }
     }
 
-    // Pattern 2: "using the X prepared above/earlier/previously"
-    const preparationRefs = contentLower.match(/using the (.+?) prepared (above|earlier|previously)/gi);
-    if (preparationRefs) {
-      for (const ref of preparationRefs) {
-        const itemMatch = ref.match(/using the (.+?) prepared/i);
-        if (itemMatch) {
-          const itemName = itemMatch[1].trim();
-          
-          // Search for nodes that prepare this item
-          const referencedNode = nodeTitleIndex.find(n =>
-            n.title.includes(itemName.toLowerCase()) ||
-            n.title.includes(itemName.split(' ')[0].toLowerCase())
-          );
-
-          if (referencedNode && referencedNode.id !== node.nodeId) {
-            const fullNode = nodes.find(n => n.nodeId === referencedNode.id);
-            if (fullNode) {
-              const exists = node.dependencies.some(d =>
-                d.referencedNodeTitle === fullNode.title
-              );
-
-              if (!exists) {
-                node.dependencies.push({
-                  referencedNodeTitle: fullNode.title,
-                  dependencyType: 'requires',
-                  extractedPhrase: ref,
-                });
-                dependencyCount++;
-              }
-            }
-          }
-        }
+    // Pattern 7: Block-level implicit dependencies
+    // Analysis nodes typically depend on data creation nodes
+    if (node.nodeType === 'analysis') {
+      const dataCreationNodes = nodes.filter(n => 
+        n.nodeId !== node.nodeId && 
+        n.nodeType === 'data_creation'
+      );
+      // If there's only one data creation node and this analysis doesn't have dependencies,
+      // assume it depends on the data creation
+      if (dataCreationNodes.length === 1 && (!node.dependencies || node.dependencies.length === 0)) {
+        addDependency(node, dataCreationNodes[0], 'uses_output', 'Implicit: analysis depends on data creation', 0.6);
       }
     }
 
-    // Pattern 3: "after X" or "following X"
-    const sequenceRefs = contentLower.match(/(after|following)\s+([^.,]+?)([,.])/gi);
-    if (sequenceRefs) {
-      for (const ref of sequenceRefs) {
-        const match = ref.match(/(after|following)\s+(.+?)([,.])/i);
-        if (match) {
-          const referencedText = match[2].trim();
-          
-          // Fuzzy match to node titles
-          const referencedNode = nodeTitleIndex.find(n =>
-            referencedText.toLowerCase().includes(n.title) ||
-            n.title.includes(referencedText.toLowerCase().split(' ')[0])
-          );
-
-          if (referencedNode && referencedNode.id !== node.nodeId) {
-            const fullNode = nodes.find(n => n.nodeId === referencedNode.id);
-            if (fullNode) {
-              const exists = node.dependencies.some(d =>
-                d.referencedNodeTitle === fullNode.title
-              );
-
-              if (!exists) {
-                node.dependencies.push({
-                  referencedNodeTitle: fullNode.title,
-                  dependencyType: 'follows',
-                  extractedPhrase: ref,
-                });
-                dependencyCount++;
-              }
-            }
-          }
-        }
+    // Pattern 8: Results nodes depend on Analysis nodes (enhanced with keyword matching)
+    if (node.nodeType === 'results') {
+      const analysisNodes = nodes.filter(n => 
+        n.nodeId !== node.nodeId && 
+        n.nodeType === 'analysis'
+      );
+      // If content mentions analysis keywords, link to analysis nodes
+      const analysisKeywords = ['analysis', 'analyzed', 'statistical', 'computed', 'calculated'];
+      const mentionsAnalysis = analysisKeywords.some(keyword => 
+        contentText.toLowerCase().includes(keyword)
+      );
+      
+      if (mentionsAnalysis && analysisNodes.length > 0) {
+        // Link to the first analysis node found
+        addDependency(node, analysisNodes[0], 'uses_output', 'Implicit: results depend on analysis', 0.6);
       }
     }
 
-    // Pattern 4: "see X" or "refer to X"
-    const referenceRefs = contentLower.match(/(see|refer to|reference)\s+([^.,]+?)([,.])/gi);
-    if (referenceRefs) {
-      for (const ref of referenceRefs) {
-        const match = ref.match(/(see|refer to|reference)\s+(.+?)([,.])/i);
-        if (match) {
-          const referencedText = match[2].trim();
+    // Pattern 9: Results nodes depend on Analysis nodes with similar names (keyword-based matching)
+    if (node.nodeType === 'results' && (!node.dependencies || node.dependencies.length === 0)) {
+      const resultKeywords = extractKeywords(node.title);
+      
+      for (const analysisNode of nodes) {
+        if (analysisNode.nodeType === 'analysis') {
+          const analysisKeywords = extractKeywords(analysisNode.title);
+          const overlap = resultKeywords.filter(k => analysisKeywords.includes(k));
           
-          // Fuzzy match to node titles
-          const referencedNode = nodeTitleIndex.find(n =>
-            referencedText.toLowerCase().includes(n.title) ||
-            n.title.includes(referencedText.toLowerCase().split(' ')[0])
-          );
-
-          if (referencedNode && referencedNode.id !== node.nodeId) {
-            const fullNode = nodes.find(n => n.nodeId === referencedNode.id);
-            if (fullNode) {
-              const exists = node.dependencies.some(d =>
-                d.referencedNodeTitle === fullNode.title
-              );
-
-              if (!exists) {
-                node.dependencies.push({
-                  referencedNodeTitle: fullNode.title,
-                  dependencyType: 'validates',
-                  extractedPhrase: ref,
-                });
-                dependencyCount++;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Pattern 5: "using X from step Y" or "using X from Y"
-    const usingFromRefs = contentLower.match(/using\s+([^,]+?)\s+from\s+(step\s+)?(\d+|[^,]+?)([,.])/gi);
-    if (usingFromRefs) {
-      for (const ref of usingFromRefs) {
-        const match = ref.match(/using\s+([^,]+?)\s+from\s+(step\s+)?(\d+|[^,]+?)([,.])/i);
-        if (match) {
-          const sourceText = match[3].trim();
-          
-          // Try numeric step first
-          if (/^\d+$/.test(sourceText)) {
-            const stepNum = parseInt(sourceText);
-            const referencedNode = nodes.find(n =>
-              n.title.match(new RegExp(`^${stepNum}[.:]`, 'i'))
-            );
-
-            if (referencedNode && referencedNode.nodeId !== node.nodeId) {
-              const exists = node.dependencies.some(d =>
-                d.referencedNodeTitle === referencedNode.title
-              );
-
-              if (!exists) {
-                node.dependencies.push({
-                  referencedNodeTitle: referencedNode.title,
-                  dependencyType: 'uses_output',
-                  extractedPhrase: ref,
-                });
-                dependencyCount++;
-              }
-            }
-          } else {
-            // Text-based reference
-            const referencedNode = nodeTitleIndex.find(n =>
-              sourceText.toLowerCase().includes(n.title) ||
-              n.title.includes(sourceText.toLowerCase().split(' ')[0])
-            );
-
-            if (referencedNode && referencedNode.id !== node.nodeId) {
-              const fullNode = nodes.find(n => n.nodeId === referencedNode.id);
-              if (fullNode) {
-                const exists = node.dependencies.some(d =>
-                  d.referencedNodeTitle === fullNode.title
-                );
-
-                if (!exists) {
-                  node.dependencies.push({
-                    referencedNodeTitle: fullNode.title,
-                    dependencyType: 'uses_output',
-                    extractedPhrase: ref,
-                  });
-                  dependencyCount++;
-                }
-              }
-            }
+          if (overlap.length >= 2) {
+            addDependency(node, analysisNode, 'uses_output', 
+              `(implicit: results from analysis with shared keywords: ${overlap.join(', ')})`, 
+              0.75);
+            break;
           }
         }
       }
     }
   }
 
-  console.log(`[DEPENDENCY_EXTRACTOR] Extracted ${dependencyCount} dependencies`);
+  console.log(`[DEPENDENCY_EXTRACTOR] Completed dependency extraction`);
 }
 
+/**
+ * Extract keywords from text for fuzzy matching
+ */
+function extractKeywords(text: string): string[] {
+  // Remove common words and extract meaningful keywords
+  const commonWords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+    'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did',
+    'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those'
+  ]);
+
+  return text
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(word => word.length > 3 && !commonWords.has(word))
+    .slice(0, 5); // Limit to top 5 keywords
+}
+
+/**
+ * Find a node by fuzzy matching on title or keywords
+ */
+function findNodeByFuzzyMatch(
+  nodes: ExtractedNode[],
+  nodeIndex: Array<{ id: string; title: string; keywords: string[] }>,
+  searchText: string,
+  context?: string
+): ExtractedNode | null {
+  const searchKeywords = extractKeywords(searchText);
+  const searchLower = searchText.toLowerCase();
+
+  // First, try exact or partial title match
+  for (const indexed of nodeIndex) {
+    const titleLower = indexed.title.toLowerCase();
+    if (titleLower === searchLower || titleLower.includes(searchLower) || searchLower.includes(titleLower)) {
+      const node = nodes.find(n => n.nodeId === indexed.id);
+      if (node) return node;
+    }
+  }
+
+  // Then, try keyword overlap
+  let bestMatch: ExtractedNode | null = null;
+  let bestScore = 0;
+
+  for (const indexed of nodeIndex) {
+    const keywordOverlap = searchKeywords.filter(kw => 
+      indexed.keywords.some(ikw => ikw.includes(kw) || kw.includes(ikw))
+    ).length;
+
+    if (keywordOverlap > bestScore && keywordOverlap >= 2) {
+      bestScore = keywordOverlap;
+      const node = nodes.find(n => n.nodeId === indexed.id);
+      if (node) bestMatch = node;
+    }
+  }
+
+  return bestMatch;
+}
+
+/**
+ * Add a dependency to a node if it doesn't already exist
+ */
+function addDependency(
+  node: ExtractedNode,
+  referencedNode: ExtractedNode,
+  dependencyType: 'requires' | 'uses_output' | 'follows' | 'validates',
+  extractedPhrase: string,
+  confidence: number = 0.8
+): void {
+  // Initialize dependencies array if it doesn't exist
+  if (!node.dependencies) {
+    node.dependencies = [];
+  }
+
+  // Check if dependency already exists
+  const exists = node.dependencies.some(dep => 
+    dep.referencedNodeTitle === referencedNode.title &&
+    dep.dependencyType === dependencyType
+  );
+
+  if (!exists) {
+    node.dependencies.push({
+      referencedNodeTitle: referencedNode.title,
+      dependencyType,
+      extractedPhrase,
+      confidence,
+      matchedVia: 'rule-based',
+    });
+    
+    console.log(`[DEPENDENCY_EXTRACTOR] Added dependency: ${node.title} → ${referencedNode.title} (${dependencyType})`);
+  }
+}

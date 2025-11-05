@@ -1,152 +1,273 @@
-import { StructuredDocument } from './parsers/pdf-parser';
-import { ExtractedNode } from '../ai/schemas/workflow-extraction-schema';
+import type { ExtractedNode } from '@/lib/ai/schemas/workflow-extraction-schema';
+import type { StructuredDocument, ContentBlock } from '@/lib/processing/parsers/pdf-parser';
 
-export interface Attachment {
+/**
+ * Resolves attachments for nodes by detecting figure/table references
+ * and linking them to actual figures/tables in the document
+ */
+export async function resolveAttachments(
+  nodes: ExtractedNode[],
+  doc: StructuredDocument
+): Promise<void> {
+  console.log(`[ATTACHMENT_RESOLVER] Resolving attachments for ${nodes.length} nodes in document: ${doc.sourceId}`);
+
+  for (const node of nodes) {
+    const contentText = node.content.text || '';
+    
+    // Extract figure references (e.g., "Figure 1", "Fig. 2", "Figure 2a")
+    const figureRefs = extractFigureReferences(contentText);
+    
+    // Extract table references (e.g., "Table 1", "Table 2a")
+    const tableRefs = extractTableReferences(contentText);
+    
+    // Find figures in document
+    if (figureRefs.length > 0) {
+      const figures = findFiguresInDocument(doc, figureRefs);
+      for (const figure of figures) {
+        // Check if attachment already exists
+        const existing = node.attachments.find(a => 
+          a.sourceId === doc.sourceId && 
+          a.fileName === figure.fileName
+        );
+        
+        if (!existing) {
+          node.attachments.push(figure);
+          console.log(`[ATTACHMENT_RESOLVER] Added figure attachment: ${figure.fileName} to node: ${node.title}`);
+        }
+      }
+    }
+    
+    // Find tables in document
+    if (tableRefs.length > 0) {
+      const tables = findTablesInDocument(doc, tableRefs);
+      for (const table of tables) {
+        // Check if attachment already exists
+        const existing = node.attachments.find(a => 
+          a.sourceId === doc.sourceId && 
+          a.fileName === table.fileName
+        );
+        
+        if (!existing) {
+          node.attachments.push(table);
+          console.log(`[ATTACHMENT_RESOLVER] Added table attachment: ${table.fileName} to node: ${node.title}`);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Extract figure references from text
+ */
+function extractFigureReferences(text: string): string[] {
+  const patterns = [
+    /(?:Figure|Fig\.?)\s+(\d+[a-z]?)/gi,
+    /\(Figure\s+(\d+[a-z]?)\)/gi,
+    /\(Fig\.?\s+(\d+[a-z]?)\)/gi,
+  ];
+  
+  const refs = new Set<string>();
+  
+  for (const pattern of patterns) {
+    const matches = text.matchAll(pattern);
+    for (const match of matches) {
+      refs.add(match[1] || match[0]);
+    }
+  }
+  
+  return Array.from(refs);
+}
+
+/**
+ * Extract table references from text
+ */
+function extractTableReferences(text: string): string[] {
+  const patterns = [
+    /Table\s+(\d+[a-z]?)/gi,
+    /\(Table\s+(\d+[a-z]?)\)/gi,
+  ];
+  
+  const refs = new Set<string>();
+  
+  for (const pattern of patterns) {
+    const matches = text.matchAll(pattern);
+    for (const match of matches) {
+      refs.add(match[1] || match[0]);
+    }
+  }
+  
+  return Array.from(refs);
+}
+
+/**
+ * Find figures in document matching the references
+ */
+function findFiguresInDocument(
+  doc: StructuredDocument,
+  figureRefs: string[]
+): Array<{
   sourceId: string;
   fileName: string;
   pageRange?: [number, number];
-  timestamp?: [number, number]; // for videos
   relevance: string;
-}
-
-/**
- * Resolve and validate attachments for extracted nodes
- */
-export async function resolveAttachments(
-  extractedNodes: ExtractedNode[],
-  structuredDoc: StructuredDocument
-): Promise<void> {
-  console.log(`[ATTACHMENT_RESOLVER] Resolving attachments for ${extractedNodes.length} nodes`);
-
-  for (const node of extractedNodes) {
-    // Validate existing attachments suggested by LLM
-    for (const attachment of node.attachments) {
-      // Verify page range exists
-      if (attachment.pageRange) {
-        const [start, end] = attachment.pageRange;
-        const maxPages = structuredDoc.metadata.totalPages || 1;
+}> {
+  const attachments: Array<{
+    sourceId: string;
+    fileName: string;
+    pageRange?: [number, number];
+    relevance: string;
+  }> = [];
+  
+  for (const ref of figureRefs) {
+    const figNumMatch = ref.match(/(\d+[a-z]?)/i);
+    if (!figNumMatch) continue;
+    const figNum = figNumMatch[1];
+    
+    console.log(`[ATTACHMENT_RESOLVER] Searching for Figure ${figNum}...`);
+    
+    let found = false;
+    
+    // Strategy 1: Check if block.type is explicitly 'figure'
+    for (const section of doc.sections) {
+      for (const block of section.content) {
+        const blockText = (block.content || '').toLowerCase();
         
-        if (start > maxPages || end > maxPages || start < 1 || end < 1) {
-          console.warn(`[ATTACHMENT_RESOLVER] Invalid page range for node ${node.nodeId}: ${start}-${end} (max: ${maxPages})`);
-          // Remove invalid attachment
-          node.attachments = node.attachments.filter(a => a !== attachment);
-          continue;
-        }
-        
-        if (end < start) {
-          console.warn(`[ATTACHMENT_RESOLVER] Invalid page range order for node ${node.nodeId}: ${start}-${end}`);
-          // Fix order
-          attachment.pageRange = [end, start];
-        }
-      }
-
-      // For videos: validate timestamps
-      if (structuredDoc.type === 'video' && attachment.timestamp) {
-        const [start, end] = attachment.timestamp;
-        
-        // Ensure timestamps are valid
-        if (end <= start || start < 0) {
-          console.warn(`[ATTACHMENT_RESOLVER] Invalid timestamp for node ${node.nodeId}: ${start}-${end}`);
-          attachment.timestamp = undefined;
-        }
-        
-        // Check against document duration
-        const maxDuration = structuredDoc.metadata.duration || 0;
-        if (end > maxDuration) {
-          console.warn(`[ATTACHMENT_RESOLVER] Timestamp exceeds video duration for node ${node.nodeId}`);
-          attachment.timestamp = [start, Math.min(end, maxDuration)];
+        if (block.type === 'figure' && 
+            (blockText.includes(`figure ${figNum.toLowerCase()}`) ||
+             blockText.includes(`fig. ${figNum.toLowerCase()}`) ||
+             blockText.includes(`fig ${figNum.toLowerCase()}`))) {
+          
+          attachments.push({
+            sourceId: doc.sourceId,
+            fileName: `Figure ${figNum}`,
+            pageRange: block.pageNumber ? [block.pageNumber, block.pageNumber] : undefined,
+            relevance: `Referenced as "Figure ${figNum}" in node content`,
+          });
+          
+          found = true;
+          break;
         }
       }
+      if (found) break;
     }
-
-    // Check if content mentions figures/tables and try to locate them
-    const figureMatches = node.content.text.match(/[Ff]igure\s+(\d+)/g);
-    if (figureMatches) {
-      const figureRefs = await findFiguresInDocument(structuredDoc, figureMatches);
-      node.attachments.push(...figureRefs);
-    }
-
-    // Check for table references
-    const tableMatches = node.content.text.match(/[Tt]able\s+(\d+)/g);
-    if (tableMatches) {
-      const tableRefs = await findTablesInDocument(structuredDoc, tableMatches);
-      node.attachments.push(...tableRefs);
-    }
-
-    // Store provenance for traceability
-    if (!node.metadata) {
-      node.metadata = {};
-    }
-    node.metadata.provenance = {
-      sourceId: structuredDoc.sourceId,
-      fileName: structuredDoc.fileName,
-      extractedAt: new Date().toISOString(),
-    };
-  }
-
-  console.log(`[ATTACHMENT_RESOLVER] Attachment resolution complete`);
-}
-
-/**
- * Find figures mentioned in node content
- */
-async function findFiguresInDocument(
-  doc: StructuredDocument,
-  figureRefs: string[]
-): Promise<Attachment[]> {
-  const attachments: Attachment[] = [];
-
-  for (const section of doc.sections) {
-    for (const block of section.content) {
-      if (block.type === 'figure') {
-        // Match figure number
-        for (const ref of figureRefs) {
-          const figureNum = ref.match(/\d+/)?.[0];
-          if (figureNum && block.content.includes(`Figure ${figureNum}`) || 
-              block.content.includes(`Fig. ${figureNum}`)) {
+    
+    // Strategy 2: FALLBACK - Search text content for figure caption patterns
+    if (!found) {
+      for (const section of doc.sections) {
+        for (const block of section.content) {
+          const blockText = (block.content || '').toLowerCase();
+          
+          const figurePatterns = [
+            new RegExp(`figure\\s+${figNum}[a-z]?[.:]`, 'i'),
+            new RegExp(`fig\\.?\\s+${figNum}[a-z]?[.:]`, 'i'),
+            new RegExp(`\\(fig\\.?\\s+${figNum}[a-z]?\\)`, 'i')
+          ];
+          
+          if (figurePatterns.some(pattern => pattern.test(blockText))) {
             attachments.push({
               sourceId: doc.sourceId,
-              fileName: doc.fileName,
-              pageRange: [block.pageNumber, block.pageNumber],
-              relevance: `Contains ${ref}`,
+              fileName: `Figure ${figNum}`,
+              pageRange: block.pageNumber ? [block.pageNumber, block.pageNumber] : undefined,
+              relevance: `Referenced as "Figure ${figNum}" in node content`,
             });
+            
+            found = true;
+            break;
           }
         }
+        if (found) break;
       }
     }
+    
+    if (!found) {
+      console.warn(`[ATTACHMENT_RESOLVER] ⚠️  Could not find Figure ${figNum} for ref: ${ref}`);
+    }
   }
-
+  
   return attachments;
 }
 
 /**
- * Find tables mentioned in node content
+ * Find tables in document matching the references
  */
-async function findTablesInDocument(
+function findTablesInDocument(
   doc: StructuredDocument,
   tableRefs: string[]
-): Promise<Attachment[]> {
-  const attachments: Attachment[] = [];
-
-  for (const section of doc.sections) {
-    for (const block of section.content) {
-      if (block.type === 'table') {
-        // Match table number
-        for (const ref of tableRefs) {
-          const tableNum = ref.match(/\d+/)?.[0];
-          if (tableNum && block.content.includes(`Table ${tableNum}`)) {
-            attachments.push({
-              sourceId: doc.sourceId,
-              fileName: doc.fileName,
-              pageRange: [block.pageNumber, block.pageNumber],
-              relevance: `Contains ${ref}`,
-            });
-          }
+): Array<{
+  sourceId: string;
+  fileName: string;
+  pageRange?: [number, number];
+  relevance: string;
+}> {
+  const attachments: Array<{
+    sourceId: string;
+    fileName: string;
+    pageRange?: [number, number];
+    relevance: string;
+  }> = [];
+  
+  for (const ref of tableRefs) {
+    const tableNumMatch = ref.match(/(\d+[a-z]?)/i);
+    if (!tableNumMatch) continue;
+    const tableNum = tableNumMatch[1];
+    
+    console.log(`[ATTACHMENT_RESOLVER] Searching for Table ${tableNum}...`);
+    
+    let found = false;
+    
+    // Strategy 1: Check if block.type is explicitly 'table'
+    for (const section of doc.sections) {
+      for (const block of section.content) {
+        const blockText = (block.content || '').toLowerCase();
+        
+        if (block.type === 'table' && 
+            blockText.includes(`table ${tableNum.toLowerCase()}`)) {
+          
+          attachments.push({
+            sourceId: doc.sourceId,
+            fileName: `Table ${tableNum}`,
+            pageRange: block.pageNumber ? [block.pageNumber, block.pageNumber] : undefined,
+            relevance: `Referenced as "Table ${tableNum}" in node content`,
+          });
+          
+          found = true;
+          break;
         }
       }
+      if (found) break;
+    }
+    
+    // Strategy 2: FALLBACK - Search text content for table caption patterns
+    if (!found) {
+      for (const section of doc.sections) {
+        for (const block of section.content) {
+          const blockText = (block.content || '').toLowerCase();
+          
+          const tablePatterns = [
+            new RegExp(`table\\s+${tableNum}[a-z]?[.:]`, 'i'),
+            new RegExp(`\\(table\\s+${tableNum}[a-z]?\\)`, 'i')
+          ];
+          
+          if (tablePatterns.some(pattern => pattern.test(blockText))) {
+            attachments.push({
+              sourceId: doc.sourceId,
+              fileName: `Table ${tableNum}`,
+              pageRange: block.pageNumber ? [block.pageNumber, block.pageNumber] : undefined,
+              relevance: `Referenced as "Table ${tableNum}" in node content`,
+            });
+            
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+    }
+    
+    if (!found) {
+      console.warn(`[ATTACHMENT_RESOLVER] ⚠️  Could not find Table ${tableNum} for ref: ${ref}`);
     }
   }
-
+  
   return attachments;
 }
-

@@ -395,6 +395,11 @@ function parsePDFStructure(text: string, totalPages: number): Section[] {
     return columns.length >= 3 && columns.every(col => col.trim().length > 0);
   }
 
+  // Detect figure captions
+  function isFigureCaption(line: string): boolean {
+    return /^(Figure|Fig\.?)\s+\d+[a-z]?[.:]/i.test(line.trim());
+  }
+
   // Extract section number from heading
   function extractSectionNumber(text: string): string | undefined {
     const match = text.match(/^((\d+\.?\s*)+)/);
@@ -450,7 +455,9 @@ function parsePDFStructure(text: string, totalPages: number): Section[] {
     let blockType: ContentBlock['type'] = 'text';
     let formatting: ContentBlock['formatting'] = {};
 
-    if (isNumberedList(trimmed)) {
+    if (isFigureCaption(trimmed)) {
+      blockType = 'figure';
+    } else if (isNumberedList(trimmed)) {
       blockType = 'list';
       formatting.isNumberedList = true;
       // Extract list level from indentation

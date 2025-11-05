@@ -10,7 +10,6 @@ import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import DependencyGraph from '@/components/DependencyGraph';
 import { 
   CheckCircle, 
   XCircle, 
@@ -27,9 +26,7 @@ import {
   Link as LinkIcon,
   Settings,
   ChevronDown,
-  ChevronUp,
-  GitBranch,
-  Network
+  ChevronUp
 } from 'lucide-react';
 
 interface ProposedNode {
@@ -50,17 +47,8 @@ interface ProposedNode {
       tags: string[];
       status: string;
       parameters: Record<string, any>;
-      estimated_time_minutes?: number;
-      isNestedTree?: boolean;
+      estimated_time_minutes: number;
     };
-    dependencies?: Array<{
-      referenced_title?: string;
-      referencedNodeTitle?: string;
-      dependency_type?: string;
-      dependencyType?: string;
-      extractedPhrase?: string;
-      evidence?: string;
-    }>;
     links: Array<{
       type: string;
       url: string;
@@ -81,7 +69,6 @@ interface ProposedNode {
       generated_by: string;
       confidence: number;
     };
-    isNestedTree?: boolean;
   };
   status: string;
   confidence: number;
@@ -106,7 +93,6 @@ export default function ProposalsPage() {
   const [deletingProposal, setDeletingProposal] = useState<string | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
   const [expandedProposals, setExpandedProposals] = useState<Set<string>>(new Set());
-  const [showDependencyGraph, setShowDependencyGraph] = useState(false);
 
   const fetchProposals = useCallback(async () => {
     try {
@@ -689,13 +675,6 @@ export default function ProposalsPage() {
         </Card>
       ) : (
         <>
-          {/* Dependency Graph */}
-          {showDependencyGraph && (
-            <Card className="mb-6">
-              <DependencyGraph proposals={proposedProposals} />
-            </Card>
-          )}
-
           {/* Bulk Actions */}
           <Card className="mb-6">
             <CardHeader>
@@ -729,14 +708,6 @@ export default function ProposalsPage() {
                       <CheckCircle className="h-4 w-4 mr-2" />
                     )}
                     Build Tree ({selectedProposals.size})
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowDependencyGraph(!showDependencyGraph)}
-                    className="flex items-center gap-2"
-                  >
-                    <Network className="h-4 w-4" />
-                    {showDependencyGraph ? 'Hide' : 'Show'} Dependency Graph
                   </Button>
                   <Button
                     variant="destructive"
@@ -818,13 +789,6 @@ export default function ProposalsPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {/* Nested Tree Badge */}
-                              {(node.metadata?.isNestedTree || proposal.node_json?.isNestedTree) && (
-                                <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 text-blue-700">
-                                  <GitBranch className="h-3 w-3 mr-1" />
-                                  Nested Tree
-                                </Badge>
-                              )}
                               <div className="flex items-center gap-1">
                                 <div className={`w-2 h-2 rounded-full ${getConfidenceColor(proposal.confidence)}`} />
                                 <span className="text-xs text-muted-foreground">
@@ -871,14 +835,10 @@ export default function ProposalsPage() {
                           {isExpanded && (
                         <CardContent className="pt-0">
                               <Tabs defaultValue="content" className="w-full">
-                                <TabsList className="grid w-full grid-cols-5">
+                                <TabsList className="grid w-full grid-cols-4">
                                   <TabsTrigger value="content" className="flex items-center gap-2">
                                     <FileText className="h-4 w-4" />
                                     Content
-                                  </TabsTrigger>
-                                  <TabsTrigger value="dependencies" className="flex items-center gap-2">
-                                    <Network className="h-4 w-4" />
-                                    Dependencies
                                   </TabsTrigger>
                                   <TabsTrigger value="links" className="flex items-center gap-2">
                                     <LinkIcon className="h-4 w-4" />
@@ -923,54 +883,6 @@ export default function ProposalsPage() {
                                       ))}
                                     </div>
                                   </div>
-                                    )}
-                                  </div>
-                                </TabsContent>
-                                
-                                <TabsContent value="dependencies" className="mt-4">
-                                  <div className="space-y-2">
-                                    <h4 className="font-medium text-sm">Dependencies</h4>
-                                    {node.dependencies && node.dependencies.length > 0 ? (
-                                      <div className="space-y-2">
-                                        {node.dependencies.map((dep, idx) => {
-                                          const depType = dep.dependencyType || dep.dependency_type || 'requires';
-                                          const depColors: Record<string, string> = {
-                                            requires: 'bg-blue-50 border-blue-200 text-blue-700',
-                                            uses_output: 'bg-green-50 border-green-200 text-green-700',
-                                            follows: 'bg-purple-50 border-purple-200 text-purple-700',
-                                            validates: 'bg-orange-50 border-orange-200 text-orange-700',
-                                          };
-                                          const depLabels: Record<string, string> = {
-                                            requires: 'Requires',
-                                            uses_output: 'Uses Output',
-                                            follows: 'Follows',
-                                            validates: 'Validates',
-                                          };
-                                          
-                                          return (
-                                            <div key={idx} className="p-3 border rounded bg-muted/50">
-                                              <div className="flex items-start gap-2">
-                                                <ArrowRight className="h-4 w-4 text-muted-foreground mt-0.5" />
-                                                <div className="flex-1">
-                                                  <Badge variant="outline" className={`text-xs ${depColors[depType] || depColors.requires} mb-1`}>
-                                                    {depLabels[depType] || depType}
-                                                  </Badge>
-                                                  <p className="font-medium text-sm mt-1">
-                                                    {dep.referencedNodeTitle || dep.referenced_title || 'Unknown node'}
-                                                  </p>
-                                                  {(dep.extractedPhrase || dep.evidence) && (
-                                                    <p className="text-xs text-muted-foreground italic mt-1">
-                                                      "{dep.extractedPhrase || dep.evidence}"
-                                                    </p>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      <p className="text-sm text-muted-foreground italic">No dependencies detected</p>
                                     )}
                                   </div>
                                 </TabsContent>

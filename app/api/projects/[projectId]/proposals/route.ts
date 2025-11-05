@@ -974,19 +974,31 @@ async function buildTreeInBackground(
       });
 
       const dependencyEntries: any[] = [];
-      const nodeTitleToIdMap = new Map<string, string>();
       
-      // Build map of node titles to IDs
+      // Map proposal titles to node IDs (more reliable than node names)
+      // This ensures dependencies can match even if nodes have generic names
+      const proposalTitleToNodeIdMap = new Map<string, string>();
       for (const createdNode of createdTreeNodes) {
         const proposal = createdNode.provenance?.proposal_id 
           ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
           : null;
         
-        if (proposal && proposal.node_json?.title) {
-          nodeTitleToIdMap.set(proposal.node_json.title.toLowerCase(), createdNode.id);
+        if (proposal) {
+          const proposalTitle = proposal.node_json?.title || proposal.node_json?.name || '';
+          if (proposalTitle) {
+            proposalTitleToNodeIdMap.set(proposalTitle.toLowerCase(), createdNode.id);
+          }
+          // Also add node name as fallback
+          if (createdNode.name) {
+            proposalTitleToNodeIdMap.set(createdNode.name.toLowerCase(), createdNode.id);
+          }
         }
-        // Also map by node name
-        nodeTitleToIdMap.set(createdNode.name.toLowerCase(), createdNode.id);
+      }
+      
+      console.log(`[BUILD_TREE] Built proposal title map with ${proposalTitleToNodeIdMap.size} entries`);
+      if (proposalTitleToNodeIdMap.size > 0) {
+        const sampleEntries = Array.from(proposalTitleToNodeIdMap.entries()).slice(0, 3);
+        console.log(`[BUILD_TREE] Sample title map entries:`, sampleEntries.map(([title, id]) => ({ title: title.substring(0, 40), nodeId: id.substring(0, 8) })));
       }
 
       // Extract dependencies from proposals
@@ -1000,8 +1012,8 @@ async function buildTreeInBackground(
             const referencedTitle = dep.referenced_title || dep.referencedNodeTitle;
             if (!referencedTitle) continue;
 
-            // Find referenced node by title
-            const referencedNodeId = nodeTitleToIdMap.get(referencedTitle.toLowerCase());
+            // Find referenced node by title using proposal-based mapping
+            const referencedNodeId = proposalTitleToNodeIdMap.get(referencedTitle.toLowerCase());
             
             if (referencedNodeId && referencedNodeId !== createdNode.id) {
               dependencyEntries.push({
@@ -1016,12 +1028,46 @@ async function buildTreeInBackground(
         }
       }
 
-       // Validate dependencies before inserting (remove orphaned references)
+       // Validate dependencies before inserting
        const allNodeIds = new Set(createdTreeNodes.map(n => n.id));
        const nodeTitleMap = new Map(createdTreeNodes.map(n => [n.id, n.name]));
+       console.log(`[BUILD_TREE] Preparing to insert ${dependencyEntries.length} dependencies...`);
        
+       // Validate each dependency has required fields
+       const invalidDeps = dependencyEntries.filter(d => 
+         !d.from_node_id || !d.to_node_id || !d.dependency_type
+       );
+       if (invalidDeps.length > 0) {
+         console.error(`[BUILD_TREE] ❌ Found ${invalidDeps.length} invalid dependencies:`, invalidDeps);
+       }
+       
+       // Validate dependency types are valid enum values
+       const validTypes = ['requires', 'uses_output', 'follows', 'validates'];
+       const invalidTypes = dependencyEntries.filter(d => 
+         !validTypes.includes(d.dependency_type)
+       );
+       if (invalidTypes.length > 0) {
+         console.error(`[BUILD_TREE] ❌ Found dependencies with invalid types:`, invalidTypes);
+         // Fix them
+         invalidTypes.forEach(d => {
+           console.warn(`[BUILD_TREE] Correcting invalid type "${d.dependency_type}" to "requires"`);
+           d.dependency_type = 'requires';
+         });
+       }
+       
+       // Remove duplicates
+       const uniqueDeps = dependencyEntries.filter((dep, index, self) =>
+         index === self.findIndex(d => 
+           d.from_node_id === dep.from_node_id && 
+           d.to_node_id === dep.to_node_id &&
+           d.dependency_type === dep.dependency_type
+         )
+       );
+       console.log(`[BUILD_TREE] After deduplication: ${uniqueDeps.length} unique dependencies (removed ${dependencyEntries.length - uniqueDeps.length} duplicates)`);
+       
+       // Filter unique dependencies to only valid ones (remove orphaned references)
        const unresolvedDependencies: any[] = [];
-       const validDependencies = dependencyEntries.filter(dep => {
+       const finalValidDependencies = uniqueDeps.filter(dep => {
          const targetExists = allNodeIds.has(dep.to_node_id);
          if (!targetExists) {
            unresolvedDependencies.push({
@@ -1057,20 +1103,55 @@ async function buildTreeInBackground(
        }
 
        // Insert valid dependencies
-       if (validDependencies.length > 0) {
-         console.log(`[BUILD_TREE] Inserting ${validDependencies.length} dependency entries (${dependencyEntries.length - validDependencies.length} unresolved)`);
-         const { error: depError } = await supabaseServer
+       if (finalValidDependencies.length > 0) {
+         console.log(`[BUILD_TREE] Inserting ${finalValidDependencies.length} dependency entries (${dependencyEntries.length - finalValidDependencies.length} unresolved/invalid)`);
+         const { error: depError, data: insertedDeps } = await supabaseServer
            .from('node_dependencies')
-           .insert(validDependencies);
+           .insert(finalValidDependencies)
+           .select();
 
          if (depError) {
-           console.error('[BUILD_TREE] Failed to create node dependencies:', depError);
-           console.warn('[BUILD_TREE] Continuing despite dependency creation failure');
+           console.error('[BUILD_TREE] ❌ CRITICAL: Failed to insert dependencies');
+           console.error('Error details:', depError);
+           console.error('Attempted to insert:', finalValidDependencies.length, 'dependencies');
+           console.error('Sample dependency:', finalValidDependencies[0]);
+           
+           // Check if it's a schema mismatch
+           if (depError.message?.includes('column') || 
+               depError.message?.includes('does not exist') ||
+               depError.code === '42703') {
+             console.error('⚠️  SCHEMA MISMATCH: The node_dependencies table schema may be outdated.');
+             console.error('⚠️  Run migration: migrations/035_update_node_dependencies_table.sql');
+           }
+           
+           // Store failed dependencies in tree metadata
+           const { data: existingTree } = await supabaseServer
+             .from('experiment_trees')
+             .select('metadata')
+             .eq('id', experimentTreeId)
+             .single();
+           
+           const updatedMetadata = {
+             ...(existingTree?.metadata || {}),
+             failed_dependencies: finalValidDependencies.map(d => ({
+               from: nodeTitleMap.get(d.from_node_id) || 'Unknown',
+               to: nodeTitleMap.get(d.to_node_id) || 'Unknown',
+               type: d.dependency_type,
+               evidence: d.evidence_text || ''
+             })),
+             dependency_insert_error: depError.message,
+             dependency_insert_error_code: depError.code
+           };
+           
+           await supabaseServer
+             .from('experiment_trees')
+             .update({ metadata: updatedMetadata })
+             .eq('id', experimentTreeId);
          } else {
-           console.log('[BUILD_TREE] Successfully created node dependency entries');
+           console.log(`[BUILD_TREE] ✅ Successfully inserted ${insertedDeps?.length || 0} dependencies`);
          }
        } else if (dependencyEntries.length > 0) {
-         console.warn(`[BUILD_TREE] All ${dependencyEntries.length} dependencies were unresolved`);
+         console.warn(`[BUILD_TREE] All ${dependencyEntries.length} dependencies were unresolved or invalid`);
        }
 
       // Create attachment entries for each node
@@ -1122,16 +1203,43 @@ async function buildTreeInBackground(
 
       // Insert node attachment entries
       if (attachmentEntries.length > 0) {
-        console.log('[BUILD_TREE] Inserting', attachmentEntries.length, 'attachment entries');
-        const { error: attachmentError } = await supabaseServer
+        console.log(`[BUILD_TREE] Preparing to insert ${attachmentEntries.length} attachments`);
+        console.log(`[BUILD_TREE] Sample attachment:`, {
+          node_id: attachmentEntries[0].node_id?.substring(0, 8),
+          name: attachmentEntries[0].name,
+          description: attachmentEntries[0].description?.substring(0, 50)
+        });
+        
+        const { error: attachError, data: insertedAttachments } = await supabaseServer
           .from('node_attachments')
-          .insert(attachmentEntries);
+          .insert(attachmentEntries)
+          .select();
 
-        if (attachmentError) {
-          console.error('[BUILD_TREE] Failed to create node attachments:', attachmentError);
-          console.warn('[BUILD_TREE] Continuing despite attachment creation failure');
+        if (attachError) {
+          console.error('[BUILD_TREE] ❌ CRITICAL: Failed to insert attachments');
+          console.error('Error details:', attachError);
+          console.error('Attempted to insert:', attachmentEntries.length, 'attachments');
+          
+          // Store in tree metadata
+          const { data: existingTree } = await supabaseServer
+            .from('experiment_trees')
+            .select('metadata')
+            .eq('id', experimentTreeId)
+            .single();
+          
+          const updatedMetadata = {
+            ...(existingTree?.metadata || {}),
+            attachment_insert_error: attachError.message,
+            attachment_insert_error_code: attachError.code,
+            failed_attachments_count: attachmentEntries.length
+          };
+          
+          await supabaseServer
+            .from('experiment_trees')
+            .update({ metadata: updatedMetadata })
+            .eq('id', experimentTreeId);
         } else {
-          console.log('[BUILD_TREE] Successfully created node attachment entries');
+          console.log(`[BUILD_TREE] ✅ Successfully inserted ${insertedAttachments?.length || 0} attachments`);
         }
       }
 
