@@ -106,7 +106,6 @@ export default function ImportPage() {
   const [selectedProposals, setSelectedProposals] = useState<Set<string>>(new Set());
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
   const [selectedDetailView, setSelectedDetailView] = useState<Record<string, string>>({});
-  const [showConfidenceInfo, setShowConfidenceInfo] = useState<Record<string, boolean>>({});
   const [openNestedTrees, setOpenNestedTrees] = useState<Set<string>>(new Set());
   const [nestedTreeData, setNestedTreeData] = useState<Record<string, any>>({});
   const [loadingNestedTrees, setLoadingNestedTrees] = useState<Set<string>>(new Set());
@@ -343,13 +342,8 @@ export default function ImportPage() {
                       
                       return (
                         <Card key={node.id} className="text-xs w-full" onClick={(e) => e.stopPropagation()}>
-                          <CardHeader className="pb-3 min-w-0">
+                          <CardHeader className="pb-0 min-w-0">
                             <CardTitle className="text-sm">{node.name}</CardTitle>
-                            {description && description !== contentText && (
-                              <CardDescription className="text-xs mt-1 whitespace-pre-wrap break-words min-w-0">
-                                {description}
-                              </CardDescription>
-                            )}
                           </CardHeader>
                           <CardContent onClick={(e) => e.stopPropagation()}>
                             <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
@@ -478,13 +472,8 @@ export default function ImportPage() {
                       
                       return (
                         <Card key={proposal.id} className="text-xs w-full" onClick={(e) => e.stopPropagation()}>
-                          <CardHeader className="pb-3 min-w-0">
+                          <CardHeader className="pb-0 min-w-0">
                             <CardTitle className="text-sm">{node.title}</CardTitle>
-                            {description && (
-                              <CardDescription className="text-xs mt-1 whitespace-pre-wrap break-words min-w-0">
-                                {description}
-                              </CardDescription>
-                            )}
                           </CardHeader>
                           <CardContent onClick={(e) => e.stopPropagation()}>
                             <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
@@ -544,12 +533,6 @@ export default function ImportPage() {
                                       <span className="font-medium">Type:</span>{' '}
                                       {node.metadata?.node_type || node.node_type || 'uncategorized'}
                                     </div>
-                                    {proposal.confidence !== undefined && (
-                                      <div>
-                                        <span className="font-medium">Confidence:</span>{' '}
-                                        {Math.round(proposal.confidence * 100)}%
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
                               </TabsContent>
@@ -641,13 +624,8 @@ export default function ImportPage() {
                       
                       return (
                         <Card key={proposal.id} className="text-xs w-full" onClick={(e) => e.stopPropagation()}>
-                          <CardHeader className="pb-3 min-w-0">
+                          <CardHeader className="pb-0 min-w-0">
                             <CardTitle className="text-sm">{node.title}</CardTitle>
-                            {description && (
-                              <CardDescription className="text-xs mt-1 whitespace-pre-wrap break-words min-w-0">
-                                {description}
-                              </CardDescription>
-                            )}
                           </CardHeader>
                           <CardContent onClick={(e) => e.stopPropagation()}>
                             <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
@@ -707,12 +685,6 @@ export default function ImportPage() {
                                       <span className="font-medium">Type:</span>{' '}
                                       {node.metadata?.node_type || node.node_type || 'uncategorized'}
                                     </div>
-                                    {proposal.confidence !== undefined && (
-                                      <div>
-                                        <span className="font-medium">Confidence:</span>{' '}
-                                        {Math.round(proposal.confidence * 100)}%
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
                               </TabsContent>
@@ -3108,47 +3080,12 @@ export default function ImportPage() {
                                                   )}
                                                 </button>
                                               )}
-                                              <div className="flex items-center gap-1">
-                                                <Badge 
-                                                  variant={proposal.confidence > 0.8 ? 'default' : proposal.confidence > 0.6 ? 'secondary' : 'outline'}
-                                                  className="text-xs"
-                                                >
-                                                  {Math.round(proposal.confidence * 100)}% confidence
-                                                </Badge>
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setShowConfidenceInfo(prev => ({
-                                                      ...prev,
-                                                      [proposal.id]: !prev[proposal.id]
-                                                    }));
-                                                  }}
-                                                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                                                  title="Learn about confidence scores"
-                                                >
-                                                  <Info className="h-3 w-3 text-gray-500" />
-                                                </button>
-                                              </div>
                                             </div>
                                             
                                             {/* Nested Tree Dropdown Content */}
                                             {(node.isNestedTree || node.metadata?.isNestedTree) && openNestedTrees.has(proposal.id) && nestedTreeData[proposal.id] && (
                                               <div className="mb-3 mt-2 border-l-2 border-blue-200 pl-4">
                                                 {renderNestedTree(nestedTreeData[proposal.id], proposal.id)}
-                                              </div>
-                                            )}
-
-                                            {showConfidenceInfo[proposal.id] && (
-                                              <div className="mb-3 p-3 bg-blue-50 rounded border border-blue-200 text-xs">
-                                                <p className="font-medium mb-1">About Confidence Scores</p>
-                                                <p className="text-gray-700 mb-2">
-                                                  Confidence indicates how well-supported each proposal is based on source count, structured data, and verification status.
-                                                </p>
-                                                <ul className="space-y-1 text-gray-700">
-                                                  <li><strong>80%+ (Green):</strong> High confidence - multiple sources, structured data</li>
-                                                  <li><strong>60-79% (Yellow):</strong> Medium confidence - decent support, may need review</li>
-                                                  <li><strong>&lt;60% (Red):</strong> Low confidence - limited support, needs verification</li>
-                                                </ul>
                                               </div>
                                             )}
                                             
