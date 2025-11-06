@@ -46,7 +46,9 @@ import {
   ChevronDown,
   Info,
   GitBranch,
-  Link
+  Link,
+  Paperclip,
+  Settings
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -294,15 +296,21 @@ export default function ImportPage() {
 
     // If tree is built, show blocks and nodes
     if (treeData.tree && treeData.blocks && treeData.nodes) {
+      const treeDescription = treeData.description || '';
       return (
         <div className="space-y-3">
+          {treeDescription && (
+            <div className="pb-3 border-b">
+              <p className="text-xs text-muted-foreground whitespace-pre-wrap">{treeDescription}</p>
+            </div>
+          )}
           {treeData.blocks.map((block: any, blockIndex: number) => {
             const blockKey = `${block.id}_${proposalId}`;
             const isBlockExpanded = expandedNestedBlocks.has(blockKey);
             const blockNodes = treeData.nodes.filter((n: any) => n.block_id === block.id);
 
             return (
-              <div key={block.id} className="border rounded-lg">
+              <div key={block.id} className="border rounded-lg overflow-hidden">
                 <div
                   className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={(e) => {
@@ -328,18 +336,87 @@ export default function ImportPage() {
                   />
                 </div>
                 {isBlockExpanded && (
-                  <div className="px-2 pb-2 space-y-2">
-                    {blockNodes.map((node: any, nodeIndex: number) => (
-                      <div key={node.id} className="border rounded p-2 text-xs">
-                        <div className="font-medium">{node.name}</div>
-                        {node.description && (
-                          <div className="text-muted-foreground mt-1">{node.description.substring(0, 100)}...</div>
-                        )}
-                        <Badge variant="outline" className="text-xs mt-1">
-                          {node.node_type}
-                        </Badge>
-                      </div>
-                    ))}
+                  <div className="px-2 pb-2 space-y-3">
+                    {blockNodes.map((node: any, nodeIndex: number) => {
+                      const contentText = node.content || node.description || '';
+                      const description = node.description || '';
+                      
+                      return (
+                        <Card key={node.id} className="text-xs w-full" onClick={(e) => e.stopPropagation()}>
+                          <CardHeader className="pb-3 min-w-0">
+                            <CardTitle className="text-sm">{node.name}</CardTitle>
+                            {description && description !== contentText && (
+                              <CardDescription className="text-xs mt-1 whitespace-pre-wrap break-words min-w-0">
+                                {description}
+                              </CardDescription>
+                            )}
+                          </CardHeader>
+                          <CardContent onClick={(e) => e.stopPropagation()}>
+                            <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
+                              <TabsList className="grid w-full grid-cols-4 h-8" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <FileText className="h-3 w-3" />
+                                  Content
+                                </TabsTrigger>
+                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Link className="h-3 w-3" />
+                                  Links
+                                </TabsTrigger>
+                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Paperclip className="h-3 w-3" />
+                                  Attachments
+                                </TabsTrigger>
+                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Settings className="h-3 w-3" />
+                                  Metadata
+                                </TabsTrigger>
+                              </TabsList>
+                              
+                              <TabsContent value="content" className="mt-3">
+                                <div className="space-y-2">
+                                  {contentText ? (
+                                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                      {contentText}
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground italic">
+                                      No content available
+                                    </p>
+                                  )}
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="links" className="mt-3">
+                                <div className="space-y-2">
+                                  <p className="text-xs text-muted-foreground">
+                                    Links and references will be displayed here
+                                  </p>
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="attachments" className="mt-3">
+                                <div className="space-y-2">
+                                  <p className="text-xs text-muted-foreground">
+                                    File attachments and resources will be displayed here
+                                  </p>
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="metadata" className="mt-3">
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                      <span className="font-medium">Type:</span>{' '}
+                                      {node.node_type || 'uncategorized'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </TabsContent>
+                            </Tabs>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -353,15 +430,21 @@ export default function ImportPage() {
     // Use blocks structure if available (from API), otherwise group proposals manually
     if (treeData.blocks && Array.isArray(treeData.blocks) && treeData.blocks.length > 0) {
       // Use the blocks structure returned by API
+      const treeDescription = treeData.description || '';
       return (
         <div className="space-y-3">
+          {treeDescription && (
+            <div className="pb-3 border-b">
+              <p className="text-xs text-muted-foreground whitespace-pre-wrap">{treeDescription}</p>
+            </div>
+          )}
           {treeData.blocks.map((block: any, blockIndex: number) => {
             const blockKey = `nested_proposal_block_${proposalId}_${block.block_type || blockIndex}`;
             const isBlockExpanded = expandedNestedBlocks.has(blockKey);
             const blockProposals = block.proposals || [];
 
             return (
-              <div key={block.id || blockIndex} className="border rounded-lg">
+              <div key={block.id || blockIndex} className="border rounded-lg overflow-hidden">
                 <div
                   className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={(e) => {
@@ -387,24 +470,92 @@ export default function ImportPage() {
                   />
                 </div>
                 {isBlockExpanded && (
-                  <div className="px-2 pb-2 space-y-2">
+                  <div className="px-2 pb-2 space-y-3">
                     {blockProposals.map((proposal: any, nodeIndex: number) => {
                       const node = proposal.node_json;
+                      const contentText = typeof node.content === 'string' ? node.content : node.content?.text || '';
+                      const description = node.short_summary || node.description || '';
+                      
                       return (
-                        <div key={proposal.id} className="border rounded p-2 text-xs">
-                          <div className="font-medium">{node.title}</div>
-                          {node.short_summary && (
-                            <div className="text-muted-foreground mt-1">{node.short_summary.substring(0, 100)}...</div>
-                          )}
-                          {node.content?.text && (
-                            <div className="text-muted-foreground mt-1 text-xs line-clamp-2">
-                              {node.content.text.substring(0, 150)}...
-                            </div>
-                          )}
-                          <Badge variant="outline" className="text-xs mt-1">
-                            {node.metadata?.node_type || node.node_type || 'uncategorized'}
-                          </Badge>
-                        </div>
+                        <Card key={proposal.id} className="text-xs w-full" onClick={(e) => e.stopPropagation()}>
+                          <CardHeader className="pb-3 min-w-0">
+                            <CardTitle className="text-sm">{node.title}</CardTitle>
+                            {description && (
+                              <CardDescription className="text-xs mt-1 whitespace-pre-wrap break-words min-w-0">
+                                {description}
+                              </CardDescription>
+                            )}
+                          </CardHeader>
+                          <CardContent onClick={(e) => e.stopPropagation()}>
+                            <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
+                              <TabsList className="grid w-full grid-cols-4 h-8" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <FileText className="h-3 w-3" />
+                                  Content
+                                </TabsTrigger>
+                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Link className="h-3 w-3" />
+                                  Links
+                                </TabsTrigger>
+                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Paperclip className="h-3 w-3" />
+                                  Attachments
+                                </TabsTrigger>
+                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Settings className="h-3 w-3" />
+                                  Metadata
+                                </TabsTrigger>
+                              </TabsList>
+                              
+                              <TabsContent value="content" className="mt-3">
+                                <div className="space-y-2">
+                                  {contentText ? (
+                                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                      {contentText}
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground italic">
+                                      No content available
+                                    </p>
+                                  )}
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="links" className="mt-3">
+                                <div className="space-y-2">
+                                  <p className="text-xs text-muted-foreground">
+                                    Links and references will be displayed here
+                                  </p>
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="attachments" className="mt-3">
+                                <div className="space-y-2">
+                                  <p className="text-xs text-muted-foreground">
+                                    File attachments and resources will be displayed here
+                                  </p>
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="metadata" className="mt-3">
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                      <span className="font-medium">Type:</span>{' '}
+                                      {node.metadata?.node_type || node.node_type || 'uncategorized'}
+                                    </div>
+                                    {proposal.confidence !== undefined && (
+                                      <div>
+                                        <span className="font-medium">Confidence:</span>{' '}
+                                        {Math.round(proposal.confidence * 100)}%
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </TabsContent>
+                            </Tabs>
+                          </CardContent>
+                        </Card>
                       );
                     })}
                   </div>
@@ -419,6 +570,7 @@ export default function ImportPage() {
     // Fallback: Group proposals by block type if blocks structure not available
     if (treeData.proposals && Array.isArray(treeData.proposals) && treeData.proposals.length > 0) {
       // Group proposals by block type
+      const treeDescription = treeData.description || '';
       const grouped = treeData.proposals.reduce((acc: any, proposal: any) => {
         const rawType = proposal.node_json?.metadata?.node_type || proposal.node_json?.node_type || 'uncategorized';
         const blockType = rawType.toLowerCase();
@@ -445,12 +597,17 @@ export default function ImportPage() {
 
       return (
         <div className="space-y-3">
+          {treeDescription && (
+            <div className="pb-3 border-b">
+              <p className="text-xs text-muted-foreground whitespace-pre-wrap">{treeDescription}</p>
+            </div>
+          )}
           {Object.entries(grouped).map(([blockType, proposals], blockIndex) => {
             const blockKey = `nested_proposal_block_${proposalId}_${blockType}`;
             const isBlockExpanded = expandedNestedBlocks.has(blockKey);
 
             return (
-              <div key={blockType} className="border rounded-lg">
+              <div key={blockType} className="border rounded-lg overflow-hidden">
                 <div
                   className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={(e) => {
@@ -476,24 +633,92 @@ export default function ImportPage() {
                   />
                 </div>
                 {isBlockExpanded && (
-                  <div className="px-2 pb-2 space-y-2">
+                  <div className="px-2 pb-2 space-y-3">
                     {proposals.map((proposal: any, nodeIndex: number) => {
                       const node = proposal.node_json;
+                      const contentText = typeof node.content === 'string' ? node.content : node.content?.text || '';
+                      const description = node.short_summary || node.description || '';
+                      
                       return (
-                        <div key={proposal.id} className="border rounded p-2 text-xs">
-                          <div className="font-medium">{node.title}</div>
-                          {node.short_summary && (
-                            <div className="text-muted-foreground mt-1">{node.short_summary.substring(0, 100)}...</div>
-                          )}
-                          {node.content?.text && (
-                            <div className="text-muted-foreground mt-1 text-xs line-clamp-2">
-                              {node.content.text.substring(0, 150)}...
-                            </div>
-                          )}
-                          <Badge variant="outline" className="text-xs mt-1">
-                            {node.metadata?.node_type || node.node_type || 'uncategorized'}
-                          </Badge>
-                        </div>
+                        <Card key={proposal.id} className="text-xs w-full" onClick={(e) => e.stopPropagation()}>
+                          <CardHeader className="pb-3 min-w-0">
+                            <CardTitle className="text-sm">{node.title}</CardTitle>
+                            {description && (
+                              <CardDescription className="text-xs mt-1 whitespace-pre-wrap break-words min-w-0">
+                                {description}
+                              </CardDescription>
+                            )}
+                          </CardHeader>
+                          <CardContent onClick={(e) => e.stopPropagation()}>
+                            <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
+                              <TabsList className="grid w-full grid-cols-4 h-8" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <FileText className="h-3 w-3" />
+                                  Content
+                                </TabsTrigger>
+                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Link className="h-3 w-3" />
+                                  Links
+                                </TabsTrigger>
+                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Paperclip className="h-3 w-3" />
+                                  Attachments
+                                </TabsTrigger>
+                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                  <Settings className="h-3 w-3" />
+                                  Metadata
+                                </TabsTrigger>
+                              </TabsList>
+                              
+                              <TabsContent value="content" className="mt-3">
+                                <div className="space-y-2">
+                                  {contentText ? (
+                                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                      {contentText}
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground italic">
+                                      No content available
+                                    </p>
+                                  )}
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="links" className="mt-3">
+                                <div className="space-y-2">
+                                  <p className="text-xs text-muted-foreground">
+                                    Links and references will be displayed here
+                                  </p>
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="attachments" className="mt-3">
+                                <div className="space-y-2">
+                                  <p className="text-xs text-muted-foreground">
+                                    File attachments and resources will be displayed here
+                                  </p>
+                                </div>
+                              </TabsContent>
+                              
+                              <TabsContent value="metadata" className="mt-3">
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                      <span className="font-medium">Type:</span>{' '}
+                                      {node.metadata?.node_type || node.node_type || 'uncategorized'}
+                                    </div>
+                                    {proposal.confidence !== undefined && (
+                                      <div>
+                                        <span className="font-medium">Confidence:</span>{' '}
+                                        {Math.round(proposal.confidence * 100)}%
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </TabsContent>
+                            </Tabs>
+                          </CardContent>
+                        </Card>
                       );
                     })}
                   </div>
@@ -2778,7 +3003,7 @@ export default function ImportPage() {
                           const selectedInBlock = block.nodes.filter(proposal => selectedProposals.has(proposal.id)).length;
                           
                           return (
-                            <div key={blockKey} className="border rounded-lg">
+                            <div key={blockKey} className="border rounded-lg overflow-hidden">
                               {/* Block Header - Always visible, clickable */}
                               <div 
                                 className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
@@ -2827,23 +3052,6 @@ export default function ImportPage() {
                               {/* Block Content - Only visible when expanded */}
                               {isBlockExpanded && (
                                 <div className="px-4 pb-4 space-y-3">
-                                  {/* Nested Tree Dropdowns */}
-                                  {nestedTreeProposalsInBlock.map((nestedProposal) => {
-                                    const isNestedOpen = openNestedTrees.has(nestedProposal.id);
-                                    return (
-                                      isNestedOpen && nestedTreeData[nestedProposal.id] && (
-                                        <div key={nestedProposal.id} className="mb-4 pb-4 border-b">
-                                          <div className="text-xs font-medium text-muted-foreground mb-2">
-                                            {nestedProposal.node_json.title}:
-                                          </div>
-                                          <div className="ml-4 mt-2 border-l-2 border-blue-200 pl-4">
-                                            {renderNestedTree(nestedTreeData[nestedProposal.id], nestedProposal.id)}
-                                          </div>
-                                        </div>
-                                      )
-                                    );
-                                  })}
-                                  
                                   {block.nodes.map((proposal, nodeIndex) => {
                                     const node = proposal.node_json;
                                     const isSelected = selectedProposals.has(proposal.id);
@@ -2890,7 +3098,7 @@ export default function ImportPage() {
                                                   title="View nested tree"
                                                 >
                                                   <Link className="w-3 h-3" />
-                                                  <span>View Tree</span>
+                                                  <span>View Nested Tree</span>
                                                   {loadingNestedTrees.has(proposal.id) ? (
                                                     <Loader2 className="w-3 h-3 animate-spin" />
                                                   ) : (
@@ -2943,9 +3151,6 @@ export default function ImportPage() {
                                                 </ul>
                                               </div>
                                             )}
-                                            <p className="text-sm text-muted-foreground mb-3">
-                                              {node.short_summary || node.content?.text?.substring(0, 200) + '...'}
-                                            </p>
                                             
                                             {/* Clickable Tabs */}
                                             <div className="flex gap-1 mb-3">

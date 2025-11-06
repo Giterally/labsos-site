@@ -199,11 +199,14 @@ export async function GET(
       };
       
       console.log(`[NESTED_TREE_API] Created fallback proposal and block`);
+      const nestedTreeDescription = nodeJson?.short_summary || nodeJson?.description || '';
       return NextResponse.json({
         proposals: [fallbackProposal],
         blocks: [fallbackBlock],
         message: 'Nested tree proposal has no content - showing fallback',
-        isProposed: true
+        isProposed: true,
+        description: nestedTreeDescription,
+        title: proposalTitle
       });
     }
 
@@ -352,10 +355,15 @@ export async function GET(
       }))
     });
     
+    // Get the nested tree description from the original proposal
+    const nestedTreeDescription = nodeJson?.short_summary || nodeJson?.description || '';
+    
     const responseData = {
       proposals: nestedTreeProposals || [],
       blocks: blocks || [],
-      isProposed: true
+      isProposed: true,
+      description: nestedTreeDescription,
+      title: proposalTitle
     };
     
     console.log(`[NESTED_TREE_API] Response data structure:`, {
