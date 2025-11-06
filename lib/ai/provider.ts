@@ -196,10 +196,18 @@ export class ClaudeProvider implements AIProvider {
       try {
         const response = await this.client.messages.create({
           model: 'claude-3-haiku-20240307',
-          max_tokens: 4096, // Increased from 2000 to prevent JSON truncation
+          max_tokens: 16384, // Increased for large documents like dissertations
           temperature: 0.3, // Lower temperature for more consistent JSON
           messages: [{ role: 'user', content: jsonPrompt }],
         });
+        
+        // Check if response was truncated due to max_tokens limit
+        const stopReason = response.stop_reason;
+        if (stopReason === 'max_tokens') {
+          const errorMessage = `The document is too large and the AI response was cut off. The workflow extraction requires more space than the current limit allows. This usually happens with very long documents like dissertations or research papers with many sections. Please try splitting the document into smaller parts, or contact support to increase the processing limit.`;
+          console.error('[CLAUDE_PROVIDER] Response truncated due to max_tokens limit');
+          throw new Error(errorMessage);
+        }
         
         let content = response.content[0].type === 'text' ? response.content[0].text : '{}';
         
@@ -209,12 +217,28 @@ export class ClaudeProvider implements AIProvider {
         try {
           return JSON.parse(content);
         } catch (parseError) {
+          // Check if the JSON error suggests truncation (incomplete arrays/objects)
+          const parseErrorMessage = parseError instanceof Error ? parseError.message : 'Unknown parse error';
+          const isTruncationError = parseErrorMessage.includes('Expected') && 
+                                   (parseErrorMessage.includes('after array element') || 
+                                    parseErrorMessage.includes('after property') ||
+                                    parseErrorMessage.includes('Unexpected end'));
+          
+          if (isTruncationError) {
+            const errorMessage = `The document is too large and the AI response was cut off mid-way, resulting in incomplete JSON. This usually happens with very long documents like dissertations or research papers with many sections. The workflow extraction requires more space than the current limit allows. Please try splitting the document into smaller parts, or contact support to increase the processing limit.`;
+            console.error('[CLAUDE_PROVIDER] JSON parsing failed - likely due to truncation:', {
+              contentLength: content.length,
+              error: parseErrorMessage,
+            });
+            throw new Error(errorMessage);
+          }
+          
           console.error('[CLAUDE_PROVIDER] Failed to parse JSON response:', {
             contentLength: content.length,
             contentPreview: content.substring(0, 200),
-            error: parseError instanceof Error ? parseError.message : 'Unknown parse error',
+            error: parseErrorMessage,
           });
-          throw new Error(`Invalid JSON response from Claude: ${parseError instanceof Error ? parseError.message : 'Parse error'}. Content preview: ${content.substring(0, 100)}...`);
+          throw new Error(`Invalid JSON response from Claude: ${parseErrorMessage}. Content preview: ${content.substring(0, 100)}...`);
         }
       } catch (error: any) {
         // Enhance error messages

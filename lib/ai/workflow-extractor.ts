@@ -160,6 +160,13 @@ export async function extractWorkflow(
       throw new Error(`Invalid workflow extraction result: ${error.errors.map((e: any) => `${e.path.join('.')}: ${e.message}`).join('; ')}`);
     }
     
+    // Check for truncation/token limit errors (preserve user-friendly messages)
+    if (error.message?.includes('too large') || error.message?.includes('cut off') || error.message?.includes('processing limit')) {
+      console.error(`[WORKFLOW_EXTRACTOR] Document too large - truncation detected`);
+      // Preserve the user-friendly error message from the provider
+      throw error;
+    }
+    
     // Check for API errors
     if (error.message?.includes('API') || error.message?.includes('key') || error.message?.includes('authentication')) {
       console.error(`[WORKFLOW_EXTRACTOR] Possible API configuration issue`);
