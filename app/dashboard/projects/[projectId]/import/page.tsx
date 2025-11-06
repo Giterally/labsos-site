@@ -44,7 +44,8 @@ import {
   Loader2,
   Square,
   ChevronDown,
-  Info
+  Info,
+  GitBranch
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -2233,9 +2234,40 @@ export default function ImportPage() {
                 <>
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <p className="text-sm text-muted-foreground">
-                        {proposalsStats?.totalNodes || proposals.length} node(s) • {proposalsStats?.totalBlocks || 0} block(s) • {selectedProposals.size} selected
-                      </p>
+                      {(() => {
+                        // Filter proposals into regular and nested tree proposals
+                        const regularProposals = proposals.filter(p => 
+                          !p.node_json?.isNestedTree && 
+                          !p.node_json?.metadata?.isNestedTree
+                        );
+                        const nestedTreeProposals = proposals.filter(p => 
+                          p.node_json?.isNestedTree === true || 
+                          p.node_json?.metadata?.isNestedTree === true
+                        );
+                        
+                        // Calculate block count from regular proposals only
+                        const groupedRegular = regularProposals.reduce((acc, proposal) => {
+                          const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
+                          const blockType = rawType.toLowerCase();
+                          if (!acc[blockType]) {
+                            acc[blockType] = [];
+                          }
+                          acc[blockType].push(proposal);
+                          return acc;
+                        }, {} as Record<string, any[]>);
+                        
+                        const MAX_NODES_PER_BLOCK = 15;
+                        let totalBlocks = 0;
+                        Object.values(groupedRegular).forEach((nodes: any[]) => {
+                          totalBlocks += Math.ceil(nodes.length / MAX_NODES_PER_BLOCK);
+                        });
+                        
+                        return (
+                          <p className="text-sm text-muted-foreground">
+                            {regularProposals.length} node(s) • {totalBlocks} block(s) • {nestedTreeProposals.length} nested tree(s) • {selectedProposals.size} selected
+                          </p>
+                        );
+                      })()}
                       <p className="text-xs text-muted-foreground mt-1">
                         Click on nodes to select/deselect them for tree building
                       </p>
@@ -2303,10 +2335,20 @@ export default function ImportPage() {
                     </div>
                   )}
                   
-                  {/* Group proposals by block type and display in order */}
+                  {/* Filter proposals into regular and nested tree proposals */}
                   {(() => {
-                    // Group proposals by node type (normalize to lowercase)
-                    const groupedProposals = proposals.reduce((acc, proposal) => {
+                    // Split proposals into regular and nested tree proposals
+                    const regularProposals = proposals.filter(p => 
+                      !p.node_json?.isNestedTree && 
+                      !p.node_json?.metadata?.isNestedTree
+                    );
+                    const nestedTreeProposals = proposals.filter(p => 
+                      p.node_json?.isNestedTree === true || 
+                      p.node_json?.metadata?.isNestedTree === true
+                    );
+                    
+                    // Group regular proposals by node type (normalize to lowercase)
+                    const groupedProposals = regularProposals.reduce((acc, proposal) => {
                       const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
                       const blockType = rawType.toLowerCase();
                       if (!acc[blockType]) {
@@ -2376,9 +2418,318 @@ export default function ImportPage() {
                     });
                     
                     const blocksToRender = splitLargeBlocks(orderedGrouped);
+                    
+                    // Nested tree section key
+                    const nestedTreeSectionKey = 'nested_tree_proposals';
+                    const isNestedTreeSectionExpanded = expandedBlocks.has(nestedTreeSectionKey);
+                    const selectedInNested = nestedTreeProposals.filter(p => selectedProposals.has(p.id)).length;
 
                     return (
                       <div className="space-y-6">
+                        {/* Nested Tree Proposals Section */}
+                        {nestedTreeProposals.length > 0 && (
+                          <div className="border rounded-lg border-purple-200 bg-purple-50/30">
+                            {/* Nested Tree Section Header */}
+                            <div 
+                              className="flex items-center gap-3 p-4 cursor-pointer hover:bg-purple-50 transition-colors"
+                              onClick={() => {
+                                const newExpanded = new Set(expandedBlocks);
+                                if (isNestedTreeSectionExpanded) {
+                                  newExpanded.delete(nestedTreeSectionKey);
+                                } else {
+                                  newExpanded.add(nestedTreeSectionKey);
+                                }
+                                setExpandedBlocks(newExpanded);
+                              }}
+                            >
+                              <div className="flex items-center justify-center w-8 h-8 bg-purple-100 text-purple-600 rounded-full">
+                                <GitBranch className="w-4 h-4" />
+                              </div>
+                              <h3 className="text-lg font-semibold flex-1">Nested Tree Proposals</h3>
+                              <div className="flex items-center gap-2">
+                                {selectedInNested > 0 && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {selectedInNested}/{nestedTreeProposals.length} selected
+                                  </Badge>
+                                )}
+                                <Badge variant="outline" className="text-xs bg-purple-100 border-purple-300">
+                                  {nestedTreeProposals.length} nested tree(s)
+                                </Badge>
+                                <ChevronDown 
+                                  className={`w-4 h-4 transition-transform ${isNestedTreeSectionExpanded ? 'rotate-180' : ''}`}
+                                />
+                              </div>
+                            </div>
+                            
+                            {/* Nested Tree Proposals Content */}
+                            {isNestedTreeSectionExpanded && (
+                              <div className="px-4 pb-4 space-y-3">
+                                {nestedTreeProposals.map((proposal, nodeIndex) => {
+                                  const node = proposal.node_json;
+                                  const isSelected = selectedProposals.has(proposal.id);
+                                  
+                                  return (
+                                    <div 
+                                      key={proposal.id} 
+                                      className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                                        isSelected ? 'border-purple-500 bg-purple-50' : 'border-purple-200 hover:border-purple-300 bg-white'
+                                      }`}
+                                      onClick={() => {
+                                        const newSelected = new Set(selectedProposals);
+                                        if (isSelected) {
+                                          newSelected.delete(proposal.id);
+                                        } else {
+                                          newSelected.add(proposal.id);
+                                        }
+                                        setSelectedProposals(newSelected);
+                                      }}
+                                    >
+                                      <div className="flex items-start gap-3">
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => {}} // Handled by parent onClick
+                                            className="mt-1"
+                                          />
+                                          <div className="flex items-center justify-center w-6 h-6 bg-purple-100 text-purple-600 rounded-full text-xs font-medium">
+                                            {nodeIndex + 1}
+                                          </div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <h4 className="font-medium text-sm">{node.title}</h4>
+                                            <Badge variant="outline" className="text-xs bg-purple-100 border-purple-300 text-purple-700">
+                                              Nested Tree
+                                            </Badge>
+                                            <div className="flex items-center gap-1">
+                                              <Badge 
+                                                variant={proposal.confidence > 0.8 ? 'default' : proposal.confidence > 0.6 ? 'secondary' : 'outline'}
+                                                className="text-xs"
+                                              >
+                                                {Math.round(proposal.confidence * 100)}% confidence
+                                              </Badge>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setShowConfidenceInfo(prev => ({
+                                                    ...prev,
+                                                    [proposal.id]: !prev[proposal.id]
+                                                  }));
+                                                }}
+                                                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                                                title="Learn about confidence scores"
+                                              >
+                                                <Info className="h-3 w-3 text-gray-500" />
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {showConfidenceInfo[proposal.id] && (
+                                            <div className="mb-3 p-3 bg-blue-50 rounded border border-blue-200 text-xs">
+                                              <p className="font-medium mb-1">About Confidence Scores</p>
+                                              <p className="text-gray-700 mb-2">
+                                                Confidence indicates how well-supported each proposal is based on source count, structured data, and verification status.
+                                              </p>
+                                              <ul className="space-y-1 text-gray-700">
+                                                <li><strong>80%+ (Green):</strong> High confidence - multiple sources, structured data</li>
+                                                <li><strong>60-79% (Yellow):</strong> Medium confidence - decent support, may need review</li>
+                                                <li><strong>&lt;60% (Red):</strong> Low confidence - limited support, needs verification</li>
+                                              </ul>
+                                            </div>
+                                          )}
+                                          <p className="text-sm text-muted-foreground mb-3">
+                                            {node.short_summary || node.content?.text?.substring(0, 200) + '...'}
+                                          </p>
+                                          
+                                          {/* Clickable Tabs - Same as regular proposals */}
+                                          <div className="flex gap-1 mb-3">
+                                            {node.content?.text && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedDetailView(prev => ({
+                                                    ...prev,
+                                                    [proposal.id]: prev[proposal.id] === "content" ? "" : "content"
+                                                  }));
+                                                }}
+                                                className={`px-3 py-1 text-xs rounded transition-colors ${
+                                                  selectedDetailView[proposal.id] === "content"
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                }`}
+                                              >
+                                                📄 Content
+                                              </button>
+                                            )}
+                                            {node.links && node.links.length > 0 && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedDetailView(prev => ({
+                                                    ...prev,
+                                                    [proposal.id]: prev[proposal.id] === "links" ? "" : "links"
+                                                  }));
+                                                }}
+                                                className={`px-3 py-1 text-xs rounded transition-colors ${
+                                                  selectedDetailView[proposal.id] === "links"
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                }`}
+                                              >
+                                                🔗 Links ({node.links.length})
+                                              </button>
+                                            )}
+                                            {node.attachments && node.attachments.length > 0 && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedDetailView(prev => ({
+                                                    ...prev,
+                                                    [proposal.id]: prev[proposal.id] === "attachments" ? "" : "attachments"
+                                                  }));
+                                                }}
+                                                className={`px-3 py-1 text-xs rounded transition-colors ${
+                                                  selectedDetailView[proposal.id] === "attachments"
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                }`}
+                                              >
+                                                📎 Attachments ({node.attachments.length})
+                                              </button>
+                                            )}
+                                            {node.dependencies && node.dependencies.length > 0 && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedDetailView(prev => ({
+                                                    ...prev,
+                                                    [proposal.id]: prev[proposal.id] === "dependencies" ? "" : "dependencies"
+                                                  }));
+                                                }}
+                                                className={`px-3 py-1 text-xs rounded transition-colors ${
+                                                  selectedDetailView[proposal.id] === "dependencies"
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                }`}
+                                              >
+                                                🔗 Dependencies ({node.dependencies.length})
+                                              </button>
+                                            )}
+                                          </div>
+                                          
+                                          {/* Detail View Content - Same as regular proposals */}
+                                          {selectedDetailView[proposal.id] === "content" && node.content?.text && (
+                                            <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                              <h5 className="font-medium text-sm mb-2">Content:</h5>
+                                              <pre className="text-xs whitespace-pre-wrap text-gray-700">
+                                                {node.content.text}
+                                              </pre>
+                                            </div>
+                                          )}
+
+                                          {selectedDetailView[proposal.id] === "links" && node.links && node.links.length > 0 && (
+                                            <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                              <h5 className="font-medium text-sm mb-2">Links:</h5>
+                                              <div className="space-y-1">
+                                                {node.links.map((link: any, index: number) => (
+                                                  <div key={index} className="text-xs">
+                                                    <a 
+                                                      href={link.url} 
+                                                      target="_blank" 
+                                                      rel="noopener noreferrer"
+                                                      className="text-blue-600 hover:underline"
+                                                    >
+                                                      {link.title || link.url}
+                                                    </a>
+                                                    {link.type && (
+                                                      <span className="text-gray-500 ml-2">({link.type})</span>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {selectedDetailView[proposal.id] === "attachments" && node.attachments && node.attachments.length > 0 && (
+                                            <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                              <h5 className="font-medium text-sm mb-2">Attachments:</h5>
+                                              <div className="space-y-1">
+                                                {node.attachments.map((attachment: any, index: number) => (
+                                                  <div key={index} className="text-xs">
+                                                    <span className="font-medium">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
+                                                    {attachment.range && (
+                                                      <span className="text-gray-500 ml-2">({attachment.range})</span>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {selectedDetailView[proposal.id] === "dependencies" && node.dependencies && node.dependencies.length > 0 && (
+                                            <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                              <h5 className="font-medium text-sm mb-2">Dependencies:</h5>
+                                              <div className="space-y-2">
+                                                {node.dependencies.map((dep: any, index: number) => {
+                                                  const depTypeLabels: Record<string, string> = {
+                                                    'requires': 'Requires',
+                                                    'uses_output': 'Uses Output',
+                                                    'follows': 'Follows',
+                                                    'validates': 'Validates'
+                                                  };
+                                                  const depTypeColors: Record<string, string> = {
+                                                    'requires': 'bg-orange-100 text-orange-700',
+                                                    'uses_output': 'bg-blue-100 text-blue-700',
+                                                    'follows': 'bg-green-100 text-green-700',
+                                                    'validates': 'bg-purple-100 text-purple-700'
+                                                  };
+                                                  const depType = dep.dependency_type || dep.dependencyType || 'requires';
+                                                  return (
+                                                    <div key={index} className="text-xs border-l-2 border-gray-300 pl-2">
+                                                      <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-medium text-gray-900">
+                                                          {dep.referenced_title || dep.referencedNodeTitle || 'Unknown Node'}
+                                                        </span>
+                                                        <Badge 
+                                                          variant="outline" 
+                                                          className={`text-xs ${depTypeColors[depType] || 'bg-gray-100 text-gray-700'}`}
+                                                        >
+                                                          {depTypeLabels[depType] || depType}
+                                                        </Badge>
+                                                        {dep.confidence !== undefined && (
+                                                          <span className="text-gray-500">
+                                                            {Math.round((dep.confidence || 0) * 100)}% confidence
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                      {dep.extractedPhrase && (
+                                                        <p className="text-gray-600 italic text-xs mt-1">
+                                                          "{dep.extractedPhrase}"
+                                                        </p>
+                                                      )}
+                                                      {dep.evidence && !dep.extractedPhrase && (
+                                                        <p className="text-gray-600 italic text-xs mt-1">
+                                                          "{dep.evidence}"
+                                                        </p>
+                                                      )}
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Regular Proposals Blocks */}
                         {blocksToRender.map((block, blockIndex) => {
                           const blockKey = block.key;
                           const isBlockExpanded = expandedBlocks.has(blockKey);
