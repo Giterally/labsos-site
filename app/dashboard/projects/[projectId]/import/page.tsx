@@ -2552,6 +2552,24 @@ export default function ImportPage() {
                                                   📎 Attachments ({node.attachments.length})
                                                 </button>
                                               )}
+                                              {node.dependencies && node.dependencies.length > 0 && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedDetailView(prev => ({
+                                                      ...prev,
+                                                      [proposal.id]: prev[proposal.id] === "dependencies" ? "" : "dependencies"
+                                                    }));
+                                                  }}
+                                                  className={`px-3 py-1 text-xs rounded transition-colors ${
+                                                    selectedDetailView[proposal.id] === "dependencies"
+                                                      ? 'bg-blue-500 text-white'
+                                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                  }`}
+                                                >
+                                                  🔗 Dependencies ({node.dependencies.length})
+                                                </button>
+                                              )}
                                             </div>
                                             
                                             {/* Detail View Content */}
@@ -2593,12 +2611,65 @@ export default function ImportPage() {
                                                 <div className="space-y-1">
                                                   {node.attachments.map((attachment: any, index: number) => (
                                                     <div key={index} className="text-xs">
-                                                      <span className="font-medium">{attachment.filename || `Attachment ${index + 1}`}</span>
+                                                      <span className="font-medium">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
                                                       {attachment.range && (
                                                         <span className="text-gray-500 ml-2">({attachment.range})</span>
                                                       )}
                                                     </div>
                                                   ))}
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {selectedDetailView[proposal.id] === "dependencies" && node.dependencies && node.dependencies.length > 0 && (
+                                              <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                                <h5 className="font-medium text-sm mb-2">Dependencies:</h5>
+                                                <div className="space-y-2">
+                                                  {node.dependencies.map((dep: any, index: number) => {
+                                                    const depTypeLabels: Record<string, string> = {
+                                                      'requires': 'Requires',
+                                                      'uses_output': 'Uses Output',
+                                                      'follows': 'Follows',
+                                                      'validates': 'Validates'
+                                                    };
+                                                    const depTypeColors: Record<string, string> = {
+                                                      'requires': 'bg-orange-100 text-orange-700',
+                                                      'uses_output': 'bg-blue-100 text-blue-700',
+                                                      'follows': 'bg-green-100 text-green-700',
+                                                      'validates': 'bg-purple-100 text-purple-700'
+                                                    };
+                                                    const depType = dep.dependency_type || dep.dependencyType || 'requires';
+                                                    return (
+                                                      <div key={index} className="text-xs border-l-2 border-gray-300 pl-2">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                          <span className="font-medium text-gray-900">
+                                                            {dep.referenced_title || dep.referencedNodeTitle || 'Unknown Node'}
+                                                          </span>
+                                                          <Badge 
+                                                            variant="outline" 
+                                                            className={`text-xs ${depTypeColors[depType] || 'bg-gray-100 text-gray-700'}`}
+                                                          >
+                                                            {depTypeLabels[depType] || depType}
+                                                          </Badge>
+                                                          {dep.confidence !== undefined && (
+                                                            <span className="text-gray-500">
+                                                              {Math.round((dep.confidence || 0) * 100)}% confidence
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                        {dep.extractedPhrase && (
+                                                          <p className="text-gray-600 italic text-xs mt-1">
+                                                            "{dep.extractedPhrase}"
+                                                          </p>
+                                                        )}
+                                                        {dep.evidence && !dep.extractedPhrase && (
+                                                          <p className="text-gray-600 italic text-xs mt-1">
+                                                            "{dep.evidence}"
+                                                          </p>
+                                                        )}
+                                                      </div>
+                                                    );
+                                                  })}
                                                 </div>
                                               </div>
                                             )}

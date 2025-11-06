@@ -1,0 +1,495 @@
+{
+  "tree": {
+    "id": "cbce1155-abdf-4ed8-9f73-502fe47f0bce",
+    "name": "[Precision-Recall and ROC Curves Analysis]",
+    "description": "Experiment tree generated from uploaded files",
+    "status": "draft",
+    "node_count": 0,
+    "created_at": "2025-11-06T17:00:15.124054Z"
+  },
+  "blocks": [
+    {
+      "id": "01245a76-e913-4f82-9b99-e234d7865cbb",
+      "name": "Protocol Block",
+      "description": "Block containing protocol nodes",
+      "position": 1,
+      "block_type": "custom"
+    },
+    {
+      "id": "e1bc98f1-949e-4ae2-b747-8ae8b27e720e",
+      "name": "Data Creation Block",
+      "description": "Block containing data_creation nodes",
+      "position": 2,
+      "block_type": "custom"
+    },
+    {
+      "id": "82458c41-60ab-4a24-a084-34d6fcf5487a",
+      "name": "Analysis Block",
+      "description": "Block containing analysis nodes",
+      "position": 3,
+      "block_type": "custom"
+    },
+    {
+      "id": "fc703475-33bd-4d70-a7de-8c43f0cf54d3",
+      "name": "Results Block",
+      "description": "Block containing results nodes",
+      "position": 4,
+      "block_type": "custom"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "8f294e55-d753-4ea3-8a9e-c7cee028d400",
+      "name": "Quantitative Equity Investing Techniques",
+      "node_type": "protocol",
+      "position": 39,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "50c8283f-9ad3-459d-b5be-15d1e5b5dd80",
+      "name": "Dynamic Latent Factor Approach",
+      "node_type": "protocol",
+      "position": 40,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "411190b0-dee4-4f5d-82a1-5f56bb79e753",
+      "name": "Empirical Asset Pricing via Machine Learning",
+      "node_type": "protocol",
+      "position": 41,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "36d60ba3-2986-467a-a03a-497683e0cb75",
+      "name": "Time Series Analysis by State Space Methods",
+      "node_type": "protocol",
+      "position": 42,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "df49b7bf-c934-462c-8772-642cc674c1dd",
+      "name": "Robust Bond Risk Premia",
+      "node_type": "protocol",
+      "position": 43,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "d325bfc3-85a4-4a2d-a1f1-28d91c855798",
+      "name": "Common Factors Affecting Bond Returns",
+      "node_type": "protocol",
+      "position": 44,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "7b3f5873-c77d-4764-b5b9-4ab446ec937c",
+      "name": "Survey of Maneuvering Target Tracking",
+      "node_type": "protocol",
+      "position": 45,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "ea7bfb54-aa91-4c40-b053-bec577413090",
+      "name": "Forecasting the Term Structure of Government Bond Yields",
+      "node_type": "protocol",
+      "position": 46,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "50a9701b-c030-4035-9360-ecd192065ad2",
+      "name": "Analysis of Stock and Bond Market Movements",
+      "node_type": "protocol",
+      "position": 47,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "0f5e6f85-a571-4e5d-a4d6-ab17062529ac",
+      "name": "Review of Asset Returns and Inflation",
+      "node_type": "protocol",
+      "position": 48,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "4f69ee49-00f5-414b-955f-ed23d64b175d",
+      "name": "State-Space Model Setup",
+      "node_type": "protocol",
+      "position": 49,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "0ff5ebbc-d031-4cd0-9a7f-51bcb1fb6b6a",
+      "name": "EKF State Prediction",
+      "node_type": "protocol",
+      "position": 50,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "45382003-36ea-4af5-9e32-83799b6d9076",
+      "name": "LKF Update Step",
+      "node_type": "protocol",
+      "position": 51,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "b0cd6d5f-c4d1-4b8b-9659-c9b3d893c9d1",
+      "name": "LKF Prediction Step",
+      "node_type": "protocol",
+      "position": 52,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "c3e48efd-76a8-4f2a-ac62-7fc14b6329db",
+      "name": "Observation Equation Embedding",
+      "node_type": "protocol",
+      "position": 53,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "1dd91e24-e30f-48d6-9656-4a176a219b42",
+      "name": "State-Space Framework Setup",
+      "node_type": "protocol",
+      "position": 54,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "6a310883-d0ae-410a-8a4b-50c665af18a0",
+      "name": "Kalman Filter Model Development",
+      "node_type": "protocol",
+      "position": 55,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "1f8172ba-2638-46e1-af99-bf9c90e333c1",
+      "name": "Kalman Filter Implementation",
+      "node_type": "protocol",
+      "position": 56,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "f291f8b6-f8c3-45c7-a316-cb9106c25387",
+      "name": "Comparison of State-Space Models",
+      "node_type": "protocol",
+      "position": 57,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "249a1fb0-ee9e-4f3a-a28e-ca0bced3e967",
+      "name": "Sentiment Analysis Protocol",
+      "node_type": "protocol",
+      "position": 58,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "a54e9c66-4f3b-444e-900e-85ae6a70c0c1",
+      "name": "Data Preprocessing Protocol",
+      "node_type": "protocol",
+      "position": 59,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "a5cdc886-1da8-4b66-937f-d434e39ef6b7",
+      "name": "Manual Coding of Kalman Filter",
+      "node_type": "protocol",
+      "position": 60,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "ed34b698-d12b-45ba-8a80-28ad622cccaa",
+      "name": "Kalman Filter Implementation for Bond Yield Forecasting",
+      "node_type": "protocol",
+      "position": 61,
+      "block_name": "Protocol Block"
+    },
+    {
+      "id": "654f67dd-71cc-4eb6-b96a-fd6104fdc8c5",
+      "name": "Government Bond Yields Data Collection",
+      "node_type": "data_creation",
+      "position": 29,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "bd1d1992-13ff-414d-bee1-60b940426ba1",
+      "name": "Sentiment Data Production",
+      "node_type": "data_creation",
+      "position": 30,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "ede09a29-82a4-4aa3-baf4-d97ac04a5592",
+      "name": "Feature Ensemble with Sentiment Scores",
+      "node_type": "data_creation",
+      "position": 31,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "6bdc8bd9-34c6-460e-a1d1-7c4ada93299d",
+      "name": "Macroeconomic Variable Normalization",
+      "node_type": "data_creation",
+      "position": 32,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "548b4662-409b-447c-8a9e-12adf811c960",
+      "name": "State-Space Representation",
+      "node_type": "data_creation",
+      "position": 33,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "5d9cf39b-c8ae-4f2c-ba67-51af659a7b69",
+      "name": "Sentiment Analysis Data",
+      "node_type": "data_creation",
+      "position": 34,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "3e018eba-c912-403b-a943-7bf3f0379ab9",
+      "name": "News Article Data Collection",
+      "node_type": "data_creation",
+      "position": 35,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "8d31cdf9-40b4-4b46-a48a-0aa906fc4077",
+      "name": "Financial Data Collection",
+      "node_type": "data_creation",
+      "position": 36,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "3b40f7a1-7774-4b32-86ec-970ddf2fc38f",
+      "name": "Forward-Filling Data Approach",
+      "node_type": "data_creation",
+      "position": 37,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "b72114f0-1a01-427f-a45c-ff224811c9ad",
+      "name": "Feature Selection Analysis",
+      "node_type": "data_creation",
+      "position": 38,
+      "block_name": "Data Creation Block"
+    },
+    {
+      "id": "913e9b5e-d4a2-47cb-b1fe-bf77707373a9",
+      "name": "Dynamic Portfolio Selection",
+      "node_type": "analysis",
+      "position": 10,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "d677dd1a-e0b8-492d-ad09-bdd73c0a14e2",
+      "name": "Credit Risk Pricing and Management",
+      "node_type": "analysis",
+      "position": 11,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "e6eea73f-2f07-412d-86ca-ef6de8ceffd1",
+      "name": "Forecasting Analysis",
+      "node_type": "analysis",
+      "position": 12,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "c376fe62-706c-4ddd-9995-ac0a6bee3f1b",
+      "name": "USD Index Analysis",
+      "node_type": "analysis",
+      "position": 13,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "3600872f-822c-408c-be70-c68fc0fb5bea",
+      "name": "Debt Issuance Analysis",
+      "node_type": "analysis",
+      "position": 14,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "acc0a3d4-fe88-4535-8d88-332570a9f863",
+      "name": "Employment Analysis",
+      "node_type": "analysis",
+      "position": 15,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "13e3209e-c18e-47f4-a764-6c31ee0eeca3",
+      "name": "Inflation Analysis",
+      "node_type": "analysis",
+      "position": 16,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "985a0cae-f989-4d38-85c3-fde036af5eb3",
+      "name": "Correlation Heatmap Visualization",
+      "node_type": "analysis",
+      "position": 17,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "f9d113a2-b92b-412e-aa92-8c8de2dc8a10",
+      "name": "Pearson Correlation Coefficient Calculation",
+      "node_type": "analysis",
+      "position": 18,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "0dac0d8a-3f3f-4523-9f8b-b5b111dec806",
+      "name": "Correlation Analysis",
+      "node_type": "analysis",
+      "position": 19,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "4a1bfa50-fe8e-417f-a7df-e5c26377d892",
+      "name": "Kalman Filter Update Step",
+      "node_type": "analysis",
+      "position": 20,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "b370ea79-eaa2-459e-8700-b421d13896ca",
+      "name": "Kalman Filter Prediction Step",
+      "node_type": "analysis",
+      "position": 21,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "9e04b8f3-b762-4eeb-be46-5d43e0ff768b",
+      "name": "Kalman Filter Estimation",
+      "node_type": "analysis",
+      "position": 22,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "c00856a6-c511-4e5b-97a7-c2ac66d32a34",
+      "name": "Application of Diebold and Li's Extension",
+      "node_type": "analysis",
+      "position": 23,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "e5a92c7e-44bc-43e8-bc27-e3c86490cfce",
+      "name": "Performance Metrics Analysis",
+      "node_type": "analysis",
+      "position": 24,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "38367aa9-5b4f-4dee-9ebd-a5831e27727e",
+      "name": "Ensemble Sentiment Analysis",
+      "node_type": "analysis",
+      "position": 25,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "28fe19a4-d617-401f-86b9-f89f48086e16",
+      "name": "State Space Model Analysis",
+      "node_type": "analysis",
+      "position": 26,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "0247376c-f39d-4265-a289-feebd3096b4c",
+      "name": "Comparing the LKF and EKF on Key Performance Metrics",
+      "node_type": "analysis",
+      "position": 27,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "e03c6ba1-5b78-4fa1-91dc-a5a1c0a1031b",
+      "name": "Performance Measures",
+      "node_type": "analysis",
+      "position": 28,
+      "block_name": "Analysis Block"
+    },
+    {
+      "id": "de48ad04-0548-41c1-92c4-ad89e1a1ef27",
+      "name": "Precision-Recall and ROC Curves Relationship",
+      "node_type": "results",
+      "position": 0,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "9bc45ccc-ccc6-4116-a04d-f5604056872d",
+      "name": "Hybrid Model for Stock Trend Prediction",
+      "node_type": "results",
+      "position": 1,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "97997bf1-2606-43c7-b5f6-89284138eee7",
+      "name": "Forecasting Results",
+      "node_type": "results",
+      "position": 2,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "0d282957-0f19-47a0-b653-8a7335503b37",
+      "name": "Feature Correlation Coefficient Heatmap",
+      "node_type": "results",
+      "position": 3,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "403a7243-6c25-4422-ae0a-d65738fa5831",
+      "name": "Yield Prediction Model",
+      "node_type": "results",
+      "position": 4,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "7c1c230f-d237-43f1-89a7-a137c182d339",
+      "name": "Yield Prediction Accuracy",
+      "node_type": "results",
+      "position": 5,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "85c27516-44a5-4af7-8a00-ddca010b81c6",
+      "name": "Kalman Filter Performance",
+      "node_type": "results",
+      "position": 6,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "057da19d-b120-4357-b856-97b907f7b17e",
+      "name": "Prediction Accuracy Results",
+      "node_type": "results",
+      "position": 7,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "61a0149a-cdd8-4543-9662-d980fca54c72",
+      "name": "Discussion of EKF Ensemble Performance",
+      "node_type": "results",
+      "position": 8,
+      "block_name": "Results Block"
+    },
+    {
+      "id": "4783484a-d7b2-4240-8b81-4bab016caecc",
+      "name": "Feature Ensemble using US Treasury Sentiment Scores",
+      "node_type": "results",
+      "position": 9,
+      "block_name": "Results Block"
+    }
+  ],
+  "summary": {
+    "total_nodes": 62,
+    "total_blocks": 4,
+    "total_dependencies": 28,
+    "total_attachments": 1,
+    "total_links": 0,
+    "nodes_by_type": {
+      "protocol": 23,
+      "data_creation": 10,
+      "analysis": 19,
+      "results": 10
+    },
+    "nodes_by_block": {
+      "Protocol Block": 23,
+      "Data Creation Block": 10,
+      "Analysis Block": 19,
+      "Results Block": 10
+    }
+  }
+}

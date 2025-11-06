@@ -1,15 +1,17 @@
-import { getAIProviderInstance } from './provider';
-import { WORKFLOW_EXTRACTION_SYSTEM_PROMPT } from './prompts/workflow-extraction-system';
+import { selectProviderForDocument } from './provider';
 import { WorkflowExtractionResultSchema, type WorkflowExtractionResult } from './schemas/workflow-extraction-schema';
 import { StructuredDocument } from '../processing/parsers/pdf-parser';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 
 /**
- * Extract workflow structure from a structured document using a single LLM call
+ * Extract workflow structure from a structured document using smart provider selection
+ * Uses GPT-4o for smaller documents, Gemini for large documents
+ * 
+ * @param complexity - Optional complexity analysis to adjust extraction strategy
  */
 export async function extractWorkflow(
   structuredDoc: StructuredDocument,
-  projectContext?: { name?: string; description?: string }
+  projectContext?: { name?: string; description?: string },
+  complexity?: { estimatedNodeCount: number; extractionStrategy: 'simple' | 'moderate' | 'complex' | 'comprehensive' }
 ): Promise<WorkflowExtractionResult> {
   const startTime = Date.now();
   console.log(`[WORKFLOW_EXTRACTOR] Starting extraction from ${structuredDoc.type} document: "${structuredDoc.fileName}"`);
@@ -23,121 +25,29 @@ export async function extractWorkflow(
     throw new Error(`Document too short after formatting (${formattedDocument.length} chars). Document may be empty or all content was filtered out.`);
   }
 
-  // Build user prompt
-  const userPrompt = buildUserPrompt(structuredDoc, formattedDocument, projectContext);
-  const fullPrompt = `${WORKFLOW_EXTRACTION_SYSTEM_PROMPT}\n\n${userPrompt}`;
+  // Select optimal provider based on document size
+  const provider = selectProviderForDocument(structuredDoc);
+  const modelInfo = provider.getModelInfo();
   
-  const promptLength = fullPrompt.length;
-  console.log(`[WORKFLOW_EXTRACTOR] Full prompt length: ${promptLength} chars`);
+  console.log(`[WORKFLOW_EXTRACTOR] Using model: ${modelInfo.name}`);
+  console.log(`[WORKFLOW_EXTRACTOR] Model capacity: ${modelInfo.maxInputTokens} input tokens, ${modelInfo.maxOutputTokens} output tokens`);
+  if (complexity) {
+    console.log(`[WORKFLOW_EXTRACTOR] Complexity strategy: ${complexity.extractionStrategy} (estimated ${complexity.estimatedNodeCount} nodes)`);
+  }
 
   try {
-    const aiProvider = getAIProviderInstance();
-    console.log(`[WORKFLOW_EXTRACTOR] AI Provider: ${aiProvider.constructor.name}`);
-    
-    // Convert Zod schema to JSON Schema for the LLM
-    const jsonSchema = zodToJsonSchema(WorkflowExtractionResultSchema, {
-      name: 'WorkflowExtractionResult',
-      $refStrategy: 'none'
-    });
-    
-    console.log(`[WORKFLOW_EXTRACTOR] Calling LLM API with schema...`);
-    
     const llmStartTime = Date.now();
-    // Pass the schema to help guide the LLM
-    const rawResult = await aiProvider.generateJSON(fullPrompt, jsonSchema);
+    // Extract workflow using selected provider (already validated by provider)
+    const result = await provider.extractWorkflowFromDocument(structuredDoc, projectContext, complexity);
     const llmDuration = Date.now() - llmStartTime;
     
-    console.log(`[WORKFLOW_EXTRACTOR] LLM responded in ${llmDuration}ms`);
-    console.log(`[WORKFLOW_EXTRACTOR] Response type: ${typeof rawResult}`);
-    console.log(`[WORKFLOW_EXTRACTOR] Response keys: ${typeof rawResult === 'object' && rawResult !== null ? Object.keys(rawResult).join(', ') : 'N/A'}`);
-    
-    // Log response structure for debugging
-    if (rawResult && typeof rawResult === 'object') {
-      console.log(`[WORKFLOW_EXTRACTOR] Response structure: {
-  treeName: ${typeof rawResult.treeName} (${rawResult.treeName ? 'present' : 'missing'}),
-  treeDescription: ${typeof rawResult.treeDescription} (${rawResult.treeDescription ? 'present' : 'missing'}),
-  blocks: ${Array.isArray(rawResult.blocks) ? `array[${rawResult.blocks.length}]` : typeof rawResult.blocks}
-}`);
-    } else {
-      console.error(`[WORKFLOW_EXTRACTOR] Received null/undefined response`);
-    }
-    
-    // Log response preview
-    if (typeof rawResult === 'object' && rawResult !== null) {
-      const responseStr = JSON.stringify(rawResult);
-      const previewLength = Math.min(responseStr.length, 500);
-      console.log(`[WORKFLOW_EXTRACTOR] Response preview (${previewLength}/${responseStr.length} chars): ${responseStr.substring(0, previewLength)}...`);
-    }
-    
-    console.log(`[WORKFLOW_EXTRACTOR] Validating schema...`);
+    const totalDuration = Date.now() - startTime;
+    const totalNodes = result.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
 
-    // Validate with detailed error handling
-    let result: WorkflowExtractionResult;
-    
-    try {
-      result = WorkflowExtractionResultSchema.parse(rawResult);
-      const totalDuration = Date.now() - startTime;
-      const totalNodes = result.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
+    console.log(`[WORKFLOW_EXTRACTOR] ✓ Extraction complete: ${result.blocks.length} blocks, ${totalNodes} nodes`);
+    console.log(`[WORKFLOW_EXTRACTOR] Total time: ${totalDuration}ms (LLM: ${llmDuration}ms, processing: ${totalDuration - llmDuration}ms)`);
 
-      console.log(`[WORKFLOW_EXTRACTOR] ✓ Validation successful`);
-      console.log(`[WORKFLOW_EXTRACTOR] ✓ Extraction complete: ${result.blocks.length} blocks, ${totalNodes} nodes`);
-      console.log(`[WORKFLOW_EXTRACTOR] Total time: ${totalDuration}ms (LLM: ${llmDuration}ms, processing: ${totalDuration - llmDuration}ms)`);
-
-      return result;
-    } catch (validationError: any) {
-      console.error(`[WORKFLOW_EXTRACTOR] ===== VALIDATION FAILED =====`);
-      console.error(`[WORKFLOW_EXTRACTOR] Schema validation error:`, validationError.message);
-      
-      if (validationError.name === 'ZodError') {
-        console.error(`[WORKFLOW_EXTRACTOR] Validation errors:`, JSON.stringify(validationError.errors, null, 2));
-        console.error(`[WORKFLOW_EXTRACTOR] Missing/invalid fields:`, 
-          validationError.errors.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ')
-        );
-      }
-      
-      console.error(`[WORKFLOW_EXTRACTOR] Received response:`, JSON.stringify(rawResult, null, 2).substring(0, 1000));
-      
-      // Try to recover with fallback values
-      if (rawResult && typeof rawResult === 'object') {
-        console.log(`[WORKFLOW_EXTRACTOR] Attempting recovery with fallback values...`);
-        
-        const fallbackResult = {
-          treeName: rawResult.treeName || 
-                    structuredDoc.fileName?.replace(/\.[^.]+$/, '') || 
-                    'Extracted Workflow',
-          treeDescription: rawResult.treeDescription || 
-                          structuredDoc.metadata?.title || 
-                          structuredDoc.metadata?.description ||
-                          'Workflow extracted from document',
-          blocks: Array.isArray(rawResult.blocks) ? rawResult.blocks : 
-                  Array.isArray(rawResult) ? rawResult : 
-                  [],
-          nestedTrees: rawResult.nestedTrees || []
-        };
-        
-        try {
-          result = WorkflowExtractionResultSchema.parse(fallbackResult);
-          const totalDuration = Date.now() - startTime;
-          const totalNodes = result.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
-          console.warn(`[WORKFLOW_EXTRACTOR] ✓ Recovery successful with fallback values`);
-          console.log(`[WORKFLOW_EXTRACTOR] ✓ Extraction complete: ${result.blocks.length} blocks, ${totalNodes} nodes`);
-          console.log(`[WORKFLOW_EXTRACTOR] Total time: ${totalDuration}ms`);
-          return result;
-        } catch (fallbackError) {
-          console.error(`[WORKFLOW_EXTRACTOR] Recovery failed:`, fallbackError);
-          throw new Error(
-            `Invalid workflow extraction result: ${validationError.message}. ` +
-            `Received keys: [${Object.keys(rawResult).join(', ')}]. ` +
-            `Expected: treeName, treeDescription, blocks`
-          );
-        }
-      } else {
-        throw new Error(
-          `Invalid workflow extraction result: response was ${typeof rawResult}. ` +
-          `Expected object with treeName, treeDescription, and blocks fields.`
-        );
-      }
-    }
+    return result;
   } catch (error: any) {
     const totalDuration = Date.now() - startTime;
     console.error(`[WORKFLOW_EXTRACTOR] ✗ Extraction failed after ${totalDuration}ms`);
@@ -232,17 +142,427 @@ export function formatStructuredDocumentForLLM(doc: StructuredDocument): string 
 
 /**
  * Build user prompt for workflow extraction with explicit structure
+ * Exported for use by AI providers
+ * 
+ * @param complexity - Optional complexity analysis to adjust prompt for document scale
  */
-function buildUserPrompt(
+export function buildUserPrompt(
   structuredDoc: StructuredDocument,
   formattedDocument: string,
-  projectContext?: { name?: string; description?: string }
+  projectContext?: { name?: string; description?: string },
+  complexity?: { estimatedNodeCount: number; extractionStrategy: 'simple' | 'moderate' | 'complex' | 'comprehensive' }
 ): string {
+  // Base instructions
+  const baseInstructions = `You are analyzing a research document to extract its experimental workflow.
+Your goal is to create a comprehensive experiment tree with nodes representing protocols, data collection, analyses, and results.
+CRITICAL: Extract ALL experiments, methods, analyses, and results from the document.
+Do not summarize or condense—create separate nodes for each distinct:
+- Protocol or procedure
+- Data collection method
+- Analysis technique
+- Result or finding
+Each node should be atomic and specific.`;
+
+  // Scale-specific guidance
+  let scaleGuidance = '';
+  let exampleAdjustment = '';
+
+  if (complexity) {
+    switch (complexity.extractionStrategy) {
+      case 'simple':
+        scaleGuidance = `
+This is a simple document with ${complexity.estimatedNodeCount} estimated nodes.
+Extract 5-15 nodes covering the main workflow.
+Focus on: main protocol → data collection → analysis → results.`;
+        exampleAdjustment = `
+EXAMPLE OUTPUT STRUCTURE (for simple documents):
+{
+  "blocks": [
+    {
+      "blockName": "Protocol Block",
+      "nodes": [
+        {
+          "nodeId": "node-1",
+          "title": "Sample Collection",
+          "dependencies": []
+        }
+        // 1-3 protocol nodes total
+      ]
+    },
+    {
+      "blockName": "Data Creation Block",
+      "nodes": [
+        {
+          "nodeId": "node-2",
+          "title": "Data Collection",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Sample Collection",
+              "dependencyType": "requires",
+              "extractedPhrase": "after sample collection",
+              "confidence": 0.9
+            }
+          ]
+        }
+        // 1-2 data collection nodes total
+      ]
+    },
+    {
+      "blockName": "Analysis Block",
+      "nodes": [
+        {
+          "nodeId": "node-3",
+          "title": "Statistical Analysis",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Data Collection",
+              "dependencyType": "uses_output",
+              "extractedPhrase": "using collected data",
+              "confidence": 0.9
+            }
+          ]
+        }
+        // 1-2 analysis nodes total
+      ]
+    },
+    {
+      "blockName": "Results Block",
+      "nodes": [
+        {
+          "nodeId": "node-4",
+          "title": "Analysis Results",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Statistical Analysis",
+              "dependencyType": "uses_output",
+              "extractedPhrase": "based on statistical analysis",
+              "confidence": 0.95
+            }
+          ]
+        }
+        // 2-5 result nodes total
+      ]
+    }
+  ]
+}
+
+REMEMBER: Dependencies must be objects with referencedNodeTitle, dependencyType, extractedPhrase, and optionally confidence.`;
+        break;
+
+      case 'moderate':
+        scaleGuidance = `
+This is a moderate-complexity document with ${complexity.estimatedNodeCount} estimated nodes.
+Extract 15-30 nodes covering all experiments.
+Include:
+- All distinct protocols (even variations)
+- All data collection methods
+- All analysis techniques
+- All major results with their figures/tables`;
+        exampleAdjustment = `
+EXAMPLE OUTPUT STRUCTURE (for moderate documents):
+{
+  "blocks": [
+    {
+      "blockName": "Protocol Block",
+      "nodes": [
+        // 3-8 protocol nodes
+      ]
+    },
+    {
+      "blockName": "Data Creation Block",
+      "nodes": [
+        // 3-6 data collection nodes
+      ]
+    },
+    {
+      "blockName": "Analysis Block",
+      "nodes": [
+        // 4-8 analysis nodes
+      ]
+    },
+    {
+      "blockName": "Results Block",
+      "nodes": [
+        // 5-10 result nodes
+      ]
+    }
+  ]
+}`;
+        break;
+
+      case 'complex':
+        scaleGuidance = `
+This is a complex document with ${complexity.estimatedNodeCount} estimated nodes.
+Extract 30-50 nodes covering the complete workflow.
+Be thorough:
+- Extract EVERY protocol mentioned (including sub-protocols)
+- Create separate nodes for each experiment
+- Include all data processing steps
+- Create nodes for each analysis method
+- Include all results (even supporting/negative results)`;
+        exampleAdjustment = `
+EXAMPLE OUTPUT STRUCTURE (for complex documents):
+{
+  "blocks": [
+    {
+      "blockName": "Protocol Block",
+      "nodes": [
+        // 8-15 protocol nodes (one per distinct method)
+      ]
+    },
+    {
+      "blockName": "Data Creation Block",
+      "nodes": [
+        // 8-15 data collection nodes
+      ]
+    },
+    {
+      "blockName": "Analysis Block",
+      "nodes": [
+        // 10-20 analysis nodes (one per technique/test)
+      ]
+    },
+    {
+      "blockName": "Results Block",
+      "nodes": [
+        // 10-20 result nodes (one per major finding/figure)
+      ]
+    }
+  ]
+}`;
+        break;
+
+      case 'comprehensive':
+        scaleGuidance = `
+This is a comprehensive document (dissertation/thesis) with ${complexity.estimatedNodeCount}+ estimated nodes.
+Extract 50-100+ nodes covering the entire research.
+Maximum detail:
+- Extract EVERY protocol, even minor variations
+- Create nodes for each experimental condition
+- Include all data collection and processing steps
+- Create separate nodes for each statistical test
+- Include ALL results, even preliminary or supplementary
+- Create nodes for methodological validations
+- Include literature review protocols if detailed`;
+        exampleAdjustment = `
+EXAMPLE OUTPUT STRUCTURE (for comprehensive documents):
+{
+  "blocks": [
+    {
+      "blockName": "Protocol Block",
+      "nodes": [
+        // 15-25 protocol nodes (one per distinct method)
+      ]
+    },
+    {
+      "blockName": "Data Creation Block",
+      "nodes": [
+        // 15-25 data collection nodes
+      ]
+    },
+    {
+      "blockName": "Analysis Block",
+      "nodes": [
+        // 20-35 analysis nodes (one per technique/test)
+      ]
+    },
+    {
+      "blockName": "Results Block",
+      "nodes": [
+        // 20-40 result nodes (one per major finding/figure)
+      ]
+    }
+  ]
+}`;
+        break;
+    }
+  } else {
+    // Default guidance for backward compatibility
+    scaleGuidance = `
+Extract this document into an experiment tree structure and return it as structured JSON.
+`;
+        exampleAdjustment = `
+EXAMPLE OUTPUT (with proper dependency format):
+{
+  "treeName": "Plant Growth Under Stress Conditions Study",
+  "treeDescription": "Experimental workflow for studying plant responses to environmental stress",
+  "blocks": [
+    {
+      "blockName": "Protocol Block",
+      "blockType": "protocol",
+      "position": 1,
+      "nodes": [
+        {
+          "nodeId": "proto-001",
+          "title": "Seed Preparation Protocol",
+          "content": {
+            "text": "Seeds were sterilized using 70% ethanol for 2 minutes, followed by 10% bleach solution for 10 minutes, then rinsed three times with sterile water."
+          },
+          "nodeType": "protocol",
+          "status": "draft",
+          "dependencies": [],
+          "attachments": [],
+          "parameters": {
+            "ethanol_concentration": "70%",
+            "sterilization_time": "2 minutes"
+          }
+        }
+      ]
+    },
+    {
+      "blockName": "Data Creation Block",
+      "blockType": "data_creation",
+      "position": 2,
+      "nodes": [
+        {
+          "nodeId": "data-001",
+          "title": "Growth Measurements",
+          "content": {
+            "text": "Plant height and leaf count were measured daily using the Seed Preparation Protocol. Measurements were taken at the same time each day under controlled conditions."
+          },
+          "nodeType": "data_creation",
+          "status": "draft",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Seed Preparation Protocol",
+              "dependencyType": "requires",
+              "extractedPhrase": "using the Seed Preparation Protocol",
+              "confidence": 0.95
+            }
+          ],
+          "attachments": [],
+          "parameters": {
+            "measurement_frequency": "daily",
+            "metrics": ["height", "leaf_count"]
+          }
+        }
+      ]
+    },
+    {
+      "blockName": "Analysis Block",
+      "blockType": "analysis",
+      "position": 3,
+      "nodes": [
+        {
+          "nodeId": "analysis-001",
+          "title": "Statistical Analysis of Growth Data",
+          "content": {
+            "text": "Growth data collected from daily measurements were analyzed using ANOVA to determine significant differences between treatment groups. Post-hoc Tukey tests were performed for pairwise comparisons."
+          },
+          "nodeType": "analysis",
+          "status": "draft",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Growth Measurements",
+              "dependencyType": "uses_output",
+              "extractedPhrase": "Growth data collected from daily measurements",
+              "confidence": 0.9
+            }
+          ],
+          "attachments": [],
+          "parameters": {
+            "statistical_test": "ANOVA",
+            "post_hoc": "Tukey"
+          }
+        }
+      ]
+    },
+    {
+      "blockName": "Results Block",
+      "blockType": "results",
+      "position": 4,
+      "nodes": [
+        {
+          "nodeId": "results-001",
+          "title": "Treatment Effects on Plant Growth",
+          "content": {
+            "text": "ANOVA revealed significant differences in plant height between treatment groups (F=12.4, p<0.001). Stress-treated plants showed 30% reduced growth compared to controls."
+          },
+          "nodeType": "results",
+          "status": "draft",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Statistical Analysis of Growth Data",
+              "dependencyType": "uses_output",
+              "extractedPhrase": "ANOVA revealed significant differences",
+              "confidence": 0.95
+            }
+          ],
+          "attachments": [],
+          "parameters": {}
+        }
+      ]
+    }
+  ],
+  "nestedTrees": []
+}`;
+  }
+
+  const structureGuidance = `
+IMPORTANT NODE GRANULARITY RULES:
+
+1. One node = one distinct method/procedure/analysis/result
+2. If a section describes multiple experiments → create multiple nodes
+3. If a protocol has sub-steps → create main node + nested tree reference
+4. Each figure/table → usually indicates a separate result node
+5. Methods section → often 5-10+ protocol nodes
+6. Results section → often 10-20+ result nodes
+
+${complexity && complexity.estimatedNodeCount > 20 ? `
+EXAMPLE from a dissertation:
+Methods section "Statistical Analysis" might contain:
+- Node: "Normality Testing" (protocol)
+- Node: "Variance Testing" (protocol)
+- Node: "ANOVA Implementation" (analysis)
+- Node: "Post-hoc Pairwise Comparisons" (analysis)
+Do NOT combine these into one "Statistical Analysis" node.` : ''}
+
+## DEPENDENCY FORMAT (CRITICAL):
+
+For EVERY node, you must extract dependencies as OBJECTS, not strings.
+
+**Dependency Object Structure:**
+{
+  "referencedNodeTitle": "Exact title of the referenced node",
+  "dependencyType": "requires" | "uses_output" | "follows" | "validates",
+  "extractedPhrase": "The exact text from the document showing this dependency",
+  "confidence": 0.7-1.0
+}
+
+**Dependency Types:**
+- "requires": Node A requires Node B to be completed first (prerequisite)
+- "uses_output": Node A uses the output/results from Node B
+- "follows": Node A follows Node B sequentially (temporal relationship)
+- "validates": Node A validates or verifies Node B's results
+
+**How to Extract Dependencies:**
+1. Read each node's content carefully
+2. Look for phrases indicating relationships:
+   - "using data from X" → uses_output
+   - "based on X" → uses_output
+   - "after X was completed" → follows
+   - "requires X" → requires
+   - "validates X" → validates
+3. Record the EXACT phrase showing the dependency
+4. Create a dependency object with all fields
+
+**Example Dependency Extraction:**
+If node content says: "The statistical analysis was performed using data from the Sample Collection protocol"
+Extract:
+{
+  "referencedNodeTitle": "Sample Collection",
+  "dependencyType": "uses_output",
+  "extractedPhrase": "using data from the Sample Collection protocol",
+  "confidence": 0.9
+}
+
+NEVER use string arrays like ["Node 1", "Node 2"] - always use objects!`;
+
   return `
 PROJECT CONTEXT:
-${projectContext ? 
-  `Project: ${projectContext.name || 'Unnamed Project'}${projectContext.description ? `\nDescription: ${projectContext.description}` : ''}` 
-  : 'No additional context provided'}
+${projectContext ?
+    `Project: ${projectContext.name || 'Unnamed Project'}${projectContext.description ? `\nDescription: ${projectContext.description}` : ''}`
+    : 'No additional context provided'}
 
 SOURCE DOCUMENT:
 File: ${structuredDoc.fileName}
@@ -255,7 +575,10 @@ ${formattedDocument}
 
 TASK:
 
-Extract this document into an experiment tree structure and return it as structured JSON.
+${baseInstructions}
+${scaleGuidance}
+${structureGuidance}
+${exampleAdjustment}
 
 CRITICAL - REQUIRED JSON STRUCTURE:
 
@@ -288,54 +611,6 @@ You MUST return a JSON object with these exact top-level fields:
   "nestedTrees": []
 }
 
-EXAMPLE OUTPUT:
-
-{
-  "treeName": "Herbivory Effects on Submerged Aquatic Vegetation",
-  "treeDescription": "Study examining how oil exposure affects herbivory patterns in aquatic plants",
-  "blocks": [
-    {
-      "blockName": "Experimental Setup",
-      "blockType": "protocol",
-      "position": 1,
-      "nodes": [
-        {
-          "nodeId": "node-1",
-          "title": "Sample Collection",
-          "content": {
-            "text": "Submerged aquatic vegetation samples were collected from field sites"
-          },
-          "nodeType": "protocol",
-          "status": "complete",
-          "dependencies": [],
-          "attachments": [],
-          "parameters": {}
-        }
-      ]
-    },
-    {
-      "blockName": "Data Analysis",
-      "blockType": "analysis",
-      "position": 2,
-      "nodes": [
-        {
-          "nodeId": "node-2",
-          "title": "Statistical Analysis",
-          "content": {
-            "text": "Data were analyzed using ANOVA to determine significant differences"
-          },
-          "nodeType": "analysis",
-          "status": "complete",
-          "dependencies": [],
-          "attachments": [],
-          "parameters": {}
-        }
-      ]
-    }
-  ],
-  "nestedTrees": []
-}
-
 EXTRACTION GUIDELINES:
 
 1. treeName: Extract from document title, abstract, or first heading
@@ -345,11 +620,28 @@ EXTRACTION GUIDELINES:
 5. Extract content: Use exact text from the document, don't paraphrase
 6. dependencies: Link nodes that must happen in sequence (use empty array if none)
 
+## CRITICAL REMINDERS:
+
+1. **Dependencies MUST be objects**, not strings
+2. **Every node** should have dependencies (except root protocols)
+3. **Extract the exact phrase** that shows the dependency
+4. **Use appropriate dependency types** (requires/uses_output/follows/validates)
+5. **Be comprehensive** - don't skip dependencies just because they're obvious
+
+Common dependency patterns:
+- "using X" → uses_output dependency on X
+- "after X" → follows dependency on X
+- "based on X" → uses_output dependency on X
+- "requires X" → requires dependency on X
+- Analysis nodes → always depend on data creation nodes
+- Result nodes → always depend on analysis nodes
+
 IMPORTANT:
 - Your response must be valid JSON
 - You MUST include treeName, treeDescription, and blocks at the top level
 - Do NOT return an array - return an object with these fields
 - If you cannot find clear workflow steps, still return the structure with empty blocks array
+- **Dependencies must be objects with all required fields: referencedNodeTitle, dependencyType, extractedPhrase, and optionally confidence**
 
 Return only the JSON, no other text or markdown formatting.
 `;

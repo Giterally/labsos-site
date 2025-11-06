@@ -1,12 +1,15 @@
 import { supabaseServer } from '../supabase-server';
 import { progressTracker } from '../progress-tracker';
 import { extractWorkflow } from '../ai/workflow-extractor';
+import { extractWorkflowHierarchical } from '../ai/hierarchical-extractor';
 import { mergeMultiDocumentWorkflows } from '../ai/multi-document-synthesis';
 import { resolveAttachments } from './attachment-resolver';
 import { extractDependenciesRuleBased } from './dependency-extractor';
 import { detectNestedTrees } from './nested-tree-detector';
 import { storeSynthesizedNode } from '../ai/synthesis';
 import { cleanStructuredDocument } from './document-cleaner';
+import { analyzeDocumentComplexity } from './document-analyzer';
+import { calculateExtractionMetrics, logExtractionMetrics } from '../ai/extraction-metrics';
 import type { StructuredDocument } from './parsers/pdf-parser';
 import type { WorkflowExtractionResult, ExtractedNode } from '../ai/schemas/workflow-extraction-schema';
 import { formatStructuredDocumentForLLM } from '../ai/workflow-extractor';
@@ -257,18 +260,60 @@ export async function generateProposals(projectId: string, jobId?: string) {
         });
 
         try {
-          // Wrap extraction in timeout
-          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Starting LLM extraction (timeout: ${EXTRACTION_TIMEOUT}ms)...`);
+          // Step 1: Analyze document complexity
+          const complexity = analyzeDocumentComplexity(structuredDoc);
           
-          const extractionPromise = extractWorkflow(structuredDoc, projectContext);
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error(`Extraction timeout after ${EXTRACTION_TIMEOUT}ms`)), EXTRACTION_TIMEOUT);
-          });
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Complexity analysis:`);
+          console.log(`  - Strategy: ${complexity.extractionStrategy}`);
+          console.log(`  - Estimated nodes: ${complexity.estimatedNodeCount}`);
+          console.log(`  - Use hierarchical: ${complexity.shouldUseHierarchical}`);
+          console.log(`  - Recommended provider: ${complexity.recommendedProvider}`);
 
-          const extractionResult = await Promise.race([extractionPromise, timeoutPromise]);
+          // Step 2: Choose extraction approach
+          let extractionResult: WorkflowExtractionResult;
+          
+          // Fast path for simple documents (backward compatible)
+          if (complexity.estimatedNodeCount < 15 && !complexity.shouldUseHierarchical) {
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Simple document, using standard extraction`);
+            
+            const extractionPromise = extractWorkflow(structuredDoc, projectContext, complexity);
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error(`Extraction timeout after ${EXTRACTION_TIMEOUT}ms`)), EXTRACTION_TIMEOUT);
+            });
+            
+            extractionResult = await Promise.race([extractionPromise, timeoutPromise]);
+          } else {
+            // Complexity-aware extraction
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Complex document, using adaptive extraction`);
+            
+            if (complexity.shouldUseHierarchical) {
+              console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Using hierarchical extraction (large document)`);
+              
+              const extractionPromise = extractWorkflowHierarchical(structuredDoc, projectContext, complexity);
+              const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error(`Extraction timeout after ${EXTRACTION_TIMEOUT * 3}ms`)), EXTRACTION_TIMEOUT * 3);
+              });
+              
+              extractionResult = await Promise.race([extractionPromise, timeoutPromise]);
+            } else {
+              console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Using single-pass extraction with complexity-aware prompt`);
+              
+              const extractionPromise = extractWorkflow(structuredDoc, projectContext, complexity);
+              const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error(`Extraction timeout after ${EXTRACTION_TIMEOUT}ms`)), EXTRACTION_TIMEOUT);
+              });
+              
+              extractionResult = await Promise.race([extractionPromise, timeoutPromise]);
+            }
+          }
+          
           const duration = Date.now() - startTime;
-
           const totalNodes = extractionResult.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
+          
+          // Calculate and log extraction metrics
+          const metrics = calculateExtractionMetrics(complexity, extractionResult);
+          logExtractionMetrics(metrics, originalFileName);
+          
           console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ✓ Extraction successful: ${extractionResult.blocks.length} blocks, ${totalNodes} nodes in ${duration}ms`);
 
           if (totalNodes > 0) {
@@ -290,7 +335,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
             duration,
           });
 
-          return { success: true, result: extractionResult, index: i };
+          return { success: true, result: extractionResult, index: i, complexity, metrics };
         } catch (error: any) {
           const duration = Date.now() - startTime;
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -327,19 +372,28 @@ export async function generateProposals(projectId: string, jobId?: string) {
       for (const batchResult of batchResults) {
         if (batchResult.success && batchResult.result) {
           const extractionResult = batchResult.result;
+          const complexity = (batchResult as any).complexity;
+          const metrics = (batchResult as any).metrics;
           extractionResults.push(extractionResult);
 
           const totalNodes = extractionResult.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
           console.log(`[FAST_IMPORT] Batch result: Extracted ${extractionResult.blocks.length} blocks, ${totalNodes} nodes`);
 
+          // Get document info for this batch result
+          const attempt = extractionAttempts.find(a => a.documentIndex === batchResult.index);
+          const documentFileName = attempt?.fileName || 'unknown';
+
           // Flatten nodes from all blocks
           for (const block of extractionResult.blocks) {
             for (const node of block.nodes) {
-              // Add block context to node
+              // Add block context and extraction metrics to node
               node.metadata = {
                 ...node.metadata,
                 blockName: block.blockName,
                 blockType: block.blockType,
+                extractionMetrics: metrics, // Store metrics from document-level calculation
+                documentSource: documentFileName,
+                complexity: complexity?.extractionStrategy
               };
               allProposedNodes.push(node);
             }
@@ -541,6 +595,9 @@ export async function generateProposals(projectId: string, jobId?: string) {
             blockName: node.metadata?.blockName,
             blockType: node.metadata?.blockType,
             isNestedTree: node.isNestedTree,
+            extractionMetrics: node.metadata?.extractionMetrics, // Store extraction quality metrics
+            complexity: node.metadata?.complexity,
+            documentSource: node.metadata?.documentSource,
           },
           dependencies: node.dependencies.map(dep => ({
             referenced_title: dep.referencedNodeTitle,

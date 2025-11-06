@@ -196,7 +196,7 @@ export class ClaudeProvider implements AIProvider {
       try {
         const response = await this.client.messages.create({
           model: 'claude-3-haiku-20240307',
-          max_tokens: 16384, // Increased for large documents like dissertations
+          max_tokens: 4096, // Maximum allowed for Claude 3 Haiku (model limit)
           temperature: 0.3, // Lower temperature for more consistent JSON
           messages: [{ role: 'user', content: jsonPrompt }],
         });
@@ -357,4 +357,90 @@ export function getAIProviderInstance(): AIProvider {
     aiProvider = getAIProvider();
   }
   return aiProvider;
+}
+
+// ============================================================================
+// NEW: Workflow Extraction Provider Selection (GPT-4o/Gemini Hybrid)
+// ============================================================================
+
+import type { AIProvider as WorkflowAIProvider } from './base-provider';
+import { OpenAIProvider as WorkflowOpenAIProvider } from './providers/openai-provider';
+import { GeminiProvider as WorkflowGeminiProvider } from './providers/gemini-provider';
+import type { StructuredDocument } from '../processing/parsers/pdf-parser';
+import { estimateTokens } from './base-provider';
+
+/**
+ * Token threshold for switching from GPT-4o to Gemini
+ * Lowered to 120K to account for full prompt overhead and avoid rate limits
+ * GPT-4o works well up to ~150K tokens, but full prompt (doc + system + examples) can be 20-30% larger
+ * Gemini handles up to 2M tokens and is cheaper for large documents
+ */
+const TOKEN_THRESHOLD_FOR_GEMINI = 120000;
+
+/**
+ * Estimate full prompt size including system prompt, user prompt structure, and examples
+ * This is more accurate than just document size for provider selection
+ */
+function estimateFullPromptTokens(document: StructuredDocument): { documentTokens: number; estimatedFullPrompt: number } {
+  // Document tokens
+  const docSize = JSON.stringify(document).length;
+  const documentTokens = Math.ceil(docSize / 4);
+  
+  // Prompt overhead:
+  // - System prompt: ~500 tokens
+  // - User prompt structure (examples, guidance, formatting): ~2000-3000 tokens
+  // - Complexity-aware guidance (if applicable): ~500-1000 tokens
+  // - Safety margin: 20% to account for variations
+  const promptOverhead = 3500; // Conservative estimate
+  const safetyMargin = 1.2; // 20% buffer
+  
+  const estimatedFullPrompt = Math.ceil((documentTokens + promptOverhead) * safetyMargin);
+  
+  return {
+    documentTokens,
+    estimatedFullPrompt
+  };
+}
+
+/**
+ * Select optimal AI provider based on document size for workflow extraction
+ * Uses conservative token estimation to avoid rate limits and optimize cost
+ */
+export function selectProviderForDocument(
+  document: StructuredDocument
+): WorkflowAIProvider {
+  const provider = process.env.AI_PRIMARY_PROVIDER || 'openai';
+  const fallbackProvider = process.env.AI_FALLBACK_PROVIDER || 'gemini';
+  
+  // Estimate full prompt size (document + overhead)
+  const { documentTokens, estimatedFullPrompt } = estimateFullPromptTokens(document);
+  
+  console.log(`[PROVIDER_SELECTION] Document tokens: ${documentTokens}, Estimated full prompt: ${estimatedFullPrompt} tokens`);
+  
+  // Decision logic: Use conservative threshold to avoid rate limits
+  if (estimatedFullPrompt < TOKEN_THRESHOLD_FOR_GEMINI) {
+    console.log(`[PROVIDER_SELECTION] Using ${provider} (estimated prompt < ${TOKEN_THRESHOLD_FOR_GEMINI} tokens)`);
+    
+    switch (provider.toLowerCase()) {
+      case 'openai':
+        return new WorkflowOpenAIProvider();
+      case 'gemini':
+        return new WorkflowGeminiProvider();
+      default:
+        console.warn(`[PROVIDER_SELECTION] Unknown provider "${provider}", defaulting to OpenAI`);
+        return new WorkflowOpenAIProvider();
+    }
+  } else {
+    console.log(`[PROVIDER_SELECTION] Document is large (${estimatedFullPrompt} tokens), using ${fallbackProvider} to avoid rate limits`);
+    
+    switch (fallbackProvider.toLowerCase()) {
+      case 'gemini':
+        return new WorkflowGeminiProvider();
+      case 'openai':
+        return new WorkflowOpenAIProvider();
+      default:
+        console.warn(`[PROVIDER_SELECTION] Unknown fallback provider "${fallbackProvider}", defaulting to Gemini`);
+        return new WorkflowGeminiProvider();
+    }
+  }
 }
