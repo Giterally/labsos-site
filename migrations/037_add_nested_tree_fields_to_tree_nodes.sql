@@ -13,3 +13,5 @@ CREATE INDEX IF NOT EXISTS idx_tree_nodes_nested_tree_id ON tree_nodes(nested_tr
 COMMENT ON COLUMN tree_nodes.is_nested_tree_ref IS 'True if this node is a reference to a nested/reusable tree rather than containing full content';
 COMMENT ON COLUMN tree_nodes.nested_tree_id IS 'The ID of the nested tree this node references (if is_nested_tree_ref is true)';
 
+
+

@@ -40,3 +40,6 @@ COMMENT ON COLUMN node_dependencies.from_node_id IS 'The node that depends on an
 COMMENT ON COLUMN node_dependencies.to_node_id IS 'The node that is depended upon';
 COMMENT ON COLUMN node_dependencies.evidence_text IS 'Original phrase from source document showing the dependency';
 
+
+
+

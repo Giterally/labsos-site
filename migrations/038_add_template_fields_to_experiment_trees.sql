@@ -13,3 +13,4 @@ CREATE INDEX IF NOT EXISTS idx_experiment_trees_template_category ON experiment_
 COMMENT ON COLUMN experiment_trees.is_template IS 'True if this tree is a reusable template (e.g., common protocols like RNA extraction)';
 COMMENT ON COLUMN experiment_trees.template_category IS 'Category of the template (e.g., "RNA Extraction", "Western Blot", "PCR")';
 
+

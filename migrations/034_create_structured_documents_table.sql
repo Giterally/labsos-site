@@ -43,3 +43,6 @@ CREATE POLICY "Service role can update structured documents" ON structured_docum
 COMMENT ON TABLE structured_documents IS 'Stores parsed documents with preserved hierarchical structure (sections, headings, lists) for the fast import pipeline';
 COMMENT ON COLUMN structured_documents.document_json IS 'JSONB containing StructuredDocument with sections, content blocks, and metadata';
 
+
+
+

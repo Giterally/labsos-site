@@ -45,7 +45,8 @@ import {
   Square,
   ChevronDown,
   Info,
-  GitBranch
+  GitBranch,
+  Link
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -104,6 +105,10 @@ export default function ImportPage() {
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
   const [selectedDetailView, setSelectedDetailView] = useState<Record<string, string>>({});
   const [showConfidenceInfo, setShowConfidenceInfo] = useState<Record<string, boolean>>({});
+  const [openNestedTrees, setOpenNestedTrees] = useState<Set<string>>(new Set());
+  const [nestedTreeData, setNestedTreeData] = useState<Record<string, any>>({});
+  const [loadingNestedTrees, setLoadingNestedTrees] = useState<Set<string>>(new Set());
+  const [expandedNestedBlocks, setExpandedNestedBlocks] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState('upload');
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [buildingTree, setBuildingTree] = useState(false);
@@ -148,6 +153,361 @@ export default function ImportPage() {
     if (typeof window === 'undefined') return;
     localStorage.removeItem(`${TREE_STORAGE_KEY}_${projectId}`);
   };
+
+  // Function to fetch nested tree data
+  const fetchNestedTreeData = useCallback(async (proposalId: string) => {
+    if (nestedTreeData[proposalId]) {
+      // Already fetched, just toggle
+      const newOpen = new Set(openNestedTrees);
+      if (newOpen.has(proposalId)) {
+        newOpen.delete(proposalId);
+      } else {
+        newOpen.add(proposalId);
+      }
+      setOpenNestedTrees(newOpen);
+      return;
+    }
+
+    // Start loading
+    setLoadingNestedTrees(prev => new Set(prev).add(proposalId));
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: HeadersInit = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const response = await fetch(`/api/projects/${projectId}/proposals/${proposalId}/nested-tree`, {
+        headers
+      });
+
+      console.log('[NESTED_TREE_FETCH] Response status:', {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+      
+      const data = await response.json();
+      
+      console.log('[NESTED_TREE_FETCH] Raw response data:', {
+        dataType: typeof data,
+        dataKeys: Object.keys(data || {}),
+        fullData: JSON.stringify(data).substring(0, 2000),
+        hasProposals: 'proposals' in (data || {}),
+        hasBlocks: 'blocks' in (data || {}),
+        proposalsType: typeof data?.proposals,
+        proposalsIsArray: Array.isArray(data?.proposals),
+        proposalsLength: data?.proposals?.length,
+        blocksType: typeof data?.blocks,
+        blocksIsArray: Array.isArray(data?.blocks),
+        blocksLength: data?.blocks?.length
+      });
+      
+      // Even if response is not ok, use the data if it has the expected structure
+      // This handles cases where API returns error but still includes proposals/blocks arrays
+      if (!response.ok && (!data.proposals && !data.blocks)) {
+        console.error('[NESTED_TREE_FETCH] Failed to fetch nested tree data:', data.error || 'Unknown error');
+        throw new Error(data.error || 'Failed to fetch nested tree data');
+      }
+
+      console.log('[NESTED_TREE_FETCH] Processed data:', {
+        hasBlocks: !!data.blocks,
+        blocksCount: data.blocks?.length || 0,
+        blocksArray: data.blocks?.map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          block_type: b.block_type,
+          proposalCount: b.proposals?.length || 0
+        })) || [],
+        hasProposals: !!data.proposals,
+        proposalsCount: data.proposals?.length || 0,
+        proposalsArray: data.proposals?.map((p: any) => ({
+          id: p.id,
+          title: p.node_json?.title,
+          nodeType: p.node_json?.metadata?.node_type
+        })) || [],
+        hasError: !!data.error,
+        error: data.error
+      });
+      
+      // Always set the data, even if there's an error (it might have empty arrays)
+      const processedData = {
+        proposals: data.proposals || [],
+        blocks: data.blocks || [],
+        isProposed: data.isProposed !== false,
+        error: data.error
+      };
+      
+      console.log('[NESTED_TREE_FETCH] Setting state with processed data:', {
+        proposalId,
+        processedData: {
+          proposalsCount: processedData.proposals.length,
+          blocksCount: processedData.blocks.length,
+          proposals: processedData.proposals.map((p: any) => ({
+            id: p.id,
+            title: p.node_json?.title
+          })),
+          blocks: processedData.blocks.map((b: any) => ({
+            id: b.id,
+            name: b.name,
+            proposalCount: b.proposals?.length || 0
+          }))
+        }
+      });
+      
+      setNestedTreeData(prev => {
+        const newData = { ...prev, [proposalId]: processedData };
+        console.log('[NESTED_TREE_FETCH] Updated nestedTreeData state:', {
+          proposalId,
+          hasData: !!newData[proposalId],
+          dataKeys: Object.keys(newData[proposalId] || {}),
+          proposalsCount: newData[proposalId]?.proposals?.length || 0,
+          blocksCount: newData[proposalId]?.blocks?.length || 0
+        });
+        return newData;
+      });
+      setOpenNestedTrees(prev => new Set(prev).add(proposalId));
+    } catch (error) {
+      console.error('Error fetching nested tree data:', error);
+    } finally {
+      setLoadingNestedTrees(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(proposalId);
+        return newSet;
+      });
+    }
+  }, [projectId, nestedTreeData, openNestedTrees]);
+
+  // Function to render nested tree structure
+  const renderNestedTree = useCallback((treeData: any, proposalId: string) => {
+    console.log('[RENDER_NESTED_TREE] Rendering tree data:', {
+      hasTree: !!treeData.tree,
+      hasBlocks: !!treeData.blocks,
+      blocksCount: treeData.blocks?.length || 0,
+      hasProposals: !!treeData.proposals,
+      proposalsCount: treeData.proposals?.length || 0,
+      treeData
+    });
+    if (!treeData) return null;
+
+    // If tree is built, show blocks and nodes
+    if (treeData.tree && treeData.blocks && treeData.nodes) {
+      return (
+        <div className="space-y-3">
+          {treeData.blocks.map((block: any, blockIndex: number) => {
+            const blockKey = `${block.id}_${proposalId}`;
+            const isBlockExpanded = expandedNestedBlocks.has(blockKey);
+            const blockNodes = treeData.nodes.filter((n: any) => n.block_id === block.id);
+
+            return (
+              <div key={block.id} className="border rounded-lg">
+                <div
+                  className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newExpanded = new Set(expandedNestedBlocks);
+                    if (isBlockExpanded) {
+                      newExpanded.delete(blockKey);
+                    } else {
+                      newExpanded.add(blockKey);
+                    }
+                    setExpandedNestedBlocks(newExpanded);
+                  }}
+                >
+                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-600 rounded-full text-xs font-medium">
+                    {blockIndex + 1}
+                  </div>
+                  <h4 className="text-sm font-medium flex-1">{block.name}</h4>
+                  <Badge variant="outline" className="text-xs">
+                    {blockNodes.length} node(s)
+                  </Badge>
+                  <ChevronDown 
+                    className={`w-3 h-3 transition-transform ${isBlockExpanded ? 'rotate-180' : ''}`}
+                  />
+                </div>
+                {isBlockExpanded && (
+                  <div className="px-2 pb-2 space-y-2">
+                    {blockNodes.map((node: any, nodeIndex: number) => (
+                      <div key={node.id} className="border rounded p-2 text-xs">
+                        <div className="font-medium">{node.name}</div>
+                        {node.description && (
+                          <div className="text-muted-foreground mt-1">{node.description.substring(0, 100)}...</div>
+                        )}
+                        <Badge variant="outline" className="text-xs mt-1">
+                          {node.node_type}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // Show nested tree proposals organized by blocks (expandable format)
+    // Use blocks structure if available (from API), otherwise group proposals manually
+    if (treeData.blocks && Array.isArray(treeData.blocks) && treeData.blocks.length > 0) {
+      // Use the blocks structure returned by API
+      return (
+        <div className="space-y-3">
+          {treeData.blocks.map((block: any, blockIndex: number) => {
+            const blockKey = `nested_proposal_block_${proposalId}_${block.block_type || blockIndex}`;
+            const isBlockExpanded = expandedNestedBlocks.has(blockKey);
+            const blockProposals = block.proposals || [];
+
+            return (
+              <div key={block.id || blockIndex} className="border rounded-lg">
+                <div
+                  className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newExpanded = new Set(expandedNestedBlocks);
+                    if (isBlockExpanded) {
+                      newExpanded.delete(blockKey);
+                    } else {
+                      newExpanded.add(blockKey);
+                    }
+                    setExpandedNestedBlocks(newExpanded);
+                  }}
+                >
+                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-600 rounded-full text-xs font-medium">
+                    {blockIndex + 1}
+                  </div>
+                  <h4 className="text-sm font-medium flex-1">{block.name}</h4>
+                  <Badge variant="outline" className="text-xs">
+                    {blockProposals.length} node(s)
+                  </Badge>
+                  <ChevronDown 
+                    className={`w-3 h-3 transition-transform ${isBlockExpanded ? 'rotate-180' : ''}`}
+                  />
+                </div>
+                {isBlockExpanded && (
+                  <div className="px-2 pb-2 space-y-2">
+                    {blockProposals.map((proposal: any, nodeIndex: number) => {
+                      const node = proposal.node_json;
+                      return (
+                        <div key={proposal.id} className="border rounded p-2 text-xs">
+                          <div className="font-medium">{node.title}</div>
+                          {node.short_summary && (
+                            <div className="text-muted-foreground mt-1">{node.short_summary.substring(0, 100)}...</div>
+                          )}
+                          {node.content?.text && (
+                            <div className="text-muted-foreground mt-1 text-xs line-clamp-2">
+                              {node.content.text.substring(0, 150)}...
+                            </div>
+                          )}
+                          <Badge variant="outline" className="text-xs mt-1">
+                            {node.metadata?.node_type || node.node_type || 'uncategorized'}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // Fallback: Group proposals by block type if blocks structure not available
+    if (treeData.proposals && Array.isArray(treeData.proposals) && treeData.proposals.length > 0) {
+      // Group proposals by block type
+      const grouped = treeData.proposals.reduce((acc: any, proposal: any) => {
+        const rawType = proposal.node_json?.metadata?.node_type || proposal.node_json?.node_type || 'uncategorized';
+        const blockType = rawType.toLowerCase();
+        if (!acc[blockType]) {
+          acc[blockType] = [];
+        }
+        acc[blockType].push(proposal);
+        return acc;
+      }, {} as Record<string, any[]>);
+
+      const formatBlockName = (type: string) => {
+        const nameMap: Record<string, string> = {
+          'protocol': 'Protocol',
+          'analysis': 'Analysis',
+          'results': 'Results',
+          'data_creation': 'Data Creation',
+          'data': 'Data',
+          'software': 'Software',
+          'instrument': 'Instrument',
+          'uncategorized': 'Uncategorized'
+        };
+        return nameMap[type] || type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      };
+
+      return (
+        <div className="space-y-3">
+          {Object.entries(grouped).map(([blockType, proposals], blockIndex) => {
+            const blockKey = `nested_proposal_block_${proposalId}_${blockType}`;
+            const isBlockExpanded = expandedNestedBlocks.has(blockKey);
+
+            return (
+              <div key={blockType} className="border rounded-lg">
+                <div
+                  className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newExpanded = new Set(expandedNestedBlocks);
+                    if (isBlockExpanded) {
+                      newExpanded.delete(blockKey);
+                    } else {
+                      newExpanded.add(blockKey);
+                    }
+                    setExpandedNestedBlocks(newExpanded);
+                  }}
+                >
+                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-600 rounded-full text-xs font-medium">
+                    {blockIndex + 1}
+                  </div>
+                  <h4 className="text-sm font-medium flex-1">{formatBlockName(blockType)} Block</h4>
+                  <Badge variant="outline" className="text-xs">
+                    {proposals.length} node(s)
+                  </Badge>
+                  <ChevronDown 
+                    className={`w-3 h-3 transition-transform ${isBlockExpanded ? 'rotate-180' : ''}`}
+                  />
+                </div>
+                {isBlockExpanded && (
+                  <div className="px-2 pb-2 space-y-2">
+                    {proposals.map((proposal: any, nodeIndex: number) => {
+                      const node = proposal.node_json;
+                      return (
+                        <div key={proposal.id} className="border rounded p-2 text-xs">
+                          <div className="font-medium">{node.title}</div>
+                          {node.short_summary && (
+                            <div className="text-muted-foreground mt-1">{node.short_summary.substring(0, 100)}...</div>
+                          )}
+                          {node.content?.text && (
+                            <div className="text-muted-foreground mt-1 text-xs line-clamp-2">
+                              {node.content.text.substring(0, 150)}...
+                            </div>
+                          )}
+                          <Badge variant="outline" className="text-xs mt-1">
+                            {node.metadata?.node_type || node.node_type || 'uncategorized'}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // If no proposals, show empty state
+    return <div className="text-xs text-muted-foreground p-2">No nested tree proposals available.</div>;
+  }, [expandedNestedBlocks]);
 
   // Define fetchData FIRST (before useEffect)
   const fetchData = useCallback(async () => {
@@ -2235,18 +2595,14 @@ export default function ImportPage() {
                   <div className="flex items-center justify-between mb-6">
                     <div>
                       {(() => {
-                        // Filter proposals into regular and nested tree proposals
-                        const regularProposals = proposals.filter(p => 
-                          !p.node_json?.isNestedTree && 
-                          !p.node_json?.metadata?.isNestedTree
-                        );
+                        // Calculate nested tree count
                         const nestedTreeProposals = proposals.filter(p => 
                           p.node_json?.isNestedTree === true || 
                           p.node_json?.metadata?.isNestedTree === true
                         );
                         
-                        // Calculate block count from regular proposals only
-                        const groupedRegular = regularProposals.reduce((acc, proposal) => {
+                        // Calculate block count from all proposals
+                        const groupedAll = proposals.reduce((acc, proposal) => {
                           const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
                           const blockType = rawType.toLowerCase();
                           if (!acc[blockType]) {
@@ -2258,13 +2614,13 @@ export default function ImportPage() {
                         
                         const MAX_NODES_PER_BLOCK = 15;
                         let totalBlocks = 0;
-                        Object.values(groupedRegular).forEach((nodes: any[]) => {
+                        Object.values(groupedAll).forEach((nodes: any[]) => {
                           totalBlocks += Math.ceil(nodes.length / MAX_NODES_PER_BLOCK);
                         });
                         
                         return (
                           <p className="text-sm text-muted-foreground">
-                            {regularProposals.length} node(s) • {totalBlocks} block(s) • {nestedTreeProposals.length} nested tree(s) • {selectedProposals.size} selected
+                            {proposals.length} node(s) • {totalBlocks} block(s) • {nestedTreeProposals.length} nested tree(s) • {selectedProposals.size} selected
                           </p>
                         );
                       })()}
@@ -2335,20 +2691,10 @@ export default function ImportPage() {
                     </div>
                   )}
                   
-                  {/* Filter proposals into regular and nested tree proposals */}
+                  {/* Group proposals by block type */}
                   {(() => {
-                    // Split proposals into regular and nested tree proposals
-                    const regularProposals = proposals.filter(p => 
-                      !p.node_json?.isNestedTree && 
-                      !p.node_json?.metadata?.isNestedTree
-                    );
-                    const nestedTreeProposals = proposals.filter(p => 
-                      p.node_json?.isNestedTree === true || 
-                      p.node_json?.metadata?.isNestedTree === true
-                    );
-                    
-                    // Group regular proposals by node type (normalize to lowercase)
-                    const groupedProposals = regularProposals.reduce((acc, proposal) => {
+                    // Group all proposals by node type (normalize to lowercase) - including nested trees
+                    const groupedProposals = proposals.reduce((acc, proposal) => {
                       const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
                       const blockType = rawType.toLowerCase();
                       if (!acc[blockType]) {
@@ -2418,319 +2764,15 @@ export default function ImportPage() {
                     });
                     
                     const blocksToRender = splitLargeBlocks(orderedGrouped);
-                    
-                    // Nested tree section key
-                    const nestedTreeSectionKey = 'nested_tree_proposals';
-                    const isNestedTreeSectionExpanded = expandedBlocks.has(nestedTreeSectionKey);
-                    const selectedInNested = nestedTreeProposals.filter(p => selectedProposals.has(p.id)).length;
 
                     return (
                       <div className="space-y-6">
-                        {/* Nested Tree Proposals Section */}
-                        {nestedTreeProposals.length > 0 && (
-                          <div className="border rounded-lg border-purple-200 bg-purple-50/30">
-                            {/* Nested Tree Section Header */}
-                            <div 
-                              className="flex items-center gap-3 p-4 cursor-pointer hover:bg-purple-50 transition-colors"
-                              onClick={() => {
-                                const newExpanded = new Set(expandedBlocks);
-                                if (isNestedTreeSectionExpanded) {
-                                  newExpanded.delete(nestedTreeSectionKey);
-                                } else {
-                                  newExpanded.add(nestedTreeSectionKey);
-                                }
-                                setExpandedBlocks(newExpanded);
-                              }}
-                            >
-                              <div className="flex items-center justify-center w-8 h-8 bg-purple-100 text-purple-600 rounded-full">
-                                <GitBranch className="w-4 h-4" />
-                              </div>
-                              <h3 className="text-lg font-semibold flex-1">Nested Tree Proposals</h3>
-                              <div className="flex items-center gap-2">
-                                {selectedInNested > 0 && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    {selectedInNested}/{nestedTreeProposals.length} selected
-                                  </Badge>
-                                )}
-                                <Badge variant="outline" className="text-xs bg-purple-100 border-purple-300">
-                                  {nestedTreeProposals.length} nested tree(s)
-                                </Badge>
-                                <ChevronDown 
-                                  className={`w-4 h-4 transition-transform ${isNestedTreeSectionExpanded ? 'rotate-180' : ''}`}
-                                />
-                              </div>
-                            </div>
-                            
-                            {/* Nested Tree Proposals Content */}
-                            {isNestedTreeSectionExpanded && (
-                              <div className="px-4 pb-4 space-y-3">
-                                {nestedTreeProposals.map((proposal, nodeIndex) => {
-                                  const node = proposal.node_json;
-                                  const isSelected = selectedProposals.has(proposal.id);
-                                  
-                                  return (
-                                    <div 
-                                      key={proposal.id} 
-                                      className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                                        isSelected ? 'border-purple-500 bg-purple-50' : 'border-purple-200 hover:border-purple-300 bg-white'
-                                      }`}
-                                      onClick={() => {
-                                        const newSelected = new Set(selectedProposals);
-                                        if (isSelected) {
-                                          newSelected.delete(proposal.id);
-                                        } else {
-                                          newSelected.add(proposal.id);
-                                        }
-                                        setSelectedProposals(newSelected);
-                                      }}
-                                    >
-                                      <div className="flex items-start gap-3">
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="checkbox"
-                                            checked={isSelected}
-                                            onChange={() => {}} // Handled by parent onClick
-                                            className="mt-1"
-                                          />
-                                          <div className="flex items-center justify-center w-6 h-6 bg-purple-100 text-purple-600 rounded-full text-xs font-medium">
-                                            {nodeIndex + 1}
-                                          </div>
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex items-center gap-2 mb-2">
-                                            <h4 className="font-medium text-sm">{node.title}</h4>
-                                            <Badge variant="outline" className="text-xs bg-purple-100 border-purple-300 text-purple-700">
-                                              Nested Tree
-                                            </Badge>
-                                            <div className="flex items-center gap-1">
-                                              <Badge 
-                                                variant={proposal.confidence > 0.8 ? 'default' : proposal.confidence > 0.6 ? 'secondary' : 'outline'}
-                                                className="text-xs"
-                                              >
-                                                {Math.round(proposal.confidence * 100)}% confidence
-                                              </Badge>
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setShowConfidenceInfo(prev => ({
-                                                    ...prev,
-                                                    [proposal.id]: !prev[proposal.id]
-                                                  }));
-                                                }}
-                                                className="p-1 hover:bg-gray-100 rounded transition-colors"
-                                                title="Learn about confidence scores"
-                                              >
-                                                <Info className="h-3 w-3 text-gray-500" />
-                                              </button>
-                                            </div>
-                                          </div>
-
-                                          {showConfidenceInfo[proposal.id] && (
-                                            <div className="mb-3 p-3 bg-blue-50 rounded border border-blue-200 text-xs">
-                                              <p className="font-medium mb-1">About Confidence Scores</p>
-                                              <p className="text-gray-700 mb-2">
-                                                Confidence indicates how well-supported each proposal is based on source count, structured data, and verification status.
-                                              </p>
-                                              <ul className="space-y-1 text-gray-700">
-                                                <li><strong>80%+ (Green):</strong> High confidence - multiple sources, structured data</li>
-                                                <li><strong>60-79% (Yellow):</strong> Medium confidence - decent support, may need review</li>
-                                                <li><strong>&lt;60% (Red):</strong> Low confidence - limited support, needs verification</li>
-                                              </ul>
-                                            </div>
-                                          )}
-                                          <p className="text-sm text-muted-foreground mb-3">
-                                            {node.short_summary || node.content?.text?.substring(0, 200) + '...'}
-                                          </p>
-                                          
-                                          {/* Clickable Tabs - Same as regular proposals */}
-                                          <div className="flex gap-1 mb-3">
-                                            {node.content?.text && (
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setSelectedDetailView(prev => ({
-                                                    ...prev,
-                                                    [proposal.id]: prev[proposal.id] === "content" ? "" : "content"
-                                                  }));
-                                                }}
-                                                className={`px-3 py-1 text-xs rounded transition-colors ${
-                                                  selectedDetailView[proposal.id] === "content"
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                                }`}
-                                              >
-                                                📄 Content
-                                              </button>
-                                            )}
-                                            {node.links && node.links.length > 0 && (
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setSelectedDetailView(prev => ({
-                                                    ...prev,
-                                                    [proposal.id]: prev[proposal.id] === "links" ? "" : "links"
-                                                  }));
-                                                }}
-                                                className={`px-3 py-1 text-xs rounded transition-colors ${
-                                                  selectedDetailView[proposal.id] === "links"
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                                }`}
-                                              >
-                                                🔗 Links ({node.links.length})
-                                              </button>
-                                            )}
-                                            {node.attachments && node.attachments.length > 0 && (
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setSelectedDetailView(prev => ({
-                                                    ...prev,
-                                                    [proposal.id]: prev[proposal.id] === "attachments" ? "" : "attachments"
-                                                  }));
-                                                }}
-                                                className={`px-3 py-1 text-xs rounded transition-colors ${
-                                                  selectedDetailView[proposal.id] === "attachments"
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                                }`}
-                                              >
-                                                📎 Attachments ({node.attachments.length})
-                                              </button>
-                                            )}
-                                            {node.dependencies && node.dependencies.length > 0 && (
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setSelectedDetailView(prev => ({
-                                                    ...prev,
-                                                    [proposal.id]: prev[proposal.id] === "dependencies" ? "" : "dependencies"
-                                                  }));
-                                                }}
-                                                className={`px-3 py-1 text-xs rounded transition-colors ${
-                                                  selectedDetailView[proposal.id] === "dependencies"
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                                }`}
-                                              >
-                                                🔗 Dependencies ({node.dependencies.length})
-                                              </button>
-                                            )}
-                                          </div>
-                                          
-                                          {/* Detail View Content - Same as regular proposals */}
-                                          {selectedDetailView[proposal.id] === "content" && node.content?.text && (
-                                            <div className="mt-3 p-3 bg-gray-50 rounded border">
-                                              <h5 className="font-medium text-sm mb-2">Content:</h5>
-                                              <pre className="text-xs whitespace-pre-wrap text-gray-700">
-                                                {node.content.text}
-                                              </pre>
-                                            </div>
-                                          )}
-
-                                          {selectedDetailView[proposal.id] === "links" && node.links && node.links.length > 0 && (
-                                            <div className="mt-3 p-3 bg-gray-50 rounded border">
-                                              <h5 className="font-medium text-sm mb-2">Links:</h5>
-                                              <div className="space-y-1">
-                                                {node.links.map((link: any, index: number) => (
-                                                  <div key={index} className="text-xs">
-                                                    <a 
-                                                      href={link.url} 
-                                                      target="_blank" 
-                                                      rel="noopener noreferrer"
-                                                      className="text-blue-600 hover:underline"
-                                                    >
-                                                      {link.title || link.url}
-                                                    </a>
-                                                    {link.type && (
-                                                      <span className="text-gray-500 ml-2">({link.type})</span>
-                                                    )}
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {selectedDetailView[proposal.id] === "attachments" && node.attachments && node.attachments.length > 0 && (
-                                            <div className="mt-3 p-3 bg-gray-50 rounded border">
-                                              <h5 className="font-medium text-sm mb-2">Attachments:</h5>
-                                              <div className="space-y-1">
-                                                {node.attachments.map((attachment: any, index: number) => (
-                                                  <div key={index} className="text-xs">
-                                                    <span className="font-medium">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
-                                                    {attachment.range && (
-                                                      <span className="text-gray-500 ml-2">({attachment.range})</span>
-                                                    )}
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {selectedDetailView[proposal.id] === "dependencies" && node.dependencies && node.dependencies.length > 0 && (
-                                            <div className="mt-3 p-3 bg-gray-50 rounded border">
-                                              <h5 className="font-medium text-sm mb-2">Dependencies:</h5>
-                                              <div className="space-y-2">
-                                                {node.dependencies.map((dep: any, index: number) => {
-                                                  const depTypeLabels: Record<string, string> = {
-                                                    'requires': 'Requires',
-                                                    'uses_output': 'Uses Output',
-                                                    'follows': 'Follows',
-                                                    'validates': 'Validates'
-                                                  };
-                                                  const depTypeColors: Record<string, string> = {
-                                                    'requires': 'bg-orange-100 text-orange-700',
-                                                    'uses_output': 'bg-blue-100 text-blue-700',
-                                                    'follows': 'bg-green-100 text-green-700',
-                                                    'validates': 'bg-purple-100 text-purple-700'
-                                                  };
-                                                  const depType = dep.dependency_type || dep.dependencyType || 'requires';
-                                                  return (
-                                                    <div key={index} className="text-xs border-l-2 border-gray-300 pl-2">
-                                                      <div className="flex items-center gap-2 mb-1">
-                                                        <span className="font-medium text-gray-900">
-                                                          {dep.referenced_title || dep.referencedNodeTitle || 'Unknown Node'}
-                                                        </span>
-                                                        <Badge 
-                                                          variant="outline" 
-                                                          className={`text-xs ${depTypeColors[depType] || 'bg-gray-100 text-gray-700'}`}
-                                                        >
-                                                          {depTypeLabels[depType] || depType}
-                                                        </Badge>
-                                                        {dep.confidence !== undefined && (
-                                                          <span className="text-gray-500">
-                                                            {Math.round((dep.confidence || 0) * 100)}% confidence
-                                                          </span>
-                                                        )}
-                                                      </div>
-                                                      {dep.extractedPhrase && (
-                                                        <p className="text-gray-600 italic text-xs mt-1">
-                                                          "{dep.extractedPhrase}"
-                                                        </p>
-                                                      )}
-                                                      {dep.evidence && !dep.extractedPhrase && (
-                                                        <p className="text-gray-600 italic text-xs mt-1">
-                                                          "{dep.evidence}"
-                                                        </p>
-                                                      )}
-                                                    </div>
-                                                  );
-                                                })}
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {/* Regular Proposals Blocks */}
                         {blocksToRender.map((block, blockIndex) => {
+                          // Find nested tree proposals in this block
+                          const nestedTreeProposalsInBlock = block.nodes.filter(p => 
+                            p.node_json?.isNestedTree === true || 
+                            p.node_json?.metadata?.isNestedTree === true
+                          );
                           const blockKey = block.key;
                           const isBlockExpanded = expandedBlocks.has(blockKey);
                           const selectedInBlock = block.nodes.filter(proposal => selectedProposals.has(proposal.id)).length;
@@ -2753,7 +2795,20 @@ export default function ImportPage() {
                                 <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full text-sm font-medium">
                                   {blockIndex + 1}
                                 </div>
-                                <h3 className="text-lg font-semibold flex-1">{formatBlockName(block.type, block.part, block.totalParts)} Block</h3>
+                                <h3 className="text-lg font-semibold flex-1 flex items-center gap-2">
+                                  {formatBlockName(block.type, block.part, block.totalParts)} Block
+                                  {/* Nested Tree Links next to Block Name - Non-clickable indicator */}
+                                  {nestedTreeProposalsInBlock.length > 0 && (
+                                    <div className="flex items-center gap-1">
+                                      <Link className="w-5 h-5 text-blue-500" />
+                                      {nestedTreeProposalsInBlock.length > 1 && (
+                                        <Badge variant="secondary" className="text-xs h-5 px-1.5">
+                                          {nestedTreeProposalsInBlock.length}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  )}
+                                </h3>
                                 <div className="flex items-center gap-2">
                                   {selectedInBlock > 0 && (
                                     <Badge variant="secondary" className="text-xs">
@@ -2772,6 +2827,23 @@ export default function ImportPage() {
                               {/* Block Content - Only visible when expanded */}
                               {isBlockExpanded && (
                                 <div className="px-4 pb-4 space-y-3">
+                                  {/* Nested Tree Dropdowns */}
+                                  {nestedTreeProposalsInBlock.map((nestedProposal) => {
+                                    const isNestedOpen = openNestedTrees.has(nestedProposal.id);
+                                    return (
+                                      isNestedOpen && nestedTreeData[nestedProposal.id] && (
+                                        <div key={nestedProposal.id} className="mb-4 pb-4 border-b">
+                                          <div className="text-xs font-medium text-muted-foreground mb-2">
+                                            {nestedProposal.node_json.title}:
+                                          </div>
+                                          <div className="ml-4 mt-2 border-l-2 border-blue-200 pl-4">
+                                            {renderNestedTree(nestedTreeData[nestedProposal.id], nestedProposal.id)}
+                                          </div>
+                                        </div>
+                                      )
+                                    );
+                                  })}
+                                  
                                   {block.nodes.map((proposal, nodeIndex) => {
                                     const node = proposal.node_json;
                                     const isSelected = selectedProposals.has(proposal.id);
@@ -2807,6 +2879,27 @@ export default function ImportPage() {
                                           <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-2">
                                               <h4 className="font-medium text-sm">{node.title}</h4>
+                                              {/* Nested Tree Dropdown Link */}
+                                              {(node.isNestedTree || node.metadata?.isNestedTree) && (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    fetchNestedTreeData(proposal.id);
+                                                  }}
+                                                  className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                                                  title="View nested tree"
+                                                >
+                                                  <Link className="w-3 h-3" />
+                                                  <span>View Tree</span>
+                                                  {loadingNestedTrees.has(proposal.id) ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                  ) : (
+                                                    <ChevronDown 
+                                                      className={`w-3 h-3 transition-transform ${openNestedTrees.has(proposal.id) ? 'rotate-180' : ''}`}
+                                                    />
+                                                  )}
+                                                </button>
+                                              )}
                                               <div className="flex items-center gap-1">
                                                 <Badge 
                                                   variant={proposal.confidence > 0.8 ? 'default' : proposal.confidence > 0.6 ? 'secondary' : 'outline'}
@@ -2829,6 +2922,13 @@ export default function ImportPage() {
                                                 </button>
                                               </div>
                                             </div>
+                                            
+                                            {/* Nested Tree Dropdown Content */}
+                                            {(node.isNestedTree || node.metadata?.isNestedTree) && openNestedTrees.has(proposal.id) && nestedTreeData[proposal.id] && (
+                                              <div className="mb-3 mt-2 border-l-2 border-blue-200 pl-4">
+                                                {renderNestedTree(nestedTreeData[proposal.id], proposal.id)}
+                                              </div>
+                                            )}
 
                                             {showConfidenceInfo[proposal.id] && (
                                               <div className="mb-3 p-3 bg-blue-50 rounded border border-blue-200 text-xs">
