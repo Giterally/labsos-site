@@ -72,10 +72,29 @@ Return a JSON object with high-level blocks and nodes.`;
       console.log(`[HIERARCHICAL_EXTRACTION] Processing section ${idx + 1}/${documentChunks.length}: ${parentSection}`);
 
       try {
-        // Use complexity-aware extraction for each section
-        const sectionResult = await extractWorkflow(chunk, projectContext, complexity);
+        // Create section-specific complexity with aggressive extraction targets
+        // Distribute target across sections, but ensure minimum nodes per section
+        const sectionComplexity = complexity ? {
+          ...complexity,
+          estimatedNodeCount: Math.max(
+            Math.ceil(complexity.estimatedNodeCount / documentChunks.length), // Distribute target
+            5 // Minimum 5 nodes per section to ensure comprehensive extraction
+          ),
+          extractionStrategy: 'comprehensive' as const // Always use comprehensive for sections to extract everything
+        } : undefined;
+        
+        // Use complexity-aware extraction for each section with enhanced targets
+        const sectionResult = await extractWorkflow(chunk, projectContext, sectionComplexity);
         const sectionNodeCount = sectionResult.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
-        console.log(`[HIERARCHICAL_EXTRACTION] ✅ Section "${parentSection}" → ${sectionNodeCount} nodes`);
+        const expectedNodes = sectionComplexity?.estimatedNodeCount || 5;
+        const coverageRatio = expectedNodes > 0 ? sectionNodeCount / expectedNodes : 1.0;
+        
+        console.log(`[HIERARCHICAL_EXTRACTION] ✅ Section "${parentSection}" → ${sectionNodeCount} nodes (expected: ${expectedNodes}, coverage: ${(coverageRatio * 100).toFixed(1)}%)`);
+        
+        if (coverageRatio < 0.5) {
+          console.warn(`[HIERARCHICAL_EXTRACTION] ⚠️  Section "${parentSection}" may be under-extracted (coverage < 50%)`);
+        }
+        
         return { success: true, result: sectionResult, section: parentSection };
       } catch (error) {
         console.error(`[HIERARCHICAL_EXTRACTION] ❌ Failed section "${parentSection}":`, error);
@@ -90,16 +109,36 @@ Return a JSON object with high-level blocks and nodes.`;
   const successfulResults = sectionResults.filter(r => r.success).map(r => r.result!);
   const failedSections = sectionResults.filter(r => !r.success);
 
-  // Check failure threshold (50%)
-  if (failedSections.length / documentChunks.length > 0.5) {
+  // Calculate failure rate
+  const failureRate = documentChunks.length > 0 ? failedSections.length / documentChunks.length : 0;
+  
+  // Check failure threshold (50%) - but only if we have at least 2 chunks
+  // If we only have 1-2 chunks, we need at least 1 to succeed
+  if (documentChunks.length >= 2 && failureRate > 0.5) {
+    const failedSectionNames = failedSections.map(f => f.section).slice(0, 10).join(', ');
+    const moreFailed = failedSections.length > 10 ? ` and ${failedSections.length - 10} more` : '';
     throw new Error(
-      `Too many section failures: ${failedSections.length}/${documentChunks.length}. ` +
-      `Failed sections: ${failedSections.map(f => f.section).join(', ')}`
+      `Too many section failures: ${failedSections.length}/${documentChunks.length} (${(failureRate * 100).toFixed(1)}%). ` +
+      `Failed sections: ${failedSectionNames}${moreFailed}. ` +
+      `This usually indicates the document structure is corrupted or contains mostly non-extractable content (citations, equations, fragments).`
+    );
+  }
+  
+  // If we have very few chunks and all failed, that's also a problem
+  if (documentChunks.length > 0 && successfulResults.length === 0) {
+    throw new Error(
+      `All sections failed extraction (${failedSections.length}/${documentChunks.length}). ` +
+      `This usually indicates the document structure is corrupted or contains no extractable workflow content.`
     );
   }
 
   if (failedSections.length > 0) {
     console.warn(`[HIERARCHICAL_EXTRACTION] ⚠️  ${failedSections.length} section(s) failed, continuing with ${successfulResults.length} successful sections`);
+    // Log first few failures for debugging
+    failedSections.slice(0, 5).forEach(f => {
+      const errorMsg = f.error instanceof Error ? f.error.message : String(f.error);
+      console.warn(`[HIERARCHICAL_EXTRACTION]   - "${f.section}": ${errorMsg.substring(0, 100)}`);
+    });
   }
 
   // Step 4: Merge overview + detailed results

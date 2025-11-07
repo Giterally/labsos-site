@@ -15,6 +15,337 @@ import type { WorkflowExtractionResult, ExtractedNode } from '../ai/schemas/work
 import { formatStructuredDocumentForLLM } from '../ai/workflow-extractor';
 
 /**
+ * Enriches node content with attachment references, adding document source information
+ * Format: "Figure 3 (from UCL_dis.pdf)" or "[See Figure 3 (from UCL_dis.pdf)]"
+ */
+function enrichContentWithAttachmentReferences(
+  nodes: ExtractedNode[],
+  structuredDocs: Array<{ document_json: StructuredDocument }>
+): void {
+  console.log(`[CONTENT_ENRICHMENT] Starting content enrichment with attachment references`);
+  
+  // Build sourceId -> fileName map
+  const sourceToFileName = new Map<string, string>();
+  for (const doc of structuredDocs) {
+    const structuredDoc = doc.document_json as StructuredDocument;
+    if (structuredDoc.sourceId) {
+      sourceToFileName.set(structuredDoc.sourceId, structuredDoc.fileName);
+    }
+    // Also map by fileName as fallback (in case sourceId doesn't match)
+    sourceToFileName.set(structuredDoc.fileName, structuredDoc.fileName);
+  }
+  
+  let nodesEnriched = 0;
+  let referencesAdded = 0;
+  
+  for (const node of nodes) {
+    if (!node.attachments || node.attachments.length === 0) continue;
+    
+    let enrichedContent = node.content.text;
+    const addedReferences = new Set<string>(); // Track what we've added to avoid duplicates
+    let nodeModified = false;
+    
+    // For each attachment, find or add reference
+    for (const att of node.attachments) {
+      const docName = sourceToFileName.get(att.sourceId) || 
+                     sourceToFileName.get(att.fileName) || 
+                     att.fileName || 
+                     'document';
+      
+      // Extract type and number from fileName (e.g., "Figure 3", "Table 2", "Equation 1")
+      const fileNameMatch = att.fileName.match(/^(Figure|Table|Equation|Fig\.?)\s+(\d+[a-zA-Z]?)/i);
+      if (!fileNameMatch) {
+        // Try to extract from relevance or other fields
+        const relevanceMatch = att.relevance?.match(/(Figure|Table|Equation|Fig\.?)\s+(\d+[a-zA-Z]?)/i);
+        if (!relevanceMatch) continue;
+        
+        const type = relevanceMatch[1].replace(/\./g, '').toLowerCase();
+        const num = relevanceMatch[2];
+        const normalizedType = type.startsWith('fig') ? 'Figure' : 
+                              type.startsWith('tab') ? 'Table' : 
+                              type.startsWith('eq') ? 'Equation' : 'Figure';
+        const referenceText = `${normalizedType} ${num}`;
+        const fullReference = `${referenceText} (from ${docName})`;
+        
+        // Check if already mentioned in content
+        const patterns = [
+          new RegExp(`\\b${referenceText}\\b`, 'gi'),
+          new RegExp(`\\b${normalizedType.substring(0, 3)}\\.?\\s+${num}\\b`, 'gi'),
+        ];
+        
+        let found = false;
+        for (const pattern of patterns) {
+          if (pattern.test(enrichedContent)) {
+            // Replace existing mention with reference (only if not already there)
+            enrichedContent = enrichedContent.replace(pattern, (match) => {
+              // Check if this match already has a document reference
+              const context = enrichedContent.substring(
+                Math.max(0, enrichedContent.indexOf(match) - 50),
+                Math.min(enrichedContent.length, enrichedContent.indexOf(match) + match.length + 50)
+              );
+              if (context.includes('(from')) {
+                return match; // Already has reference
+              }
+              nodeModified = true;
+              return `${match} (from ${docName})`;
+            });
+            found = true;
+            referencesAdded++;
+            break;
+          }
+        }
+        
+        // If not found in content, add at end
+        if (!found && !addedReferences.has(referenceText)) {
+          enrichedContent += ` [See ${fullReference}]`;
+          addedReferences.add(referenceText);
+          nodeModified = true;
+          referencesAdded++;
+        }
+        continue;
+      }
+      
+      const [_, typeRaw, num] = fileNameMatch;
+      // Normalize type
+      const type = typeRaw.toLowerCase().startsWith('fig') ? 'Figure' : 
+                  typeRaw.toLowerCase().startsWith('tab') ? 'Table' : 
+                  typeRaw.toLowerCase().startsWith('eq') ? 'Equation' : 'Figure';
+      const referenceText = `${type} ${num}`;
+      const fullReference = `${referenceText} (from ${docName})`;
+      
+      // Check if already mentioned in content
+      const patterns = [
+        new RegExp(`\\b${referenceText}\\b`, 'gi'),
+        new RegExp(`\\b${type.substring(0, 3)}\\.?\\s+${num}\\b`, 'gi'),
+        new RegExp(`\\(${type.substring(0, 3)}\\.?\\s+${num}\\)`, 'gi'),
+      ];
+      
+      let found = false;
+      for (const pattern of patterns) {
+        // Use replace with function to check context for each match
+        const originalContent = enrichedContent; // Keep original for context checking
+        let replacementMade = false;
+        
+        enrichedContent = enrichedContent.replace(pattern, (match, offset) => {
+          // Check if this match already has a document reference nearby
+          const contextStart = Math.max(0, offset - 30);
+          const contextEnd = Math.min(originalContent.length, offset + match.length + 50);
+          const context = originalContent.substring(contextStart, contextEnd);
+          
+          if (context.includes('(from')) {
+            return match; // Already has reference, don't modify
+          }
+          
+          // Add document reference
+          replacementMade = true;
+          nodeModified = true;
+          return `${match} (from ${docName})`;
+        });
+        
+        if (replacementMade) {
+          found = true;
+          referencesAdded++;
+          break;
+        }
+      }
+      
+      // If not found in content, add at end
+      if (!found && !addedReferences.has(referenceText)) {
+        enrichedContent += ` [See ${fullReference}]`;
+        addedReferences.add(referenceText);
+        nodeModified = true;
+        referencesAdded++;
+      }
+    }
+    
+    if (nodeModified) {
+      node.content.text = enrichedContent;
+      nodesEnriched++;
+    }
+  }
+  
+  console.log(`[CONTENT_ENRICHMENT] Enriched ${nodesEnriched} nodes with ${referencesAdded} attachment references`);
+}
+
+/**
+ * Analyzes extraction gaps to identify potentially missing information
+ */
+function analyzeExtractionGaps(
+  doc: StructuredDocument,
+  extractionResult: WorkflowExtractionResult
+): {
+  missingFigures: number;
+  missingMethods: number;
+  missingAnalyses: number;
+  recommendations: string[];
+} {
+  // Count figures/tables in document
+  let docFigures = 0;
+  let docTables = 0;
+  for (const section of doc.sections || []) {
+    for (const content of section.content || []) {
+      if (content.type === 'figure') docFigures++;
+      if (content.type === 'table') docTables++;
+    }
+  }
+  
+  const extractedResultNodes = extractionResult.blocks
+    .filter(b => b.blockType === 'results')
+    .reduce((sum, b) => sum + b.nodes.length, 0);
+  
+  // Count method keywords in document
+  const methodKeywords = [
+    'protocol', 'procedure', 'method', 'technique', 'test', 'analysis',
+    'measurement', 'collection', 'preparation', 'extraction', 'amplification',
+    'statistical', 'anova', 't-test', 'regression', 'model', 'algorithm',
+    'calibration', 'validation', 'quality control'
+  ];
+  
+  let methodKeywordCount = 0;
+  for (const section of doc.sections || []) {
+    const contentText = section.content
+      .map(c => c.type === 'text' ? c.content : '')
+      .join(' ')
+      .toLowerCase();
+    
+    for (const keyword of methodKeywords) {
+      const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+      const matches = contentText.match(regex);
+      if (matches) {
+        methodKeywordCount += matches.length;
+      }
+    }
+  }
+  
+  const extractedProtocolNodes = extractionResult.blocks
+    .filter(b => b.blockType === 'protocol')
+    .reduce((sum, b) => sum + b.nodes.length, 0);
+  
+  const extractedAnalysisNodes = extractionResult.blocks
+    .filter(b => b.blockType === 'analysis')
+    .reduce((sum, b) => sum + b.nodes.length, 0);
+  
+  const recommendations: string[] = [];
+  
+  const totalVisuals = docFigures + docTables;
+  if (totalVisuals > 0 && extractedResultNodes < totalVisuals * 0.5) {
+    recommendations.push(
+      `Document has ${totalVisuals} figures/tables (${docFigures} figures, ${docTables} tables) but only ${extractedResultNodes} result nodes. ` +
+      `Consider extracting more result nodes (target: ${Math.ceil(totalVisuals * 0.7)} nodes).`
+    );
+  }
+  
+  if (methodKeywordCount > 0 && extractedProtocolNodes < methodKeywordCount * 0.1) {
+    recommendations.push(
+      `Document mentions many methods (${methodKeywordCount} method keywords) but only ${extractedProtocolNodes} protocol nodes. ` +
+      `Consider extracting more protocol nodes (target: ${Math.ceil(methodKeywordCount * 0.15)} nodes).`
+    );
+  }
+  
+  // Check for analysis keywords
+  const analysisKeywords = ['anova', 't-test', 'chi-square', 'regression', 'correlation', 'statistical', 'test'];
+  let analysisKeywordCount = 0;
+  for (const section of doc.sections || []) {
+    const contentText = section.content
+      .map(c => c.type === 'text' ? c.content : '')
+      .join(' ')
+      .toLowerCase();
+    
+    for (const keyword of analysisKeywords) {
+      const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+      const matches = contentText.match(regex);
+      if (matches) {
+        analysisKeywordCount += matches.length;
+      }
+    }
+  }
+  
+  if (analysisKeywordCount > 0 && extractedAnalysisNodes < analysisKeywordCount * 0.2) {
+    recommendations.push(
+      `Document mentions many analyses (${analysisKeywordCount} analysis keywords) but only ${extractedAnalysisNodes} analysis nodes. ` +
+      `Consider extracting more analysis nodes (target: ${Math.ceil(analysisKeywordCount * 0.3)} nodes).`
+    );
+  }
+  
+  return {
+    missingFigures: Math.max(0, totalVisuals - extractedResultNodes),
+    missingMethods: Math.max(0, Math.ceil(methodKeywordCount * 0.15) - extractedProtocolNodes),
+    missingAnalyses: Math.max(0, Math.ceil(analysisKeywordCount * 0.3) - extractedAnalysisNodes),
+    recommendations
+  };
+}
+
+/**
+ * Generates a 1-line summary of node content for the description field
+ * Falls back to smart truncation if content is very short
+ */
+function generateNodeSummary(content: string, title: string): string {
+  const trimmedContent = content.trim();
+  
+  // If content is already short (< 150 chars), use it as-is
+  if (trimmedContent.length < 150) {
+    return trimmedContent;
+  }
+  
+  // Split into sentences
+  const sentences = trimmedContent.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  
+  if (sentences.length === 0) {
+    // Fallback: just truncate
+    return trimmedContent.substring(0, 120).trim();
+  }
+  
+  // Strategy 1: Use first sentence if it's a good summary (80-120 chars)
+  const firstSentence = sentences[0].trim();
+  if (firstSentence.length >= 80 && firstSentence.length <= 120) {
+    return firstSentence;
+  }
+  
+  // Strategy 2: Combine first two sentences if combined length is reasonable
+  if (sentences.length >= 2) {
+    const combined = `${sentences[0].trim()}. ${sentences[1].trim()}`;
+    if (combined.length <= 120) {
+      return combined;
+    }
+    // If combined is too long, try to shorten second sentence
+    const shortened = `${sentences[0].trim()}. ${sentences[1].trim().substring(0, 80)}`;
+    if (shortened.length <= 120) {
+      return shortened;
+    }
+  }
+  
+  // Strategy 3: Extract key sentence (one that contains important keywords)
+  // Look for sentences with action verbs or key terms
+  const keyTerms = ['method', 'protocol', 'analysis', 'result', 'procedure', 'technique', 'approach', 
+                    'configuration', 'implementation', 'process', 'performed', 'used', 'applied'];
+  for (const sentence of sentences) {
+    const lowerSentence = sentence.toLowerCase();
+    if (keyTerms.some(term => lowerSentence.includes(term))) {
+      const trimmed = sentence.trim();
+      if (trimmed.length <= 120) {
+        return trimmed;
+      }
+      // If too long, truncate at word boundary
+      if (trimmed.length > 120) {
+        const truncated = trimmed.substring(0, 117);
+        const lastSpace = truncated.lastIndexOf(' ');
+        return lastSpace > 80 ? truncated.substring(0, lastSpace) + '...' : truncated + '...';
+      }
+    }
+  }
+  
+  // Strategy 4: Use first sentence, truncated to 120 chars at word boundary
+  if (firstSentence.length > 120) {
+    const truncated = firstSentence.substring(0, 117);
+    const lastSpace = truncated.lastIndexOf(' ');
+    return lastSpace > 80 ? truncated.substring(0, lastSpace) + '...' : truncated + '...';
+  }
+  
+  // Fallback: Use first sentence as-is
+  return firstSentence;
+}
+
+/**
  * Extract key topics from a structured document for matching
  * Used to match nodes to documents when attachments are missing
  */
@@ -95,22 +426,18 @@ export async function generateProposals(projectId: string, jobId?: string) {
   console.log('[FAST_IMPORT] Project ID:', projectId);
   console.log('[FAST_IMPORT] Job ID:', trackingJobId);
   
-  // Check for cancellation immediately after initialization
-  if (await checkCancellation(trackingJobId)) {
-    console.log('[FAST_IMPORT] Job was cancelled before processing started');
-    await progressTracker.updateWithPersistence(trackingJobId, {
-      stage: 'complete',
-      current: 100,
-      total: 100,
-      message: 'Generation cancelled by user',
-    });
-    return {
-      success: false,
-      proposalsGenerated: 0,
-      nestedTreeCandidates: 0,
-      cancelled: true,
-    };
-  }
+    // Check for cancellation immediately after initialization
+    if (await checkCancellation(trackingJobId)) {
+      console.log('[FAST_IMPORT] Job was cancelled before processing started');
+      // Mark as cancelled (status will remain 'cancelled' via complete_job_progress function)
+      await progressTracker.completeWithPersistence(trackingJobId, 'Generation cancelled by user');
+      return {
+        success: false,
+        proposalsGenerated: 0,
+        nestedTreeCandidates: 0,
+        cancelled: true,
+      };
+    }
   
   try {
     // Validate configuration before starting
@@ -263,11 +590,14 @@ export async function generateProposals(projectId: string, jobId?: string) {
           // Step 1: Analyze document complexity
           const complexity = analyzeDocumentComplexity(structuredDoc);
           
-          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Complexity analysis:`);
-          console.log(`  - Strategy: ${complexity.extractionStrategy}`);
-          console.log(`  - Estimated nodes: ${complexity.estimatedNodeCount}`);
-          console.log(`  - Use hierarchical: ${complexity.shouldUseHierarchical}`);
-          console.log(`  - Recommended provider: ${complexity.recommendedProvider}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ========== COMPLEXITY ANALYSIS ==========`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Document: "${originalFileName}"`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Sections: ${structuredDoc.sections.length}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Strategy: ${complexity.extractionStrategy}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Estimated nodes: ${complexity.estimatedNodeCount}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Use hierarchical: ${complexity.shouldUseHierarchical}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Recommended provider: ${complexity.recommendedProvider}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ==========================================`);
 
           // Step 2: Choose extraction approach
           let extractionResult: WorkflowExtractionResult;
@@ -310,11 +640,40 @@ export async function generateProposals(projectId: string, jobId?: string) {
           const duration = Date.now() - startTime;
           const totalNodes = extractionResult.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
           
+          // VALIDATION: Check if extraction met expectations
+          const expectedNodes = complexity.estimatedNodeCount;
+          const coverageRatio = expectedNodes > 0 ? totalNodes / expectedNodes : 0;
+          
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ✓ Extraction successful: ${extractionResult.blocks.length} blocks, ${totalNodes} nodes in ${duration}ms`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Extraction validation:`);
+          console.log(`  - Expected nodes: ${expectedNodes}`);
+          console.log(`  - Actual nodes: ${totalNodes}`);
+          console.log(`  - Coverage: ${(coverageRatio * 100).toFixed(1)}%`);
+          
+          if (coverageRatio < 0.5) {
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ⚠️  WARNING: Severe under-extraction detected!`);
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Expected at least ${Math.floor(expectedNodes * 0.5)} nodes, got ${totalNodes}`);
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] This may indicate prompt issues or LLM not following instructions.`);
+          } else if (coverageRatio < 0.7) {
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ⚠️  WARNING: Moderate under-extraction detected (coverage < 70%)`);
+          }
+          
           // Calculate and log extraction metrics
           const metrics = calculateExtractionMetrics(complexity, extractionResult);
           logExtractionMetrics(metrics, originalFileName);
           
-          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] ✓ Extraction successful: ${extractionResult.blocks.length} blocks, ${totalNodes} nodes in ${duration}ms`);
+          // Perform gap analysis
+          const gapAnalysis = analyzeExtractionGaps(structuredDoc, extractionResult);
+          if (gapAnalysis.recommendations.length > 0) {
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] 📊 Gap Analysis:`);
+            console.log(`  - Missing figures/tables: ${gapAnalysis.missingFigures}`);
+            console.log(`  - Missing methods: ${gapAnalysis.missingMethods}`);
+            console.log(`  - Missing analyses: ${gapAnalysis.missingAnalyses}`);
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] 💡 Recommendations:`);
+            gapAnalysis.recommendations.forEach((rec, idx) => {
+              console.log(`  ${idx + 1}. ${rec}`);
+            });
+          }
 
           if (totalNodes > 0) {
             // Log sample node
@@ -504,32 +863,25 @@ export async function generateProposals(projectId: string, jobId?: string) {
       message: 'Resolving attachments...',
     });
 
+    // Process ALL nodes for ALL documents (aggressive attachment detection)
     for (const doc of structuredDocs) {
       const structuredDoc = doc.document_json as StructuredDocument;
       
-      // Process ALL nodes for this document, not just those with existing attachments
-      const nodesForDoc = allProposedNodes.filter(n => {
-        // Check if node has attachments pointing to this document
-        const hasAttachmentsForDoc = n.attachments.some(a => a.sourceId === structuredDoc.sourceId);
-        
-        // Also process nodes that have no attachments yet (they might need figure/table detection)
-        const hasNoAttachments = n.attachments.length === 0;
-        
-        // Check if node content mentions topics from this document (extract from section titles)
-        const docTopics = extractTopicsFromDocument(structuredDoc);
-        const contentMentionsDoc = hasNoAttachments && docTopics.some(topic => 
-          n.content.text.toLowerCase().includes(topic.toLowerCase())
-        );
-        
-        return hasAttachmentsForDoc || contentMentionsDoc;
-      });
+      // Process ALL nodes - don't filter, let the resolver check content
+      console.log(`[FAST_IMPORT] Resolving attachments for all ${allProposedNodes.length} nodes from document: "${structuredDoc.fileName}"`);
       
-      if (nodesForDoc.length > 0) {
-        await resolveAttachments(nodesForDoc, structuredDoc);
-      }
+      await resolveAttachments(allProposedNodes, structuredDoc);
     }
 
-    console.log(`[FAST_IMPORT] Resolved attachments for all nodes`);
+    const totalAttachments = allProposedNodes.reduce((sum, n) => 
+      sum + (n.attachments?.length || 0), 0
+    );
+    console.log(`[FAST_IMPORT] ✅ Resolved ${totalAttachments} total attachments across all nodes`);
+
+    // Step 3.5: Enrich content with attachment references
+    console.log(`[FAST_IMPORT] Enriching node content with attachment document references...`);
+    enrichContentWithAttachmentReferences(allProposedNodes, structuredDocs);
+    console.log(`[FAST_IMPORT] ✅ Content enrichment complete`);
 
     // Step 4: Extract dependencies (rule-based)
     await progressTracker.updateWithPersistence(trackingJobId, {
@@ -573,9 +925,12 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
       try {
         // Convert ExtractedNode to SynthesizedNode format for storage
+        // Generate a proper 1-line summary instead of truncating content
+        const nodeSummary = generateNodeSummary(node.content.text, node.title);
+        
         const synthesizedNode = {
           title: node.title,
-          short_summary: node.content.text.substring(0, 100),
+          short_summary: nodeSummary,
           content: {
             text: node.content.text,
             structured_steps: node.content.preservedFormatting?.isNumberedList && node.content.preservedFormatting.listItems
@@ -643,13 +998,11 @@ export async function generateProposals(projectId: string, jobId?: string) {
 
     console.log(`[FAST_IMPORT] Stored ${storedNodeIds.length} proposals`);
 
-    // Step 7: Complete
-    await progressTracker.updateWithPersistence(trackingJobId, {
-      stage: 'complete',
-      current: 100,
-      total: 100,
-      message: `Completed: ${storedNodeIds.length} proposals generated`,
-    });
+    // Step 7: Complete - Mark job as completed in database
+    await progressTracker.completeWithPersistence(
+      trackingJobId,
+      `Completed: ${storedNodeIds.length} proposals generated`
+    );
 
     console.log(`[FAST_IMPORT] ✓ Proposal generation completed: ${storedNodeIds.length} proposals`);
 
@@ -665,12 +1018,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
     // Check if error was due to cancellation
     if (error.message?.includes('cancelled') || await checkCancellation(trackingJobId)) {
       console.log('[FAST_IMPORT] Error was due to cancellation');
-      await progressTracker.updateWithPersistence(trackingJobId, {
-        stage: 'complete',
-        current: 100,
-        total: 100,
-        message: 'Generation cancelled by user',
-      });
+      await progressTracker.completeWithPersistence(trackingJobId, 'Generation cancelled by user');
       return {
         success: false,
         proposalsGenerated: 0,

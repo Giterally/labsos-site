@@ -6,6 +6,7 @@ import { estimateTokens, withRetry } from '../base-provider';
 import { WORKFLOW_EXTRACTION_SYSTEM_PROMPT } from '../prompts/workflow-extraction-system';
 import { formatStructuredDocumentForLLM, buildUserPrompt } from '../workflow-extractor';
 import { WorkflowExtractionResultSchema } from '../schemas/workflow-extraction-schema';
+import { trackRateLimit } from '../provider';
 
 export class GeminiProvider implements AIProvider {
   private client: GoogleGenerativeAI;
@@ -98,9 +99,21 @@ export class GeminiProvider implements AIProvider {
       } catch (error: any) {
         console.error(`[GEMINI] Error:`, error);
         
+        // Check for rate limit errors (429 status or quota/quota exceeded messages)
+        const isRateLimit = (error as any)?.status === 429 || 
+          error.message?.includes('quota') || 
+          error.message?.includes('Quota') ||
+          error.message?.includes('rate limit') ||
+          error.message?.includes('Rate limit');
+        
+        if (isRateLimit) {
+          // Track the rate limit for intelligent provider selection
+          trackRateLimit('gemini');
+        }
+        
         // Handle Gemini-specific errors
         if (error.message?.includes('quota') || error.message?.includes('Quota')) {
-          throw new Error('Gemini API quota exceeded. Please try again later or contact support.');
+          throw new Error('Gemini API quota exceeded. Automatically falling back to OpenAI...');
         }
         
         if (error instanceof SyntaxError) {

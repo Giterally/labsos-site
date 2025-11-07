@@ -1,4 +1,4 @@
-import { selectProviderForDocument } from './provider';
+import { selectProviderForDocument, getFallbackProvider, shouldAttemptFallback } from './provider';
 import { WorkflowExtractionResultSchema, type WorkflowExtractionResult } from './schemas/workflow-extraction-schema';
 import { StructuredDocument } from '../processing/parsers/pdf-parser';
 
@@ -49,6 +49,37 @@ export async function extractWorkflow(
 
     return result;
   } catch (error: any) {
+    // Check if error is rate limit and fallback provider is available
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStatus = (error as any)?.status;
+    const isRateLimit = errorStatus === 429 || 
+      errorMessage?.includes('rate limit') || 
+      errorMessage?.includes('Rate limit') ||
+      errorMessage?.includes('rate_limit');
+    
+    if (isRateLimit && shouldAttemptFallback(provider, structuredDoc)) {
+      console.log(`[WORKFLOW_EXTRACTOR] Rate limit detected, falling back to alternative provider`);
+      try {
+        const fallbackProvider = getFallbackProvider(provider, structuredDoc);
+        const fallbackModelInfo = fallbackProvider.getModelInfo();
+        console.log(`[WORKFLOW_EXTRACTOR] Attempting extraction with fallback provider: ${fallbackModelInfo.name}`);
+        
+        const fallbackStartTime = Date.now();
+        const fallbackResult = await fallbackProvider.extractWorkflowFromDocument(structuredDoc, projectContext, complexity);
+        const fallbackDuration = Date.now() - fallbackStartTime;
+        
+        const totalDuration = Date.now() - startTime;
+        const totalNodes = fallbackResult.blocks.reduce((sum, b) => sum + b.nodes.length, 0);
+        
+        console.log(`[WORKFLOW_EXTRACTOR] ✓ Fallback extraction complete: ${fallbackResult.blocks.length} blocks, ${totalNodes} nodes`);
+        console.log(`[WORKFLOW_EXTRACTOR] Fallback time: ${fallbackDuration}ms, Total time: ${totalDuration}ms`);
+        
+        return fallbackResult;
+      } catch (fallbackError: any) {
+        console.error(`[WORKFLOW_EXTRACTOR] ✗ Fallback provider also failed:`, fallbackError instanceof Error ? fallbackError.message : String(fallbackError));
+        // Continue to original error handling below
+      }
+    }
     const totalDuration = Date.now() - startTime;
     console.error(`[WORKFLOW_EXTRACTOR] ✗ Extraction failed after ${totalDuration}ms`);
     console.error(`[WORKFLOW_EXTRACTOR] Error type: ${error?.constructor?.name || typeof error}`);
@@ -155,25 +186,52 @@ export function buildUserPrompt(
   // Base instructions
   const baseInstructions = `You are analyzing a research document to extract its experimental workflow.
 Your goal is to create a comprehensive experiment tree with nodes representing protocols, data collection, analyses, and results.
+
+CRITICAL CLARIFICATION: "Comprehensive extraction" means EXTRACTING MANY SEPARATE NODES with detailed content, NOT consolidating items into fewer nodes.
+- Extract MANY nodes (one per figure, one per test, one per method, etc.)
+- Each node should have DETAILED, COMPREHENSIVE content (multiple paragraphs)
+- DO NOT consolidate distinct items into fewer nodes just to make them "comprehensive"
+- Better to have 20 detailed nodes than 10 "comprehensive" consolidated nodes
+
 CRITICAL: Extract ALL experiments, methods, analyses, and results from the document.
 Do not summarize or condense—create separate nodes for each distinct:
 - Protocol or procedure
 - Data collection method
 - Analysis technique
 - Result or finding
-Each node should be atomic and specific.`;
+Each node should be atomic and specific, with detailed content.`;
 
-  // Scale-specific guidance
-  let scaleGuidance = '';
+  // Scale-specific guidance - ENHANCED with explicit extraction intensity
+  let extractionIntensityGuidance = '';
   let exampleAdjustment = '';
 
   if (complexity) {
     switch (complexity.extractionStrategy) {
       case 'simple':
-        scaleGuidance = `
-This is a simple document with ${complexity.estimatedNodeCount} estimated nodes.
-Extract 5-15 nodes covering the main workflow.
-Focus on: main protocol → data collection → analysis → results.`;
+        extractionIntensityGuidance = `
+## EXTRACTION INTENSITY: SIMPLE DOCUMENT
+
+This document should yield approximately 5-15 nodes (target: ${complexity.estimatedNodeCount} nodes).
+
+**Your task:**
+- Extract the main experimental workflow (protocol → data → analysis → results)
+- Create 1-3 protocol nodes for key methods
+- Create 1-2 data collection nodes
+- Create 1-2 analysis nodes
+- Create 2-5 result nodes (one per major finding/figure)
+
+**Example structure:**
+- Protocol Block: 2 nodes
+- Data Creation Block: 1 node
+- Analysis Block: 1 node
+- Results Block: 3 nodes
+Total: ~7 nodes
+
+**Content detail:**
+- Each node can contain multiple paragraphs if needed
+- Include all relevant details from the source
+- Don't summarize - preserve complete information
+`;
         exampleAdjustment = `
 EXAMPLE OUTPUT STRUCTURE (for simple documents):
 {
@@ -250,14 +308,36 @@ REMEMBER: Dependencies must be objects with referencedNodeTitle, dependencyType,
         break;
 
       case 'moderate':
-        scaleGuidance = `
-This is a moderate-complexity document with ${complexity.estimatedNodeCount} estimated nodes.
-Extract 15-30 nodes covering all experiments.
-Include:
-- All distinct protocols (even variations)
-- All data collection methods
-- All analysis techniques
-- All major results with their figures/tables`;
+        extractionIntensityGuidance = `
+## EXTRACTION INTENSITY: MODERATE DOCUMENT
+
+This document should yield approximately 15-30 nodes (target: ${complexity.estimatedNodeCount} nodes).
+
+**Your task:**
+- Extract ALL distinct experimental procedures (not just main ones)
+- Create separate nodes for each protocol variation
+- Create nodes for ALL data collection methods
+- Create nodes for ALL analysis techniques
+- Create nodes for ALL major results with their figures/tables
+
+**Example structure:**
+- Protocol Block: 5-8 nodes (each distinct procedure)
+- Data Creation Block: 3-5 nodes (each data source/collection method)
+- Analysis Block: 4-7 nodes (each statistical test/analysis)
+- Results Block: 8-12 nodes (each finding/figure/comparison)
+Total: 20-32 nodes
+
+**DO NOT SKIP:**
+- Validation protocols
+- Control experiments
+- Preliminary results
+- Supporting analyses
+
+**Content detail:**
+- Nodes can be comprehensive with multiple paragraphs
+- Include all methodological details, not just summaries
+- Preserve complete context from source document
+`;
         exampleAdjustment = `
 EXAMPLE OUTPUT STRUCTURE (for moderate documents):
 {
@@ -291,15 +371,39 @@ EXAMPLE OUTPUT STRUCTURE (for moderate documents):
         break;
 
       case 'complex':
-        scaleGuidance = `
-This is a complex document with ${complexity.estimatedNodeCount} estimated nodes.
-Extract 30-50 nodes covering the complete workflow.
-Be thorough:
-- Extract EVERY protocol mentioned (including sub-protocols)
-- Create separate nodes for each experiment
-- Include all data processing steps
-- Create nodes for each analysis method
-- Include all results (even supporting/negative results)`;
+        extractionIntensityGuidance = `
+## EXTRACTION INTENSITY: COMPLEX DOCUMENT
+
+This document should yield approximately 30-50 nodes (target: ${complexity.estimatedNodeCount} nodes).
+
+**Your task:**
+- Extract EVERY protocol mentioned, including sub-protocols and variations
+- Create separate nodes for EVERY data processing step
+- Create nodes for EVERY analysis method, even minor ones
+- Include ALL results, even supporting or negative results
+
+**Example structure:**
+- Protocol Block: 8-15 nodes (detailed protocols + sub-protocols)
+- Data Creation Block: 6-10 nodes (all data sources + processing)
+- Analysis Block: 10-15 nodes (every statistical test + validation)
+- Results Block: 15-25 nodes (every finding/figure/table/comparison)
+Total: 39-65 nodes
+
+**CRITICAL - Extract these even if they seem minor:**
+- Preliminary experiments
+- Validation studies
+- Control conditions
+- Baseline measurements
+- Supplementary analyses
+- Error analysis
+- Sensitivity testing
+
+**Content detail:**
+- Each node should be comprehensive with full context
+- Multiple paragraphs per node are expected and encouraged
+- Include all parameters, conditions, and methodological details
+- Preserve complete information from source, don't summarize
+`;
         exampleAdjustment = `
 EXAMPLE OUTPUT STRUCTURE (for complex documents):
 {
@@ -333,17 +437,89 @@ EXAMPLE OUTPUT STRUCTURE (for complex documents):
         break;
 
       case 'comprehensive':
-        scaleGuidance = `
-This is a comprehensive document (dissertation/thesis) with ${complexity.estimatedNodeCount}+ estimated nodes.
-Extract 50-100+ nodes covering the entire research.
-Maximum detail:
-- Extract EVERY protocol, even minor variations
-- Create nodes for each experimental condition
-- Include all data collection and processing steps
-- Create separate nodes for each statistical test
-- Include ALL results, even preliminary or supplementary
-- Create nodes for methodological validations
-- Include literature review protocols if detailed`;
+        extractionIntensityGuidance = `
+## EXTRACTION INTENSITY: COMPREHENSIVE DOCUMENT (DISSERTATION/THESIS)
+
+This document should yield approximately 40-100+ nodes (target: ${complexity.estimatedNodeCount} nodes).
+
+**Your task:**
+- Extract EVERY SINGLE protocol, sub-protocol, and protocol variation
+- Create nodes for EVERY experimental condition
+- Extract EVERY data processing and cleaning step
+- Create separate nodes for EVERY statistical test
+- Include ALL results: main, supporting, supplementary, negative, preliminary
+- Extract methodological validations
+- Include literature review protocols if they involve systematic methods
+
+**Example structure for a dissertation:**
+- Protocol Block: 15-25 nodes
+  * Main experimental protocols (5-8 nodes)
+  * Sub-protocols and variations (5-10 nodes)
+  * Validation protocols (2-4 nodes)
+  * Quality control procedures (2-3 nodes)
+- Data Creation Block: 10-20 nodes
+  * Data collection methods (5-8 nodes)
+  * Data preprocessing steps (3-6 nodes)
+  * Data transformation procedures (2-6 nodes)
+- Analysis Block: 15-30 nodes
+  * Statistical tests (8-15 nodes)
+  * Model implementations (4-8 nodes)
+  * Validation analyses (3-7 nodes)
+- Results Block: 20-40 nodes
+  * Main findings (8-15 nodes)
+  * Supporting results (5-10 nodes)
+  * Model performance comparisons (4-8 nodes)
+  * Validation results (3-7 nodes)
+Total: 60-115 nodes
+
+**Content detail for comprehensive documents:**
+- Each node should be DETAILED and COMPREHENSIVE
+- Multiple paragraphs (3-10+ paragraphs) per node are EXPECTED
+- Include ALL methodological details, parameters, and conditions
+- Preserve complete context - don't summarize or truncate
+- Long, detailed content is BETTER than short, incomplete content
+- Each node should be self-contained with full information
+
+**ABSOLUTELY DO NOT SKIP:**
+- Every figure and table should have a corresponding result node
+- Every mentioned statistical test should be a separate analysis node
+- Every experimental condition should be a separate protocol node
+- Pilot studies and preliminary experiments
+- Validation and verification procedures
+- Control experiments and baselines
+- Sensitivity analyses
+- Error analyses
+- Supplementary methods
+- Appendix protocols (if they contain actual methods)
+
+**RED FLAGS - If you're not hitting these numbers, you're under-extracting:**
+- Fewer than 15 protocol nodes in a dissertation = TOO FEW, extract more
+- Fewer than 10 analysis nodes in a dissertation = TOO FEW, extract more
+- Fewer than 20 result nodes in a dissertation = TOO FEW, extract more
+- Total nodes < 40 for a dissertation = UNDER-EXTRACTION (aim for 40+)
+- Total nodes < 30 for a complex document = UNDER-EXTRACTION
+
+**SCALING WITH DOCUMENT SIZE:**
+- Small experiment (10-30 pages): 5-15 nodes ✓
+- Medium experiment (30-80 pages): 15-30 nodes ✓
+- Large experiment (80-150 pages): 30-50 nodes ✓
+- Dissertation/Thesis (150+ pages): 40-100+ nodes ✓
+
+The number of nodes MUST scale with the amount of information in the document.
+
+**EXAMPLE - What "extract everything" means:**
+
+If the Methods section says:
+"Statistical analysis was performed using ANOVA, followed by Tukey post-hoc tests. Normality was assessed with Shapiro-Wilk tests, and variance homogeneity with Levene's test."
+
+You should create AT LEAST 4 analysis nodes:
+1. "Normality Testing with Shapiro-Wilk"
+2. "Variance Homogeneity Testing with Levene's Test"
+3. "ANOVA Statistical Analysis"
+4. "Tukey Post-Hoc Pairwise Comparisons"
+
+NOT just 1 node called "Statistical Analysis" - that's under-extraction!
+`;
         exampleAdjustment = `
 EXAMPLE OUTPUT STRUCTURE (for comprehensive documents):
 {
@@ -378,8 +554,9 @@ EXAMPLE OUTPUT STRUCTURE (for comprehensive documents):
     }
   } else {
     // Default guidance for backward compatibility
-    scaleGuidance = `
+    extractionIntensityGuidance = `
 Extract this document into an experiment tree structure and return it as structured JSON.
+Be thorough and extract all experimental steps, methods, analyses, and results.
 `;
         exampleAdjustment = `
 EXAMPLE OUTPUT (with proper dependency format):
@@ -498,6 +675,51 @@ EXAMPLE OUTPUT (with proper dependency format):
 }`;
   }
 
+  const contentExclusionGuidance = `
+## CONTENT TO EXCLUDE (DO NOT CREATE NODES FOR):
+
+**Never create nodes for:**
+
+1. **References/Bibliography sections** - These are metadata, not experimental steps
+2. **Acknowledgments sections** - Not part of the workflow
+3. **Author affiliations** - Metadata only
+4. **Funding statements** - Not experimental content
+5. **Conflicts of Interest** - Not experimental content
+6. **Abstract/Introduction with no methods** - Only extract if it describes actual procedures
+7. **Appendices with supplementary references only** - Unless they contain protocols
+
+**How to identify reference sections:**
+
+- Section titles: "References", "Bibliography", "Works Cited", "Literature Cited"
+- Content is mostly citations: [1] Author et al. (2020)...
+- No actionable experimental steps
+
+**If you encounter references:**
+
+- DO NOT create a node
+- References will be captured separately in provenance
+- Skip to the next section with actual content
+
+**Example of what NOT to extract:**
+
+❌ BAD:
+{
+  "title": "References",
+  "content": { "text": "[1] Smith et al. (2020)..." },
+  "nodeType": "protocol"
+}
+
+✅ GOOD: Skip this section entirely, move to next section with experimental content.
+
+**What TO keep:**
+
+✅ Methods sections that cite papers (we want the methods, citations are fine)
+✅ Results sections that cite figures (need the results)
+✅ Appendices with protocols or methods (even if some references)
+✅ Methodology with inline citations (methods are valuable)
+
+`;
+
   const structureGuidance = `
 IMPORTANT NODE GRANULARITY RULES:
 
@@ -508,6 +730,98 @@ IMPORTANT NODE GRANULARITY RULES:
 5. Methods section → often 5-10+ protocol nodes
 6. Results section → often 10-20+ result nodes
 
+## CONTENT LENGTH AND DETAIL:
+
+**Node content can be LONG - this is GOOD:**
+- Nodes can contain multiple paragraphs (2-5+ paragraphs is fine)
+- Include ALL relevant details from the source document
+- Preserve complete context, not just summaries
+- Long, detailed content is better than short, incomplete content
+- Each node should be self-contained and comprehensive
+
+## CONTENT LENGTH REQUIREMENTS:
+
+**Minimum content length:**
+- Each node MUST contain at least 2-3 sentences (150+ characters)
+- Extract surrounding context, not just the single sentence
+- Include relevant details from the paragraph/section
+- Preserve full context for understanding
+
+**Exception for short content:**
+- Short content (1 sentence) is ONLY acceptable if:
+  - The node has attachments (figures/tables/equations)
+  - AND the attachment contains the detailed information
+  - Even then, try to include 1-2 sentences of context
+
+**Example of GOOD content extraction:**
+
+❌ BAD (too short):
+"Configuration of a sentiment analysis ensemble to process financial news and social media data."
+
+✅ GOOD (with context):
+"Configuration of a sentiment analysis ensemble to process financial news and social media data. The ensemble combines three models: a transformer-based classifier for news articles, a fine-tuned BERT model for social media posts, and a rule-based filter for financial terminology. Each model was trained on domain-specific datasets and outputs confidence scores that are weighted and combined using a voting mechanism. The configuration includes hyperparameters for each model (learning rate: 0.001, batch size: 32) and ensemble weights (transformer: 0.4, BERT: 0.4, rule-based: 0.2)."
+
+**Content extraction strategy:**
+1. Start with the key sentence/phrase
+2. Add 2-3 sentences of surrounding context from the document
+3. Include relevant parameters, conditions, or details mentioned nearby
+4. Preserve the exact wording from the source when possible
+5. If the section is short, look for related content in adjacent paragraphs
+
+**CRITICAL: DO NOT CONSOLIDATE DISTINCT ITEMS**
+
+**Default action: SPLIT into separate nodes**
+- Extract separate nodes for each distinct procedure/method/analysis/result
+- Even if items are related or similar, extract them as separate nodes
+- Each node should have detailed content, but still be a separate node
+- The "ONE NODE PER X" rules (see below) override any "keep together" guidance
+
+**When to split a long section into multiple nodes:**
+- Split if the section describes DISTINCT procedures/methods/analyses
+- Split if different experimental conditions are described
+- Split if multiple statistical tests are performed
+- Split if multiple results/findings are presented
+- Split if multiple figures/tables are mentioned
+- Split if multiple subsections exist
+- When in doubt: SPLIT into separate nodes
+
+**Exception - Keep together ONLY if:**
+- It's ONE continuous procedure with multiple steps that CANNOT be meaningfully separated
+- Steps are so tightly coupled that describing them separately loses all meaning
+- It's a single result with detailed explanation (not multiple findings)
+- The "ONE NODE PER X" rules do NOT apply (e.g., it's truly one inseparable process)
+
+**Remember: The "ONE NODE PER X" rules take precedence over "keep together" guidance.**
+
+**Example - SPLIT:**
+Section: "We performed ANOVA, followed by Tukey post-hoc tests, and assessed normality with Shapiro-Wilk tests."
+→ Create 3 separate nodes (ANOVA, Tukey, Normality Testing)
+
+**Example - KEEP TOGETHER:**
+Section: "The DNA extraction protocol involved: (1) cell lysis with buffer A, (2) protein precipitation with buffer B, (3) DNA precipitation with ethanol, (4) washing steps, (5) resuspension in TE buffer."
+→ Create 1 comprehensive node: "DNA Extraction Protocol" with all steps
+
+## OVERLAP AND DUPLICATION:
+
+**Acceptable overlap (OK):**
+- Contextual overlap: Nodes can reference the same background/methods
+- Procedural overlap: Related nodes can mention shared steps
+- Result overlap: Multiple nodes can reference the same figure/table
+- ~10-20% content overlap between related nodes is acceptable
+
+**Excessive overlap (NOT OK):**
+- Duplicate nodes: Two nodes describing the exact same procedure
+- Redundant nodes: One node is a subset of another
+- Copy-paste content: Same text appearing in multiple nodes
+- >30% identical content between nodes = likely duplicate
+
+**How to avoid excessive overlap:**
+- Each node should have a UNIQUE focus/purpose
+- If two nodes seem similar, check: Are they actually different procedures?
+- DO NOT merge distinct items into one node - extract separate nodes even if they're related
+- Use dependencies to link related nodes rather than duplicating content
+- It's better to have multiple detailed nodes with some overlap than to consolidate and lose information
+
 ${complexity && complexity.estimatedNodeCount > 20 ? `
 EXAMPLE from a dissertation:
 Methods section "Statistical Analysis" might contain:
@@ -516,6 +830,109 @@ Methods section "Statistical Analysis" might contain:
 - Node: "ANOVA Implementation" (analysis)
 - Node: "Post-hoc Pairwise Comparisons" (analysis)
 Do NOT combine these into one "Statistical Analysis" node.` : ''}
+
+## STEP 1: COUNT BEFORE EXTRACTING (MANDATORY FIRST STEP)
+
+Before you start extracting, COUNT these items in the document explicitly:
+
+**Count these items and write down the numbers:**
+1. Count ALL figures mentioned (Figure 1, Figure 2, etc.) → Write: "X figures found"
+2. Count ALL tables mentioned (Table 1, Table 2, etc.) → Write: "X tables found"
+3. Count ALL statistical tests mentioned (ANOVA, t-test, chi-square, etc.) → Write: "X tests found"
+4. Count ALL subsections in Methods section → Write: "X subsections found"
+5. Count ALL experimental conditions/treatments → Write: "X conditions found"
+6. Count ALL distinct protocols/procedures → Write: "X protocols found"
+7. Count ALL model/algorithm implementations → Write: "X models found"
+8. Count ALL validation/verification steps → Write: "X validations found"
+
+**Then extract nodes based on these counts:**
+- At least 1 result node per figure (if 15 figures → at least 15 result nodes)
+- At least 1 result node per table (if 8 tables → at least 8 result nodes)
+- At least 1 analysis node per statistical test (if 5 tests → at least 5 analysis nodes)
+- At least 1 protocol node per Methods subsection (if 8 subsections → at least 8 protocol nodes)
+- At least 1 node per experimental condition (if 3 conditions → at least 3 nodes)
+- At least 1 node per distinct protocol/procedure
+- At least 1 node per model/algorithm
+- At least 1 node per validation step
+
+**If your final node count is significantly less than your item count, you're under-extracting.**
+**Go back and extract the missing nodes.**
+
+## ONE NODE PER X - MANDATORY RULES:
+
+**ALWAYS create separate nodes for:**
+- One node per figure (Figure 1 = Node 1, Figure 2 = Node 2, etc.)
+- One node per table (Table 1 = Node 1, Table 2 = Node 2, etc.)
+- One node per statistical test (ANOVA = Node 1, Tukey = Node 2, etc.)
+- One node per experimental condition (Treatment A = Node 1, Treatment B = Node 2, etc.)
+- One node per subsection in Methods (Subsection 1 = Node 1, Subsection 2 = Node 2, etc.)
+- One node per distinct protocol/procedure mentioned
+- One node per model/algorithm implementation
+- One node per validation/verification step
+- One node per preprocessing/transformation step
+- One node per distinct result/finding
+
+**Exception - Combine ONLY if:**
+- Steps are part of ONE continuous procedure that cannot be separated
+- Steps are tightly coupled and describing them separately loses meaning
+- It's a single result with detailed explanation (not multiple findings)
+
+**When in doubt: SPLIT into separate nodes.**
+**It's better to have 2 nodes with some overlap than 1 node missing information.**
+
+## SPECIFIC EXTRACTION EXAMPLES (FOLLOW THESE PATTERNS):
+
+**Example 1: Statistical Tests**
+Document says: "We performed ANOVA (F=12.4, p<0.001), followed by Tukey post-hoc tests, and assessed normality with Shapiro-Wilk tests (W=0.98, p=0.12)."
+
+Extract 3 nodes:
+1. "ANOVA Statistical Analysis" (F=12.4, p<0.001)
+2. "Tukey Post-Hoc Pairwise Comparisons"
+3. "Shapiro-Wilk Normality Testing" (W=0.98, p=0.12)
+
+NOT 1 node: "Statistical Analysis"
+
+**Example 2: Figures**
+Document mentions: "Figure 1 shows treatment effects. Figure 2 shows control results. Figure 3 shows comparison."
+
+Extract 3 nodes:
+1. "Treatment Effects Results (Figure 1)"
+2. "Control Results (Figure 2)"
+3. "Treatment vs Control Comparison (Figure 3)"
+
+NOT 1 node: "Results from Figures 1-3"
+
+**Example 3: Methods Subsections**
+Methods section has: "3.1 Sample Collection", "3.2 DNA Extraction", "3.3 PCR Amplification"
+
+Extract 3 nodes:
+1. "Sample Collection Protocol"
+2. "DNA Extraction Protocol"
+3. "PCR Amplification Protocol"
+
+NOT 1 node: "Experimental Methods"
+
+**Example 4: Experimental Conditions**
+Document says: "Treatment A (n=20) showed X. Treatment B (n=18) showed Y. Control (n=15) showed Z."
+
+Extract 3 nodes:
+1. "Treatment A Results" (n=20, showed X)
+2. "Treatment B Results" (n=18, showed Y)
+3. "Control Results" (n=15, showed Z)
+
+NOT 1 node: "Treatment Results"
+
+**Example 5: Tables**
+Document mentions: "Table 1 summarizes demographics. Table 2 shows baseline characteristics. Table 3 presents outcomes."
+
+Extract 3 nodes:
+1. "Demographics Summary (Table 1)"
+2. "Baseline Characteristics (Table 2)"
+3. "Outcome Results (Table 3)"
+
+NOT 1 node: "Summary Tables"
+
+**Follow these patterns for similar content in the document.**
 
 ## DEPENDENCY FORMAT (CRITICAL):
 
@@ -558,6 +975,183 @@ Extract:
 
 NEVER use string arrays like ["Node 1", "Node 2"] - always use objects!`;
 
+  const nestedTreeGuidance = `
+## NESTED TREES (Use Sparingly - Only for Reusable Sub-Workflows)
+
+**What is a nested tree?**
+
+A nested tree is a **reusable, self-contained sub-workflow** that:
+1. **Could be used in other experiments** (reusability test)
+2. **Has its own complete workflow** (protocol → [data] → [analysis] → [results])
+3. **Makes sense to view/edit independently** (logical isolation)
+
+**When to mark as nested tree:**
+
+✅ **GOOD nested tree examples:**
+- "DNA Extraction Protocol" with 5+ steps → reusable, complete procedure
+- "Western Blot Procedure" with protocol → controls → analysis → validation (4+ nodes)
+- "Sample Preparation and Sterilization" → standard protocol used in many experiments
+- "PCR Amplification Workflow" → complete sub-workflow with multiple steps
+
+❌ **BAD nested tree examples (should stay in main tree):**
+- "Kalman Filter Implementation" (1 node) → single step, not a workflow
+- "State-Space Framework Setup" (1 node) → configuration step, not reusable
+- "Statistical Analysis" (1 node: ANOVA) → single analysis, not a workflow
+- "Feature Selection" → part of main experiment, not reusable
+
+**Key rules:**
+
+1. **Single-node protocols:** ❌ Never nested trees
+   - Even if content has numbered steps
+   - Numbered steps within one node = well-structured node, not a nested tree
+   - Needs multiple related nodes to be a nested tree
+
+2. **Multi-node protocols (3+ nodes):** ✅ Potentially nested if:
+   - Has its own data collection/analysis/results nodes
+   - Could be extracted to a separate experiment
+   - Title suggests reusability ("Standard X Protocol", "X Procedure")
+
+3. **Decision criteria:**
+   - Is it reusable in other contexts? → Yes = nested tree candidate
+   - Is it experiment-specific? → No = keep in main tree
+   - Does it have a complete workflow? → Yes = nested tree candidate
+
+**How to mark nested trees:**
+
+If a protocol meets ALL criteria above, add:
+
+{
+  "isNestedTree": true,
+  "metadata": {
+    "nestedTreeReason": "Reusable multi-step DNA extraction protocol with validation"
+  }
+}
+
+**Default:** DO NOT mark as nested tree unless you're very confident it meets criteria.
+Most protocols should stay in the main tree.
+
+**Remember:** Nested trees can be 1-3 nodes OR 10+ nodes - it depends on what makes logical sense for presenting the information. The key is reusability and logical isolation, not node count.
+
+`;
+
+  // Calculate extraction intensity multiplier for comprehensive documents
+  const extractionIntensityMultiplier = complexity && complexity.estimatedNodeCount > 50 ? 1.5 : 1.0;
+  const adjustedTarget = complexity ? Math.floor(complexity.estimatedNodeCount * extractionIntensityMultiplier) : undefined;
+
+  const extractionChecklist = `
+## MANDATORY EXTRACTION CHECKLIST (VERIFY BEFORE FINALIZING):
+
+Before completing extraction, verify you have extracted:
+
+**For Methods/Protocols:**
+- [ ] Every distinct experimental procedure mentioned
+- [ ] Every protocol variation or modification
+- [ ] Every validation or quality control step
+- [ ] Every sample preparation method
+- [ ] Every measurement technique
+- [ ] Every calibration procedure
+- [ ] Every control experiment setup
+- [ ] Every method subsection (if Methods has 8 subsections, extract ~8 protocol nodes)
+
+**For Data Collection:**
+- [ ] Every data collection method
+- [ ] Every data source mentioned
+- [ ] Every measurement type
+- [ ] Every data preprocessing step
+- [ ] Every data transformation procedure
+- [ ] Every data cleaning step
+
+**For Analysis:**
+- [ ] Every statistical test mentioned (ANOVA, t-test, chi-square, etc.)
+- [ ] Every analysis technique
+- [ ] Every model implementation
+- [ ] Every validation analysis
+- [ ] Every sensitivity analysis
+- [ ] Every error analysis
+- [ ] Every post-hoc test (Tukey, Bonferroni, etc.)
+
+**For Results:**
+- [ ] Every figure mentioned (Figure 1, Figure 2, etc.)
+- [ ] Every table mentioned (Table 1, Table 2, etc.)
+- [ ] Every major finding
+- [ ] Every supporting result
+- [ ] Every negative result
+- [ ] Every preliminary result
+- [ ] Every comparison result
+
+**Verification Questions (Answer honestly):**
+1. If the document mentions "ANOVA and Tukey tests" - did you create 2 nodes or 1?
+   → Should be 2 nodes (one for ANOVA, one for Tukey)
+2. If the document has 15 figures - did you create ~15 result nodes?
+   → Should be close to 15 (at minimum 8-10)
+3. If Methods section has 8 subsections - did you create ~8 protocol nodes?
+   → Should be close to 8 (at minimum 4-5)
+4. If Results section mentions 20 findings - did you extract all 20?
+   → Should be all 20 (or at least 15+)
+5. If Analysis section mentions 5 different tests - did you create 5 analysis nodes?
+   → Should be 5 nodes (one per test)
+
+**Target Node Count:**
+${adjustedTarget ? `This document should yield approximately ${adjustedTarget} nodes (target: ${complexity.estimatedNodeCount}, but aim for ${adjustedTarget} to ensure nothing is missed).` : complexity ? `This document should yield approximately ${complexity.estimatedNodeCount} nodes.` : 'Extract comprehensively based on document content.'}
+
+**If you answered "no" or "less than target" to any verification question, you are UNDER-EXTRACTING.**
+**Go back and extract the missing information as separate nodes.**
+**It is BETTER to have too many nodes than to miss important information.**
+
+**Final Check:**
+- Count your total nodes: ${adjustedTarget ? `Are you close to ${adjustedTarget}?` : complexity ? `Are you close to ${complexity.estimatedNodeCount}?` : 'Is this comprehensive?'}
+- If significantly below target, review the document again and extract more nodes
+- Remember: Each distinct method/test/finding should be its own node
+
+## STEP 2: SECOND PASS REVIEW (MANDATORY)
+
+After your initial extraction, perform a SECOND PASS review:
+
+**Review each section systematically and ask:**
+
+**For Methods Section:**
+- [ ] Did I extract a node for EVERY subsection? (Check: 3.1, 3.2, 3.3...)
+- [ ] Did I extract a node for EVERY procedure variation?
+- [ ] Did I extract a node for EVERY validation step?
+- [ ] Did I extract a node for EVERY quality control measure?
+- [ ] If Methods has 8 subsections → did I extract at least 8 protocol nodes?
+
+**For Results Section:**
+- [ ] Did I extract a node for EVERY figure mentioned? (Check: Figure 1, 2, 3...)
+- [ ] Did I extract a node for EVERY table mentioned? (Check: Table 1, 2, 3...)
+- [ ] Did I extract a node for EVERY major finding?
+- [ ] Did I extract a node for EVERY comparison result?
+- [ ] If Results mentions 20 figures → did I extract at least 20 result nodes?
+
+**For Analysis Section:**
+- [ ] Did I extract a node for EVERY statistical test? (Check: ANOVA, t-test, etc.)
+- [ ] Did I extract a node for EVERY model implementation?
+- [ ] Did I extract a node for EVERY validation analysis?
+- [ ] If Analysis mentions 8 tests → did I extract at least 8 analysis nodes?
+
+**For Data Section:**
+- [ ] Did I extract a node for EVERY data collection method?
+- [ ] Did I extract a node for EVERY preprocessing step?
+- [ ] Did I extract a node for EVERY transformation procedure?
+- [ ] If Data section has 5 subsections → did I extract at least 5 data nodes?
+
+**Cross-check with your counts from Step 1:**
+- Compare your node count to your item count from Step 1
+- If node count < item count, you're missing nodes
+- Go back and extract nodes for any missing items
+
+**If you find ANY item mentioned but not extracted:**
+- Create a node for it immediately
+- Even if it seems "minor" or "similar" to another node
+- Better to have two similar nodes than to miss information
+
+**Final verification:**
+- Review the entire document one more time
+- Check that every figure, table, test, method, and finding has a corresponding node
+- If anything is missing, extract it now
+
+`;
+
   return `
 PROJECT CONTEXT:
 ${projectContext ?
@@ -576,8 +1170,11 @@ ${formattedDocument}
 TASK:
 
 ${baseInstructions}
-${scaleGuidance}
+${extractionIntensityGuidance}
+${contentExclusionGuidance}
 ${structureGuidance}
+${extractionChecklist}
+${nestedTreeGuidance}
 ${exampleAdjustment}
 
 CRITICAL - REQUIRED JSON STRUCTURE:
@@ -642,6 +1239,41 @@ IMPORTANT:
 - Do NOT return an array - return an object with these fields
 - If you cannot find clear workflow steps, still return the structure with empty blocks array
 - **Dependencies must be objects with all required fields: referencedNodeTitle, dependencyType, extractedPhrase, and optionally confidence**
+
+## EXTRACTION QUALITY SELF-CHECK
+
+Before returning your JSON response, verify:
+
+1. **Node count matches document size:**
+   - Simple document (10-30 pages) → 5-15 nodes ✓
+   - Moderate document (30-80 pages) → 15-30 nodes ✓
+   - Complex document (80-150 pages) → 30-50 nodes ✓
+   - Comprehensive document (150+ pages) → 40-100+ nodes ✓
+   
+   **Target for this document: ${complexity ? complexity.estimatedNodeCount : 'N/A'} nodes**
+   **If you're extracting fewer nodes, you're likely missing important information.**
+
+2. **Every major section has nodes:**
+   - Introduction/Background → [can skip, usually no protocols]
+   - Methods section → [should have 5-20+ protocol nodes]
+   - Results section → [should have 10-40+ result nodes]
+   - Discussion → [can skip, usually interpretation not data]
+
+3. **Every figure/table has a corresponding node:**
+   - Count figures mentioned in document
+   - Verify you have a result node for each one
+   - If Figure 1-10 exist, you should have ~10 result nodes
+
+4. **Every analysis mentioned is a separate node:**
+   - Don't combine "ANOVA + Tukey + normality test" into one node
+   - Create 3 separate analysis nodes
+
+5. **Dependencies are objects, not strings:**
+   - Check: ALL dependency arrays contain objects
+   - Each object has: referencedNodeTitle, dependencyType, extractedPhrase
+
+**If you're below expected node counts, GO BACK and extract more detail.**
+**Err on the side of over-extraction, not under-extraction.**
 
 Return only the JSON, no other text or markdown formatting.
 `;

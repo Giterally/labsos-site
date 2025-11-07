@@ -378,6 +378,80 @@ import { estimateTokens } from './base-provider';
 const TOKEN_THRESHOLD_FOR_GEMINI = 120000;
 
 /**
+ * Rate limit tracking (in-memory, expires after 10 minutes)
+ * Tracks when providers are rate limited to avoid selecting them proactively
+ */
+const rateLimitHistory = new Map<string, number>();
+
+/**
+ * Tracks when a provider is rate limited
+ */
+export function trackRateLimit(providerName: string): void {
+  rateLimitHistory.set(providerName, Date.now());
+  console.log(`[PROVIDER_TRACKING] Rate limit tracked for ${providerName}`);
+}
+
+/**
+ * Checks if a provider was recently rate limited
+ * @param providerName - Name of the provider ('openai', 'gemini', etc.)
+ * @param windowMs - Time window in milliseconds (default: 10 minutes)
+ * @returns true if provider was rate limited within the window
+ */
+export function isProviderRecentlyRateLimited(providerName: string, windowMs: number = 600000): boolean {
+  const lastRateLimit = rateLimitHistory.get(providerName);
+  if (!lastRateLimit) return false;
+  const timeSinceRateLimit = Date.now() - lastRateLimit;
+  const isRecent = timeSinceRateLimit < windowMs;
+  if (isRecent) {
+    console.log(`[PROVIDER_TRACKING] ${providerName} was rate limited ${Math.floor(timeSinceRateLimit / 1000)}s ago (within ${windowMs / 1000}s window)`);
+  }
+  return isRecent;
+}
+
+/**
+ * Gets the fallback provider for a given provider
+ * @param currentProvider - The current provider instance
+ * @param document - The document being processed
+ * @returns The fallback provider instance
+ */
+export function getFallbackProvider(
+  currentProvider: WorkflowAIProvider,
+  document: StructuredDocument
+): WorkflowAIProvider {
+  const currentModel = currentProvider.getModelInfo().name;
+  const fallbackProvider = process.env.AI_FALLBACK_PROVIDER || 'gemini';
+  
+  if (currentModel.includes('gpt-4o') || currentModel.includes('openai')) {
+    // OpenAI → Gemini fallback
+    console.log(`[PROVIDER_FALLBACK] Switching from OpenAI to Gemini`);
+    return new WorkflowGeminiProvider();
+  } else if (currentModel.includes('gemini')) {
+    // Gemini → OpenAI fallback (if configured)
+    console.log(`[PROVIDER_FALLBACK] Switching from Gemini to OpenAI`);
+    return new WorkflowOpenAIProvider();
+  }
+  
+  // Default fallback to Gemini
+  console.log(`[PROVIDER_FALLBACK] Using default fallback: Gemini`);
+  return new WorkflowGeminiProvider();
+}
+
+/**
+ * Determines if fallback should be attempted
+ * @param currentProvider - The current provider instance
+ * @param document - The document being processed
+ * @returns true if fallback should be attempted
+ */
+export function shouldAttemptFallback(
+  currentProvider: WorkflowAIProvider,
+  document: StructuredDocument
+): boolean {
+  // Always attempt fallback for rate limits
+  // Could add additional logic here (e.g., check document size, provider availability)
+  return true;
+}
+
+/**
  * Estimate full prompt size including system prompt, user prompt structure, and examples
  * This is more accurate than just document size for provider selection
  */
@@ -420,6 +494,12 @@ export function selectProviderForDocument(
   // Decision logic: Use conservative threshold to avoid rate limits
   if (estimatedFullPrompt < TOKEN_THRESHOLD_FOR_GEMINI) {
     console.log(`[PROVIDER_SELECTION] Using ${provider} (estimated prompt < ${TOKEN_THRESHOLD_FOR_GEMINI} tokens)`);
+    
+    // Check if primary provider was recently rate limited
+    if (provider === 'openai' && isProviderRecentlyRateLimited('openai')) {
+      console.log(`[PROVIDER_SELECTION] OpenAI recently rate limited, using Gemini instead`);
+      return new WorkflowGeminiProvider();
+    }
     
     switch (provider.toLowerCase()) {
       case 'openai':

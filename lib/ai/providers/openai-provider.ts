@@ -6,6 +6,7 @@ import { estimateTokens, withRetry } from '../base-provider';
 import { WORKFLOW_EXTRACTION_SYSTEM_PROMPT } from '../prompts/workflow-extraction-system';
 import { formatStructuredDocumentForLLM, buildUserPrompt } from '../workflow-extractor';
 import { WorkflowExtractionResultSchema } from '../schemas/workflow-extraction-schema';
+import { trackRateLimit } from '../provider';
 
 export class OpenAIProvider implements AIProvider {
   private client: OpenAI;
@@ -112,13 +113,16 @@ export class OpenAIProvider implements AIProvider {
           
           // Handle rate limit errors with specific guidance
           if (error.status === 429) {
+            // Track the rate limit for intelligent provider selection
+            trackRateLimit('openai');
+            
             const retryAfter = error.headers?.['retry-after'] 
               ? parseInt(error.headers['retry-after'], 10) 
               : null;
             
             const rateLimitMessage = retryAfter
-              ? `OpenAI rate limit reached. Please wait ${retryAfter} seconds and try again. For large documents, consider using Gemini by setting AI_FALLBACK_PROVIDER=gemini in your environment.`
-              : `OpenAI rate limit reached. Please wait a few minutes and try again. For large documents, consider using Gemini by setting AI_FALLBACK_PROVIDER=gemini in your environment.`;
+              ? `OpenAI rate limit reached (retry-after: ${retryAfter}s). Automatically falling back to Gemini...`
+              : `OpenAI rate limit reached. Automatically falling back to Gemini...`;
             
             throw new Error(rateLimitMessage);
           }
