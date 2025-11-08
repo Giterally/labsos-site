@@ -31,6 +31,8 @@ import { useSearchParams } from "next/navigation"
 import { useUser } from "@/lib/user-context"
 import { KnowledgeNodesBackground } from "@/components/KnowledgeNodesBackground"
 import Image from "next/image"
+import { Sun, Moon } from "lucide-react"
+import { useTheme } from "next-themes"
 
 // Animated Word Component
 const AnimatedWord = ({ words }: { words: string[] }) => {
@@ -108,6 +110,8 @@ function ContactDialogHandler({
 
 export default function KnowledgeCaptureLanding() {
   const { user: currentUser, loading: userLoading } = useUser()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const [openFAQ, setOpenFAQ] = useState<number | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [showContactDialog, setShowContactDialog] = useState(false)
@@ -117,6 +121,10 @@ export default function KnowledgeCaptureLanding() {
     message: ''
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (!userLoading) {
@@ -247,13 +255,31 @@ export default function KnowledgeCaptureLanding() {
               </button>
             </nav>
             {!userLoading && (
-              <Button 
-                size="lg" 
-                className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold px-8 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
-                onClick={() => (window.location.href = "/login")}
-              >
-                Get Started
-              </Button>
+              <div className="flex items-center space-x-3">
+                {mounted && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                    className="h-9 w-9 p-0 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
+                    aria-label="Toggle theme"
+                  >
+                    {theme === "dark" ? (
+                      <Sun className="h-5 w-5 text-yellow-500" />
+                    ) : (
+                      <Moon className="h-5 w-5 text-blue-400" />
+                    )}
+                    <span className="sr-only">Toggle theme</span>
+                  </Button>
+                )}
+                <Button 
+                  size="lg" 
+                  className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-semibold px-8 py-3 shadow-lg hover:shadow-xl transition-all duration-200"
+                  onClick={() => (window.location.href = "/login")}
+                >
+                  Get Started
+                </Button>
+              </div>
             )}
           </div>
         </header>
