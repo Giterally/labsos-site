@@ -21,6 +21,9 @@ import {
   FolderIcon,
   BeakerIcon,
 } from "@heroicons/react/24/outline"
+import { Sun, Moon } from "lucide-react"
+import { useTheme } from "next-themes"
+import { useEffect, useState } from "react"
 import { signOut } from "@/lib/auth-service"
 import { useUser } from "@/lib/user-context"
 
@@ -32,7 +35,14 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
   const router = useRouter()
   const pathname = usePathname()
   const { user, loading } = useUser()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const isHomePage = pathname === "/"
+
+  // Avoid hydration mismatch
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const handleSignOut = async () => {
     try {
@@ -139,6 +149,23 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                 <FolderIcon className="h-4 w-4" />
                 <span>Projects</span>
               </Button>
+              {/* Theme Toggle */}
+              {mounted && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  className="h-9 w-9 p-0 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
+                  aria-label="Toggle theme"
+                >
+                  {theme === "dark" ? (
+                    <Sun className="h-5 w-5 text-yellow-500" />
+                  ) : (
+                    <Moon className="h-5 w-5 text-blue-400" />
+                  )}
+                  <span className="sr-only">Toggle theme</span>
+                </Button>
+              )}
             </div>
 
             {/* User profile dropdown */}

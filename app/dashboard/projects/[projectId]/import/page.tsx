@@ -452,15 +452,15 @@ export default function ImportPage() {
                     setExpandedNestedBlocks(newExpanded);
                   }}
                 >
-                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-600 rounded-full text-xs font-medium">
+                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full text-xs font-medium">
                     {blockIndex + 1}
                   </div>
-                  <h4 className="text-sm font-medium flex-1">{block.name}</h4>
+                  <h4 className="text-sm font-medium flex-1 text-gray-900 dark:text-gray-100">{block.name}</h4>
                   <Badge variant="outline" className="text-xs">
                     {blockProposals.length} node(s)
                   </Badge>
                   <ChevronDown 
-                    className={`w-3 h-3 transition-transform ${isBlockExpanded ? 'rotate-180' : ''}`}
+                    className={`w-3 h-3 transition-transform text-gray-600 dark:text-gray-400 ${isBlockExpanded ? 'rotate-180' : ''}`}
                   />
                 </div>
                 {isBlockExpanded && (
@@ -604,7 +604,7 @@ export default function ImportPage() {
                     setExpandedNestedBlocks(newExpanded);
                   }}
                 >
-                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-600 rounded-full text-xs font-medium">
+                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full text-xs font-medium">
                     {blockIndex + 1}
                   </div>
                   <h4 className="text-sm font-medium flex-1">{formatBlockName(blockType)} Block</h4>
@@ -1205,9 +1205,10 @@ export default function ImportPage() {
       // Wait for all uploads to complete
       const results = await Promise.all(uploadPromises);
       
-      // Show success message
+      // Show success message using the notification system
       const successCount = results.filter(r => r.success).length;
-      alert(`${successCount} file(s) uploaded successfully! Processing started.`);
+      setSuccess(`${successCount} file(s) uploaded successfully! Processing started.`);
+      setTimeout(() => setSuccess(null), 5000); // Clear after 5 seconds
       
       // Clear selected files and refresh data
       setSelectedFiles([]);
@@ -2101,9 +2102,9 @@ export default function ImportPage() {
       
       {/* Success Alert */}
       {success && (
-        <Alert className="border-green-200 bg-green-50 text-green-800">
+        <Alert className="!bg-green-600 !border-green-600 !text-white">
           <CheckCircle className="h-4 w-4" />
-          <AlertDescription>{success}</AlertDescription>
+          <AlertDescription className="!text-white">{success}</AlertDescription>
         </Alert>
       )}
 
@@ -2384,19 +2385,19 @@ export default function ImportPage() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Completed:</span>
-                      <span className="font-medium text-green-600">
+                      <span className="font-medium text-green-600 dark:text-green-400">
                         {sources.filter(s => s.status === 'completed').length}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Processing:</span>
-                      <span className="font-medium text-yellow-600">
+                      <span className="font-medium text-yellow-600 dark:text-yellow-400">
                         {sources.filter(s => s.status === 'processing').length}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Failed:</span>
-                      <span className="font-medium text-red-600">
+                      <span className="font-medium text-red-600 dark:text-red-400">
                         {sources.filter(s => s.status === 'failed').length}
                       </span>
                     </div>
@@ -2450,9 +2451,9 @@ export default function ImportPage() {
               </div>
 
               {/* Clear All Section */}
-              <Card className="border-red-200">
+              <Card className="border-red-200 dark:border-red-800">
                 <CardHeader>
-                  <CardTitle className="text-base text-red-700 flex items-center gap-2">
+                  <CardTitle className="text-base text-red-700 dark:text-red-400 flex items-center gap-2">
                     <RotateCcw className="h-4 w-4" />
                     Start Fresh
                   </CardTitle>
@@ -2462,12 +2463,12 @@ export default function ImportPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                      <h4 className="font-medium text-red-800 mb-2">⚠️ Warning</h4>
-                      <p className="text-sm text-red-700">
+                    <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                      <h4 className="font-medium text-red-800 dark:text-red-300 mb-2">⚠️ Warning</h4>
+                      <p className="text-sm text-red-700 dark:text-red-300">
                         This action will permanently delete:
                       </p>
-                      <ul className="text-sm text-red-700 mt-2 ml-4 list-disc">
+                      <ul className="text-sm text-red-700 dark:text-red-300 mt-2 ml-4 list-disc">
                         <li>All uploaded files and their storage</li>
                         <li>All processed chunks and embeddings</li>
                         <li>All AI-generated proposed nodes</li>
@@ -2538,7 +2539,7 @@ export default function ImportPage() {
                     </div>
                     <Button 
                       onClick={() => window.open(`/dashboard/projects/${projectId}/proposals`, '_blank')}
-                      className="bg-green-600 hover:bg-green-700"
+                      className="bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600"
                     >
                       <Sparkles className="h-4 w-4 mr-2" />
                       Review Proposals
@@ -2574,19 +2575,19 @@ export default function ImportPage() {
                       <CardContent className="space-y-2">
                         <div className="flex justify-between text-sm">
                           <span>Completed:</span>
-                          <span className="font-medium text-green-600">
+                          <span className="font-medium text-green-600 dark:text-green-400">
                             {sources.filter(s => s.status === 'completed').length}
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>Processing:</span>
-                          <span className="font-medium text-yellow-600">
+                          <span className="font-medium text-yellow-600 dark:text-yellow-400">
                             {sources.filter(s => s.status === 'processing').length}
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>Failed:</span>
-                          <span className="font-medium text-red-600">
+                          <span className="font-medium text-red-600 dark:text-red-400">
                             {sources.filter(s => s.status === 'failed').length}
                           </span>
                         </div>
@@ -2711,12 +2712,12 @@ export default function ImportPage() {
                   
                   {/* Progress Bar for AI Generation */}
                   {generatingProposals && generationStatus && (
-                    <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950 space-y-2">
+                    <div className="p-4 border border-blue-600 rounded-lg bg-blue-600 space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium text-blue-900 dark:text-blue-100">
+                        <span className="font-medium text-white">
                           {generationStatus}
                         </span>
-                        <span className="text-blue-600 dark:text-blue-400">
+                        <span className="text-white">
                           {generationProgress}%
                         </span>
                       </div>
@@ -2732,7 +2733,7 @@ export default function ImportPage() {
                             {source.source_type === 'pdf' && <FileText className="h-5 w-5 text-red-500" />}
                             {source.source_type === 'video' && <Video className="h-5 w-5 text-blue-500" />}
                             {source.source_type === 'excel' && <FileSpreadsheet className="h-5 w-5 text-green-500" />}
-                            {source.source_type === 'text' && <FileText className="h-5 w-5 text-gray-500" />}
+                            {source.source_type === 'text' && <FileText className="h-5 w-5 text-gray-500 dark:text-gray-400" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">{source.source_name}</p>
@@ -2759,7 +2760,7 @@ export default function ImportPage() {
                             onClick={() => handleDeleteSource(source.id)}
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                            className="h-8 w-8 p-0 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -2881,9 +2882,11 @@ export default function ImportPage() {
                         />
                       </div>
                       {treeBuildStatus && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                          {treeBuildStatus}
-                        </p>
+                        <div className="mt-2 p-2 rounded-md bg-blue-50 dark:bg-slate-800/50 border border-blue-200 dark:border-slate-700">
+                          <p className="text-sm text-blue-900 dark:text-blue-100">
+                            {treeBuildStatus}
+                          </p>
+                        </div>
                       )}
                     </div>
                   )}
@@ -2978,7 +2981,7 @@ export default function ImportPage() {
                             <div key={blockKey} className="border rounded-lg overflow-hidden">
                               {/* Block Header - Always visible, clickable */}
                               <div 
-                                className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                                className="flex items-center gap-3 p-4 cursor-pointer transition-colors"
                                 onClick={() => {
                                   const newExpanded = new Set(expandedBlocks);
                                   if (isBlockExpanded) {
@@ -3031,9 +3034,7 @@ export default function ImportPage() {
                                     return (
                                       <div 
                                         key={proposal.id} 
-                                        className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                                          isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                                        }`}
+                                        className="border border-gray-200 hover:border-gray-300 rounded-lg p-4 cursor-pointer transition-colors"
                                         onClick={() => {
                                           const newSelected = new Set(selectedProposals);
                                           if (isSelected) {
@@ -3052,13 +3053,13 @@ export default function ImportPage() {
                                               onChange={() => {}} // Handled by parent onClick
                                               className="mt-1"
                                             />
-                                            <div className="flex items-center justify-center w-6 h-6 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+                                            <div className="flex items-center justify-center w-6 h-6 dark:bg-gray-700 dark:text-white rounded-full text-xs font-medium">
                                               {nodeIndex + 1}
                                             </div>
                                           </div>
                                           <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-2">
-                                              <h4 className="font-medium text-sm">{node.title}</h4>
+                                              <h4 className="font-medium text-sm dark:text-white">{node.title}</h4>
                                               {/* Nested Tree Dropdown Link */}
                                               {(node.isNestedTree || node.metadata?.isNestedTree) && (
                                                 <button
@@ -3103,7 +3104,7 @@ export default function ImportPage() {
                                                   className={`px-3 py-1 text-xs rounded transition-colors ${
                                                     selectedDetailView[proposal.id] === "content"
                                                       ? 'bg-blue-500 text-white'
-                                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                      : 'dark:bg-gray-700 dark:text-white'
                                                   }`}
                                                 >
                                                   📄 Content
@@ -3121,7 +3122,7 @@ export default function ImportPage() {
                                                   className={`px-3 py-1 text-xs rounded transition-colors ${
                                                     selectedDetailView[proposal.id] === "links"
                                                       ? 'bg-blue-500 text-white'
-                                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                      : 'dark:bg-gray-700 dark:text-white'
                                                   }`}
                                                 >
                                                   🔗 Links ({node.links.length})
@@ -3139,7 +3140,7 @@ export default function ImportPage() {
                                                   className={`px-3 py-1 text-xs rounded transition-colors ${
                                                     selectedDetailView[proposal.id] === "attachments"
                                                       ? 'bg-blue-500 text-white'
-                                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                      : 'dark:bg-gray-700 dark:text-white'
                                                   }`}
                                                 >
                                                   📎 Attachments ({node.attachments.length})
@@ -3157,7 +3158,7 @@ export default function ImportPage() {
                                                   className={`px-3 py-1 text-xs rounded transition-colors ${
                                                     selectedDetailView[proposal.id] === "dependencies"
                                                       ? 'bg-blue-500 text-white'
-                                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                      : 'dark:bg-gray-700 dark:text-white'
                                                   }`}
                                                 >
                                                   🔗 Dependencies ({node.dependencies.length})
@@ -3167,17 +3168,15 @@ export default function ImportPage() {
                                             
                                             {/* Detail View Content */}
                                             {selectedDetailView[proposal.id] === "content" && node.content?.text && (
-                                              <div className="mt-3 p-3 bg-gray-50 rounded border">
-                                                <h5 className="font-medium text-sm mb-2">Content:</h5>
-                                                <pre className="text-xs whitespace-pre-wrap text-gray-700">
+                                              <div className="mt-3 p-3 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
+                                                <pre className="text-xs whitespace-pre-wrap dark:text-white">
                                                   {node.content.text}
                                                 </pre>
                                               </div>
                                             )}
 
                                             {selectedDetailView[proposal.id] === "links" && node.links && node.links.length > 0 && (
-                                              <div className="mt-3 p-3 bg-gray-50 rounded border">
-                                                <h5 className="font-medium text-sm mb-2">Links:</h5>
+                                              <div className="mt-3 p-3 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
                                                 <div className="space-y-1">
                                                   {node.links.map((link: any, index: number) => (
                                                     <div key={index} className="text-xs">
@@ -3185,12 +3184,12 @@ export default function ImportPage() {
                                                         href={link.url} 
                                                         target="_blank" 
                                                         rel="noopener noreferrer"
-                                                        className="text-blue-600 hover:underline"
+                                                        className="text-blue-600 dark:text-blue-400 hover:underline"
                                                       >
                                                         {link.title || link.url}
                                                       </a>
                                                       {link.type && (
-                                                        <span className="text-gray-500 ml-2">({link.type})</span>
+                                                        <span className="dark:text-gray-300 ml-2">({link.type})</span>
                                                       )}
                                                     </div>
                                                   ))}
@@ -3199,14 +3198,13 @@ export default function ImportPage() {
                                             )}
 
                                             {selectedDetailView[proposal.id] === "attachments" && node.attachments && node.attachments.length > 0 && (
-                                              <div className="mt-3 p-3 bg-gray-50 rounded border">
-                                                <h5 className="font-medium text-sm mb-2">Attachments:</h5>
+                                              <div className="mt-3 p-3 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
                                                 <div className="space-y-1">
                                                   {node.attachments.map((attachment: any, index: number) => (
                                                     <div key={index} className="text-xs">
-                                                      <span className="font-medium">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
+                                                      <span className="font-medium dark:text-white">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
                                                       {attachment.range && (
-                                                        <span className="text-gray-500 ml-2">({attachment.range})</span>
+                                                        <span className="dark:text-gray-300 ml-2">({attachment.range})</span>
                                                       )}
                                                     </div>
                                                   ))}
@@ -3215,8 +3213,7 @@ export default function ImportPage() {
                                             )}
 
                                             {selectedDetailView[proposal.id] === "dependencies" && node.dependencies && node.dependencies.length > 0 && (
-                                              <div className="mt-3 p-3 bg-gray-50 rounded border">
-                                                <h5 className="font-medium text-sm mb-2">Dependencies:</h5>
+                                              <div className="mt-3 p-3 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
                                                 <div className="space-y-2">
                                                   {node.dependencies.map((dep: any, index: number) => {
                                                     const depTypeLabels: Record<string, string> = {
@@ -3226,37 +3223,37 @@ export default function ImportPage() {
                                                       'validates': 'Validates'
                                                     };
                                                     const depTypeColors: Record<string, string> = {
-                                                      'requires': 'bg-orange-100 text-orange-700',
-                                                      'uses_output': 'bg-blue-100 text-blue-700',
-                                                      'follows': 'bg-green-100 text-green-700',
-                                                      'validates': 'bg-purple-100 text-purple-700'
+                                                      'requires': 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
+                                                      'uses_output': 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+                                                      'follows': 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
+                                                      'validates': 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
                                                     };
                                                     const depType = dep.dependency_type || dep.dependencyType || 'requires';
                                                     return (
-                                                      <div key={index} className="text-xs border-l-2 border-gray-300 pl-2">
+                                                      <div key={index} className="text-xs border-l-2 border-gray-300 dark:border-gray-600 pl-2">
                                                         <div className="flex items-center gap-2 mb-1">
-                                                          <span className="font-medium text-gray-900">
+                                                          <span className="font-medium dark:text-white">
                                                             {dep.referenced_title || dep.referencedNodeTitle || 'Unknown Node'}
                                                           </span>
                                                           <Badge 
                                                             variant="outline" 
-                                                            className={`text-xs ${depTypeColors[depType] || 'bg-gray-100 text-gray-700'}`}
+                                                            className={`text-xs ${depTypeColors[depType] || 'dark:bg-gray-600 dark:text-white'}`}
                                                           >
                                                             {depTypeLabels[depType] || depType}
                                                           </Badge>
                                                           {dep.confidence !== undefined && (
-                                                            <span className="text-gray-500">
+                                                            <span className="dark:text-gray-300">
                                                               {Math.round((dep.confidence || 0) * 100)}% confidence
                                                             </span>
                                                           )}
                                                         </div>
                                                         {dep.extractedPhrase && (
-                                                          <p className="text-gray-600 italic text-xs mt-1">
+                                                          <p className="dark:text-gray-300 italic text-xs mt-1">
                                                             "{dep.extractedPhrase}"
                                                           </p>
                                                         )}
                                                         {dep.evidence && !dep.extractedPhrase && (
-                                                          <p className="text-gray-600 italic text-xs mt-1">
+                                                          <p className="dark:text-gray-300 italic text-xs mt-1">
                                                             "{dep.evidence}"
                                                           </p>
                                                         )}
