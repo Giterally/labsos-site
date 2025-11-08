@@ -27,7 +27,7 @@ import {
 } from "@heroicons/react/24/outline"
 import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { useUser } from "@/lib/user-context"
 import { KnowledgeNodesBackground } from "@/components/KnowledgeNodesBackground"
 import Image from "next/image"
@@ -111,6 +111,7 @@ function ContactDialogHandler({
 export default function KnowledgeCaptureLanding() {
   const { user: currentUser, loading: userLoading } = useUser()
   const { theme, setTheme } = useTheme()
+  const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const [openFAQ, setOpenFAQ] = useState<number | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -131,6 +132,15 @@ export default function KnowledgeCaptureLanding() {
       setIsAuthenticated(!!currentUser)
     }
   }, [currentUser, userLoading])
+
+  // Redirect password reset codes to reset-password page
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const code = urlParams.get('code')
+    if (code) {
+      router.replace(`/reset-password?code=${code}`)
+    }
+  }, [router])
 
   const toggleFAQ = (index: number) => {
     setOpenFAQ(openFAQ === index ? null : index)

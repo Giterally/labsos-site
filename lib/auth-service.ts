@@ -100,6 +100,22 @@ export async function signIn(email: string, password: string) {
   return { data }
 }
 
+// Reset password for email
+export async function resetPasswordForEmail(email: string) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://olvaro.net'
+  const redirectTo = `${siteUrl}/reset-password`
+  
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo
+  })
+
+  if (error) {
+    return { error }
+  }
+
+  return { data }
+}
+
 // Sign out
 export async function signOut() {
   const { error } = await supabase.auth.signOut()

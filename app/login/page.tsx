@@ -233,6 +233,17 @@ function LoginForm() {
                   {showPassword ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
                 </button>
               </div>
+              {!isSignUp && (
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/reset-password")}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors underline"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+              )}
             </div>
             {isSignUp && (
               <div className="space-y-2">
