@@ -297,9 +297,9 @@ export default function KnowledgeCaptureLanding() {
 
       {/* Hero Section */}
       <section className="py-20 px-4 relative pb-32 z-10">
-        <div className="container mx-auto max-w-6xl relative z-10">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-8">
+        <div className="container mx-auto max-w-7xl relative z-10">
+          <div className="grid lg:grid-cols-5 gap-8 items-center">
+            <div className="lg:col-span-2 space-y-8">
               <div className="space-y-4">
                 <h1 className="text-5xl font-bold tracking-tight text-foreground">
                   <AnimatedWord words={["Capture", "Organise", "Manage"]} /> Your Research Knowledge With Olvaro
@@ -314,16 +314,16 @@ export default function KnowledgeCaptureLanding() {
                 </Button>
               </div>
             </div>
-            <div className="relative">
-              <Card className="shadow-2xl border-2 border-gray-200 overflow-hidden">
-                <CardContent className="p-0">
-                  <img 
-                    src="/rna-seq-pipeline-demo.png" 
-                    alt="RNA-seq Analysis Pipeline - Knowledge Capture Interface"
-                    className="w-full h-auto"
-                  />
-                </CardContent>
-              </Card>
+            <div className="lg:col-span-3 relative">
+              <div className="w-full rounded-2xl" style={{ paddingBottom: '60%', position: 'relative' }}>
+                <iframe
+                  src="https://player.vimeo.com/video/1135053419?title=0&byline=0&portrait=0"
+                  className="absolute top-0 left-0 w-full h-full rounded-2xl"
+                  frameBorder="0"
+                  allow="autoplay; fullscreen; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
             </div>
           </div>
         </div>

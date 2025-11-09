@@ -37,6 +37,7 @@ export function KnowledgeNodesCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animationRef = useRef<number>()
   const nodesRef = useRef<Node[]>([])
+  const connectionColorsRef = useRef<Map<string, string>>(new Map())
   const mouseRef = useRef({ x: 0, y: 0 })
   const timeRef = useRef(0)
   const [isMobile, setIsMobile] = useState(false)
@@ -188,6 +189,14 @@ export function KnowledgeNodesCanvas({
         if (!nodes[i].connections.includes(targetIndex)) {
           nodes[i].connections.push(targetIndex)
           nodes[targetIndex].connections.push(i)
+          
+          // Assign a consistent color to this connection
+          const connectionKey = `${Math.min(i, targetIndex)}-${Math.max(i, targetIndex)}`
+          if (!connectionColorsRef.current.has(connectionKey)) {
+            const connectionColors = ['#1B5E20', '#2E7D32', '#4FC3F7', '#81C784']
+            const colorIndex = Math.floor(Math.random() * connectionColors.length)
+            connectionColorsRef.current.set(connectionKey, connectionColors[colorIndex])
+          }
         }
       }
     }
@@ -357,7 +366,8 @@ export function KnowledgeNodesCanvas({
     const connectionColors = ['#1B5E20', '#2E7D32', '#4FC3F7', '#81C784']
     const mouse = mouseRef.current
     
-    for (const node of nodes) {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]
       // Skip connections for static sections
       if (hasTransition && node.y > transitionEndY) {
         continue
@@ -377,9 +387,10 @@ export function KnowledgeNodesCanvas({
           const cursorDistanceSquared = dx * dx + dy * dy
           const glowRadiusSquared = 80 * 80 // Reduced radius for better performance
           
-          // Vary connection colors and opacity
-          const colorIndex = Math.floor(Math.random() * connectionColors.length)
-          ctx.strokeStyle = connectionColors[colorIndex]
+          // Get consistent color for this connection
+          const connectionKey = `${Math.min(i, connectionIndex)}-${Math.max(i, connectionIndex)}`
+          const connectionColor = connectionColorsRef.current.get(connectionKey) || connectionColors[0]
+          ctx.strokeStyle = connectionColor
           
           // Add subtle pulsing to connections
           const pulse = Math.sin(timeRef.current * 0.001 + node.x * 0.01) * 0.1 + 0.2
@@ -391,7 +402,7 @@ export function KnowledgeNodesCanvas({
             ctx.lineWidth = 0.8 + (glowIntensity * 0.4) // Subtle line thickness increase
             
             // Subtle glow effect
-            ctx.shadowColor = connectionColors[colorIndex]
+            ctx.shadowColor = connectionColor
             ctx.shadowBlur = glowIntensity * 6 // Reduced shadow blur
           } else {
             ctx.globalAlpha = pulse
@@ -406,69 +417,6 @@ export function KnowledgeNodesCanvas({
           
           // Reset shadow
           ctx.shadowBlur = 0
-        }
-      }
-    }
-    
-    // Draw particles flowing along connections (only for interactive sections)
-    ctx.globalAlpha = 0.7
-    
-    for (const node of nodes) {
-      // Skip particles for static sections
-      if (hasTransition && node.y > transitionEndY) {
-        continue
-      }
-      
-      for (const connectionIndex of node.connections) {
-        const connectedNode = nodes[connectionIndex]
-        if (connectedNode) {
-          // Skip particles for connections to static sections
-          if (hasTransition && connectedNode.y > transitionEndY) {
-            continue
-          }
-          
-          // Fewer particles per connection for better performance
-          for (let p = 0; p < 3; p++) {
-            const particleOffset = p * 0.33
-            const progress = ((Math.sin(timeRef.current * 0.003 + node.x * 0.01 + particleOffset) + 1) / 2 + particleOffset) % 1
-            const particleX = node.x + (connectedNode.x - node.x) * progress
-            const particleY = node.y + (connectedNode.y - node.y) * progress
-            
-            // Calculate cursor proximity for particle glow (optimized)
-            const pDx = particleX - mouse.x
-            const pDy = particleY - mouse.y
-            const cursorDistanceSquared = pDx * pDx + pDy * pDy
-            const glowRadiusSquared = 60 * 60 // Reduced radius for better performance
-            
-            // Vary particle colors
-            const colors = ['#4FC3F7', '#81C784', '#A5D6A7', '#66BB6A']
-            const particleColor = colors[p % colors.length]
-            ctx.fillStyle = particleColor
-            
-            // Enhanced glow when cursor is nearby (subtle)
-            if (cursorDistanceSquared < glowRadiusSquared) {
-              const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 60)
-              
-              // Subtle glow effect
-              ctx.shadowColor = particleColor
-              ctx.shadowBlur = glowIntensity * 4 // Reduced shadow blur
-              
-              // Slightly larger particles near cursor
-              const baseSize = 1 + Math.sin(timeRef.current * 0.005 + particleX * 0.02) * 0.3
-              const enhancedSize = baseSize + (glowIntensity * 0.5) // Reduced size increase
-              
-              ctx.beginPath()
-              ctx.arc(particleX, particleY, enhancedSize, 0, Math.PI * 2)
-              ctx.fill()
-              
-              // Reset shadow
-              ctx.shadowBlur = 0
-            } else {
-              ctx.beginPath()
-              ctx.arc(particleX, particleY, 1 + Math.sin(timeRef.current * 0.005 + particleX * 0.02) * 0.3, 0, Math.PI * 2)
-              ctx.fill()
-            }
-          }
         }
       }
     }
@@ -603,6 +551,7 @@ export function KnowledgeNodesCanvas({
           // Add padding for glow effects (40px on each side)
           const paddedWidth = newRect.width + 80
           const paddedHeight = newRect.height + 80
+          connectionColorsRef.current.clear()
           nodesRef.current = generateNodes(paddedWidth, paddedHeight)
           timeRef.current = performance.now()
           animationRef.current = requestAnimationFrame(animate)
@@ -614,6 +563,7 @@ export function KnowledgeNodesCanvas({
     // Add padding for glow effects (40px on each side)
     const paddedWidth = rect.width + 80
     const paddedHeight = rect.height + 80
+    connectionColorsRef.current.clear()
     nodesRef.current = generateNodes(paddedWidth, paddedHeight)
     timeRef.current = performance.now()
     animationRef.current = requestAnimationFrame(animate)
