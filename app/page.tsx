@@ -315,10 +315,22 @@ export default function KnowledgeCaptureLanding() {
               </div>
             </div>
             <div className="lg:col-span-3 relative">
-              <div className="w-full rounded-2xl" style={{ paddingBottom: '60%', position: 'relative' }}>
+              <div 
+                className="w-full rounded-2xl overflow-hidden" 
+                style={{ 
+                  paddingBottom: '60%', 
+                  position: 'relative',
+                  backgroundColor: 'transparent',
+                  overflow: 'hidden'
+                }}
+              >
                 <iframe
                   src="https://player.vimeo.com/video/1135053419?title=0&byline=0&portrait=0"
                   className="absolute top-0 left-0 w-full h-full rounded-2xl"
+                  style={{
+                    border: 'none',
+                    backgroundColor: 'transparent'
+                  }}
                   frameBorder="0"
                   allow="autoplay; fullscreen; picture-in-picture"
                   allowFullScreen
