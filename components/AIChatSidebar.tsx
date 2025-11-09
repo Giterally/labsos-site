@@ -74,15 +74,18 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   // Delete a chat
   const deleteChat = useCallback((chatId: string) => {
     const updated = chats.filter(c => c.id !== chatId)
-    saveChats(updated)
-    if (activeChatId === chatId) {
-      if (updated.length > 0) {
+    // Clear localStorage if no chats remain
+    if (updated.length === 0) {
+      localStorage.removeItem(storageKey)
+      setChats([])
+      setActiveChatId(null)
+    } else {
+      saveChats(updated)
+      if (activeChatId === chatId) {
         setActiveChatId(updated[0].id)
-      } else {
-        createNewChat()
       }
     }
-  }, [chats, activeChatId, saveChats, createNewChat])
+  }, [chats, activeChatId, saveChats, storageKey])
 
   // Update chat title from first message
   const updateChatTitle = useCallback((chatId: string, firstMessage: string) => {
@@ -266,18 +269,21 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
               sendMessage(initialQuery)
             }, 100)
           } else {
-            // Set active chat to most recent, or create new one if none exist
+            // Set active chat to most recent if chats exist
             if (loadedChats.length > 0) {
               const mostRecent = loadedChats.sort((a, b) => 
                 b.updatedAt.getTime() - a.updatedAt.getTime()
               )[0]
               setActiveChatId(mostRecent.id)
             } else {
+              // No chats - create a new one when sidebar opens
               createNewChat()
             }
           }
         } catch (e) {
           console.error('Failed to parse saved chats:', e)
+          // Clear invalid data
+          localStorage.removeItem(storageKey)
           if (initialQuery && initialQuery.trim()) {
             const newChat: Chat = {
               id: `chat-${Date.now()}`,
@@ -296,7 +302,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
           }
         }
       } else {
-        // No existing chats
+        // No existing chats - create a new one when sidebar opens
         if (initialQuery && initialQuery.trim()) {
           const newChat: Chat = {
             id: `chat-${Date.now()}`,
@@ -355,53 +361,67 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
         
         {/* Chat Tabs Bar */}
         <div className="border-b flex-shrink-0 bg-gray-50">
-          <div className="flex items-center gap-2 px-2 py-2 overflow-x-auto">
-            {chats.slice(0, MAX_CHATS).map((chat) => (
-              <div
-                key={chat.id}
-                className={cn(
-                  "flex items-center gap-1 flex-shrink-0 rounded-lg px-3 py-2 transition-all",
-                  activeChatId === chat.id
-                    ? "bg-purple-600 text-white shadow-md"
-                    : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
-                )}
-              >
-                <button
-                  onClick={() => setActiveChatId(chat.id)}
-                  className="flex-1 min-w-0 max-w-[180px] text-left"
-                >
-                  <span className="text-sm font-medium truncate block">{chat.title}</span>
-                </button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "h-5 w-5 p-0 opacity-70 hover:opacity-100 flex-shrink-0",
-                    activeChatId === chat.id ? "text-white hover:bg-purple-700" : "text-gray-500 hover:text-red-500"
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    deleteChat(chat.id)
-                  }}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
-            
-            {/* New Chat Button - Only show if less than MAX_CHATS */}
-            {chats.length < MAX_CHATS && (
+          {chats.length === 0 ? (
+            <div className="px-4 py-3 flex items-center justify-center">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={createNewChat}
-                className="h-9 px-3 flex items-center gap-1.5 flex-shrink-0 bg-white border-gray-200 hover:bg-gray-50"
+                className="h-9 px-4 flex items-center gap-2 bg-white border-purple-200 hover:bg-purple-50 hover:border-purple-300 text-purple-700"
               >
                 <Plus className="h-4 w-4" />
-                <span className="text-sm">New Chat</span>
+                <span className="text-sm font-medium">New Chat</span>
               </Button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-2 py-2 overflow-x-auto">
+              {chats.slice(0, MAX_CHATS).map((chat) => (
+                <div
+                  key={chat.id}
+                  className={cn(
+                    "flex items-center gap-1 flex-shrink-0 rounded-lg px-3 py-2 transition-all",
+                    activeChatId === chat.id
+                      ? "bg-purple-600 text-white shadow-md"
+                      : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+                  )}
+                >
+                  <button
+                    onClick={() => setActiveChatId(chat.id)}
+                    className="flex-1 min-w-0 max-w-[180px] text-left"
+                  >
+                    <span className="text-sm font-medium truncate block">{chat.title}</span>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "h-5 w-5 p-0 opacity-70 hover:opacity-100 flex-shrink-0",
+                      activeChatId === chat.id ? "text-white hover:bg-purple-700" : "text-gray-500 hover:text-red-500"
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      deleteChat(chat.id)
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+              
+              {/* New Chat Button - Only show if less than MAX_CHATS */}
+              {chats.length < MAX_CHATS && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={createNewChat}
+                  className="h-9 px-3 flex items-center gap-1.5 flex-shrink-0 bg-white border-gray-200 hover:bg-gray-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="text-sm">New Chat</span>
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Chat Messages Area */}
@@ -480,8 +500,10 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
               </div>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <p className="text-gray-500">Create a new chat to get started</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+              <Sparkles className="h-16 w-16 text-gray-300 mb-4" />
+              <p className="text-gray-700 font-medium text-lg mb-2">Start a chat to learn about the experiment tree</p>
+              <p className="text-sm text-gray-500">Ask questions about nodes, blocks, and relationships</p>
             </div>
           )}
         </div>

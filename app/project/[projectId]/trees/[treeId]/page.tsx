@@ -13,8 +13,9 @@ import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
 import SearchTool from "@/components/SearchTool"
 import AIChatSidebar from "@/components/AIChatSidebar"
-import { Sparkles } from "lucide-react"
+import { Sparkles, ChevronLeft } from "lucide-react"
 import { authFetch } from "@/lib/api-client"
+import { cn } from "@/lib/utils"
 
 // DEBUG: module load sanity check
 try {
@@ -3176,6 +3177,26 @@ export default function SimpleExperimentTreePage() {
           </div>
         </div>
       )}
+      
+      {/* Permanent AI Chat Sidebar Toggle - Full Height Bar */}
+      <div className="fixed right-0 top-0 bottom-0 w-12 z-40 bg-background border-l border-border">
+        <button
+          onClick={() => {
+            setShowAIChatSidebar(true)
+          }}
+          className={cn(
+            "w-full h-full flex flex-col items-center justify-center gap-3",
+            "hover:bg-muted/50 transition-colors",
+            "group"
+          )}
+          aria-label="Open AI Chat"
+        >
+          <div className="flex flex-col items-center gap-2">
+            <Sparkles className="h-5 w-5 text-purple-600 group-hover:text-purple-700 transition-colors" />
+            <ChevronLeft className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </div>
+        </button>
+      </div>
       
       {/* AI Chat Sidebar */}
       <AIChatSidebar
