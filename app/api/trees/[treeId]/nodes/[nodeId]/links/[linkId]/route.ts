@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, AuthError, type AuthContext } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
+import { fetchNodeAndGenerateEmbedding } from '@/lib/embedding-helpers'
 
 export async function PUT(
   request: NextRequest,
@@ -66,6 +67,11 @@ export async function PUT(
       return NextResponse.json({ error: 'Failed to update link' }, { status: 500 })
     }
 
+    // Trigger embedding update (non-blocking)
+    fetchNodeAndGenerateEmbedding(nodeId, supabase).catch(err => {
+      console.error('Embedding update failed:', err);
+    });
+
     return NextResponse.json({ link: updatedLink })
   } catch (error) {
     console.error('Error in PUT /api/trees/[treeId]/nodes/[nodeId]/links/[linkId]:', error)
@@ -122,6 +128,11 @@ export async function DELETE(
       console.error('Error deleting link:', linkError)
       return NextResponse.json({ error: 'Failed to delete link' }, { status: 500 })
     }
+
+    // Trigger embedding update (non-blocking)
+    fetchNodeAndGenerateEmbedding(nodeId, supabase).catch(err => {
+      console.error('Embedding update failed:', err);
+    });
 
     return NextResponse.json({ success: true })
   } catch (error) {

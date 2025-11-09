@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
 import { supabaseServer } from '@/lib/supabase-server'
+import { fetchNodeAndGenerateEmbedding } from '@/lib/embedding-helpers'
 
 export async function GET(
   request: NextRequest,
@@ -484,6 +485,11 @@ export async function POST(
         // Don't fail the entire operation if content creation fails
       }
     }
+
+    // Trigger embedding generation (non-blocking)
+    fetchNodeAndGenerateEmbedding(newNode.id, auth.supabase).catch(err => {
+      console.error('Embedding generation failed:', err);
+    });
 
     return NextResponse.json({ node: newNode })
   } catch (error) {

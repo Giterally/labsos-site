@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { supabase } from "@/lib/supabase-client"
+import { Sparkles } from "lucide-react"
 // import { cn } from "@/lib/utils"
 import {
   MagnifyingGlassIcon,
@@ -36,13 +38,16 @@ interface SearchResult {
   sectionId?: string
 }
 
+
 interface SearchToolProps {
   treeId: string
+  projectId?: string
   onNodeSelect: (nodeId: string, sectionId?: string) => void
+  onAIChatOpen?: () => void
   className?: string
 }
 
-export default function SearchTool({ treeId, onNodeSelect, className }: SearchToolProps) {
+export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOpen, className }: SearchToolProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
@@ -52,34 +57,10 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
   const [searchHistory, setSearchHistory] = useState<string[]>([])
   const [showHistory, setShowHistory] = useState(false)
   
+  
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<NodeJS.Timeout>()
-
-  // Debounced search function
-  const performSearch = useCallback(async (searchQuery: string) => {
-    if (!searchQuery.trim()) {
-      setResults([])
-      setShowResults(false)
-      return
-    }
-
-    setLoading(true)
-    try {
-      const response = await fetch(`/api/trees/${treeId}/search?q=${encodeURIComponent(searchQuery)}`)
-      if (response.ok) {
-        const data = await response.json()
-        setResults(data.results || [])
-        setShowResults(true)
-        setSelectedIndex(-1)
-      }
-    } catch (error) {
-      console.error('Search error:', error)
-      setResults([])
-    } finally {
-      setLoading(false)
-    }
-  }, [treeId])
 
   // Load search history from localStorage on mount
   useEffect(() => {
@@ -104,9 +85,38 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
     if (!searchTerm.trim()) return
     
     const trimmedTerm = searchTerm.trim()
-    const newHistory = [trimmedTerm, ...searchHistory.filter(term => term !== trimmedTerm)].slice(0, 5)
-    saveSearchHistory(newHistory)
-  }, [searchHistory, saveSearchHistory])
+    setSearchHistory(prev => {
+      const newHistory = [trimmedTerm, ...prev.filter(term => term !== trimmedTerm)].slice(0, 5)
+      saveSearchHistory(newHistory)
+      return newHistory
+    })
+  }, [saveSearchHistory])
+
+  // Debounced search function (keyword search)
+  const performSearch = useCallback(async (searchQuery: string) => {
+    if (!searchQuery.trim()) {
+      setResults([])
+      setShowResults(false)
+      return
+    }
+
+    setLoading(true)
+    try {
+      const response = await fetch(`/api/trees/${treeId}/search?q=${encodeURIComponent(searchQuery)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setResults(data.results || [])
+        setShowResults(true)
+        setSelectedIndex(-1)
+      }
+    } catch (error) {
+      console.error('Search error:', error)
+      setResults([])
+    } finally {
+      setLoading(false)
+    }
+  }, [treeId])
+
 
   // Remove search from history
   const removeFromHistory = useCallback((searchTerm: string) => {
@@ -122,7 +132,7 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
     }
   }
 
-  // Handle input changes with debouncing
+  // Handle input changes with debouncing (only for keyword search)
   const handleInputChange = (value: string) => {
     setQuery(value)
     
@@ -133,7 +143,7 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
     
     if (value.trim()) {
       setShowHistory(false)
-      // Set new timeout
+      // Set new timeout for keyword search
       debounceRef.current = setTimeout(() => {
         performSearch(value)
       }, 300)
@@ -146,23 +156,29 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showResults) return
-
     switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        setSelectedIndex(prev => 
-          prev < results.length - 1 ? prev + 1 : prev
-        )
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        setSelectedIndex(prev => prev > 0 ? prev - 1 : -1)
-        break
       case 'Enter':
         e.preventDefault()
-        if (selectedIndex >= 0 && results[selectedIndex]) {
+        if (showResults && selectedIndex >= 0 && results[selectedIndex]) {
+          // Navigate to selected result
           handleResultClick(results[selectedIndex])
+        } else if (query.trim()) {
+          // If no selection but has query, perform keyword search
+          performSearch(query)
+        }
+        break
+      case 'ArrowDown':
+        if (showResults) {
+          e.preventDefault()
+          setSelectedIndex(prev => 
+            prev < results.length - 1 ? prev + 1 : prev
+          )
+        }
+        break
+      case 'ArrowUp':
+        if (showResults) {
+          e.preventDefault()
+          setSelectedIndex(prev => prev > 0 ? prev - 1 : -1)
         }
         break
       case 'Escape':
@@ -171,6 +187,7 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
         setQuery("")
         setResults([])
         setShowResults(false)
+        setShowHistory(false)
         setSelectedIndex(-1)
         break
     }
@@ -306,9 +323,23 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <div className="hidden lg:flex items-center text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
-            <kbd className="px-1 py-0.5 bg-white border border-gray-300 rounded text-xs font-mono">⌘K</kbd>
-            <span className="ml-1">to search</span>
+          <div className="hidden lg:flex items-center gap-2">
+            <div className="flex items-center text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+              <kbd className="px-1 py-0.5 bg-white border border-gray-300 rounded text-xs font-mono">⌘K</kbd>
+              <span className="ml-1">to search</span>
+            </div>
+            {onAIChatOpen && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onAIChatOpen}
+                className="h-9 px-3 flex items-center space-x-2 border-purple-300 hover:bg-purple-50 hover:border-purple-500 text-purple-700"
+                title="Open AI Chat"
+              >
+                <Sparkles className="h-4 w-4 text-purple-600" />
+                <span className="text-sm font-medium">AI Chat</span>
+              </Button>
+            )}
           </div>
         </div>
       ) : (
@@ -329,24 +360,26 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
           onFocus={handleInputFocus}
           onKeyDown={handleKeyDown}
           placeholder="Search nodes, content, attachments..."
-          className="w-96 pl-10 pr-10 h-10 text-base border-2 border-blue-300 focus:border-blue-500 shadow-lg"
+          className="w-96 pl-10 pr-20 h-10 text-base border-2 border-blue-300 focus:border-blue-500 shadow-lg"
           autoFocus
         />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 p-0 hover:bg-gray-100"
-                onClick={() => {
-                  setIsOpen(false)
-                  setQuery("")
-                  setResults([])
-                  setShowResults(false)
-                  setShowHistory(false)
-                  setSelectedIndex(-1)
-                }}
-              >
-                <XMarkIcon className="h-4 w-4" />
-              </Button>
+              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center space-x-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 hover:bg-gray-100"
+                  onClick={() => {
+                    setIsOpen(false)
+                    setQuery("")
+                    setResults([])
+                    setShowResults(false)
+                    setShowHistory(false)
+                    setSelectedIndex(-1)
+                  }}
+                >
+                  <XMarkIcon className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -472,7 +505,6 @@ export default function SearchTool({ treeId, onNodeSelect, className }: SearchTo
           </div>
         </div>
       )}
-
     </div>
   )
 }

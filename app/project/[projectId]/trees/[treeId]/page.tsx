@@ -12,6 +12,8 @@ import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
 import SearchTool from "@/components/SearchTool"
+import AIChatSidebar from "@/components/AIChatSidebar"
+import { Sparkles } from "lucide-react"
 import { authFetch } from "@/lib/api-client"
 
 // DEBUG: module load sanity check
@@ -104,6 +106,7 @@ export default function SimpleExperimentTreePage() {
   const [showHierarchyModal, setShowHierarchyModal] = useState(false)
   const [showReferenceModal, setShowReferenceModal] = useState(false)
   const [referenceModalNode, setReferenceModalNode] = useState<ExperimentNode | null>(null)
+  const [showAIChatSidebar, setShowAIChatSidebar] = useState(false)
   
   // Tab editing states
   const [editingContent, setEditingContent] = useState(false)
@@ -1767,9 +1770,12 @@ export default function SimpleExperimentTreePage() {
             )}
           </div>
           
+          <div className="flex items-center gap-2">
             {/* Search Tool */}
             <SearchTool 
-              treeId={treeId} 
+              treeId={treeId}
+              projectId={projectId}
+              onAIChatOpen={() => setShowAIChatSidebar(true)}
               onNodeSelect={(nodeId, sectionId) => {
                 setSelectedNodeId(nodeId)
                 
@@ -1819,6 +1825,7 @@ export default function SimpleExperimentTreePage() {
                 }, 100)
               }}
             />
+          </div>
         </div>
 
         {/* Nesting Context Breadcrumb */}
@@ -3169,6 +3176,14 @@ export default function SimpleExperimentTreePage() {
           </div>
         </div>
       )}
+      
+      {/* AI Chat Sidebar */}
+      <AIChatSidebar
+        treeId={treeId}
+        projectId={projectId}
+        open={showAIChatSidebar}
+        onOpenChange={setShowAIChatSidebar}
+      />
     </div>
   )
 }
