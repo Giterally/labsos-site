@@ -217,19 +217,6 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
     }
   }
 
-  // Handle global keyboard shortcut (Cmd/Ctrl + K)
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        setIsOpen(true)
-        setTimeout(() => inputRef.current?.focus(), 0)
-      }
-    }
-
-    document.addEventListener('keydown', handleGlobalKeyDown)
-    return () => document.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [])
 
   // Close on outside click
   useEffect(() => {
@@ -301,7 +288,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
   const cn = (...classes: (string | undefined)[]) => classes.filter(Boolean).join(' ')
   
   return (
-    <div className={cn("relative", className)} ref={resultsRef}>
+    <div className={cn("relative", className)} ref={resultsRef} style={{ maxWidth: 'calc(100% - 48px)' }}>
       {/* Search Button/Input */}
       {!isOpen ? (
         <div className="flex items-center space-x-2">
@@ -319,33 +306,27 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Search experiment tree (⌘K)</p>
+                <p>Search experiment tree</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <div className="hidden lg:flex items-center gap-2">
-            <div className="flex items-center text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
-              <kbd className="px-1 py-0.5 bg-white border border-gray-300 rounded text-xs font-mono">⌘K</kbd>
-              <span className="ml-1">to search</span>
-            </div>
-            {onAIChatOpen && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onAIChatOpen}
-                className="h-9 px-3 flex items-center space-x-2 border-purple-300 hover:bg-purple-50 hover:border-purple-500 text-purple-700"
-                title="Open AI Chat"
-              >
-                <Sparkles className="h-4 w-4 text-purple-600" />
-                <span className="text-sm font-medium">AI Chat</span>
-              </Button>
-            )}
-          </div>
+          {onAIChatOpen && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onAIChatOpen}
+              className="h-9 px-3 flex items-center space-x-2 border-purple-300 hover:bg-purple-50 hover:border-purple-500 text-purple-700"
+              title="Open AI Chat"
+            >
+              <Sparkles className="h-4 w-4 text-purple-600" />
+              <span className="text-sm font-medium">AI Chat</span>
+            </Button>
+          )}
         </div>
       ) : (
-        <div className="relative">
-          <div className="flex items-center space-x-2">
-            <div className="relative">
+        <div className="relative" style={{ marginLeft: 'auto' }}>
+          <div className="flex items-center space-x-2 justify-end">
+            <div className="relative" style={{ marginRight: 'calc(48px + env(safe-area-inset-right, 0px))' }}>
               {loading ? (
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-gray-600"></div>
@@ -360,8 +341,9 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
           onFocus={handleInputFocus}
           onKeyDown={handleKeyDown}
           placeholder="Search nodes, content, attachments..."
-          className="w-96 pl-10 pr-20 h-10 text-base border-2 border-blue-300 focus:border-blue-500 shadow-lg"
+          className="pl-10 pr-20 h-10 text-base border-2 border-blue-300 focus:border-blue-500 shadow-lg"
           autoFocus
+          style={{ width: '384px', maxWidth: 'min(384px, calc(100vw - 100px))' }}
         />
               <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center space-x-1">
                 <Button
@@ -387,7 +369,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
 
       {/* Search Results Dropdown */}
       {isOpen && (showResults || showHistory) && (
-        <div className="absolute top-full right-0 mt-2 w-[500px] max-h-[500px] overflow-y-auto z-50 bg-white border-2 border-gray-200 rounded-lg shadow-2xl animate-in fade-in-0 slide-in-from-top-2 duration-200">
+        <div className="absolute top-full mt-2 w-[500px] max-h-[500px] overflow-y-auto z-30 bg-white border-2 border-gray-200 rounded-lg shadow-2xl animate-in fade-in-0 slide-in-from-top-2 duration-200" style={{ maxWidth: 'min(500px, calc(100vw - 100px))', right: 'calc(48px + env(safe-area-inset-right, 0px))' }}>
           <div className="p-0">
             {showHistory && searchHistory.length > 0 ? (
               <div className="py-2">
