@@ -140,3 +140,71 @@ export async function PUT(
     )
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
+  try {
+    const { projectId } = await params
+    
+    // Authenticate the request
+    let authContext: AuthContext
+    try {
+      authContext = await authenticateRequest(request)
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: error.statusCode }
+        )
+      }
+      return NextResponse.json(
+        { message: 'Authentication failed' },
+        { status: 401 }
+      )
+    }
+
+    const { user, supabase } = authContext
+
+    // Initialize permission service
+    const permissionService = new PermissionService(supabase, user.id)
+
+    // Check user permissions for this project - only owners can delete
+    const permissions = await permissionService.checkProjectAccess(projectId)
+    
+    if (!permissions.isOwner) {
+      return NextResponse.json(
+        { message: 'Only project owners can delete projects' },
+        { status: 403 }
+      )
+    }
+
+    // Get the actual project ID (in case projectId is a slug)
+    const actualProjectId = permissions.projectId || projectId
+
+    // Delete the project (hard delete - CASCADE will handle related data)
+    const { error } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', actualProjectId)
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return NextResponse.json(
+          { message: 'Project not found' },
+          { status: 404 }
+        )
+      }
+      throw new Error(`Failed to delete project: ${error.message}`)
+    }
+
+    return NextResponse.json({ message: 'Project deleted successfully' })
+  } catch (error: any) {
+    console.error('Error deleting project:', error)
+    return NextResponse.json(
+      { message: 'Failed to delete project', error: error.message },
+      { status: 500 }
+    )
+  }
+}

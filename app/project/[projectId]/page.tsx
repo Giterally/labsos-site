@@ -5,6 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon, ArrowUpTrayIcon as UploadIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
@@ -132,10 +144,62 @@ export default function SimpleProjectPage() {
   // Edit project state
   const [showEditProjectForm, setShowEditProjectForm] = useState(false)
   
+  // Delete project state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState("")
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  
   // Handle project updates
   const handleProjectUpdated = (updatedProject: any) => {
     setProjectInfo(updatedProject)
     setShowEditProjectForm(false)
+  }
+
+  // Handle project deletion
+  const handleDeleteProject = async () => {
+    if (deleteConfirmation !== projectInfo?.name) {
+      setDeleteError("Project name does not match")
+      return
+    }
+
+    setIsDeleting(true)
+    setDeleteError(null)
+
+    try {
+      // Get session for API call
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('Not authenticated')
+      }
+
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.message || errorData.error || 'Failed to delete project'
+        
+        if (response.status === 403) {
+          throw new Error('Only project owners can delete projects')
+        } else if (response.status === 404) {
+          throw new Error('Project not found')
+        } else {
+          throw new Error(errorMessage)
+        }
+      }
+
+      // Success - redirect to projects page
+      router.push('/dashboard/projects')
+    } catch (err) {
+      console.error('Error deleting project:', err)
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete project')
+      setIsDeleting(false)
+    }
   }
   
   // Team member state
@@ -1037,6 +1101,21 @@ export default function SimpleProjectPage() {
                           Edit Project
                         </Button>
                       )}
+                      {isProjectOwner && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            setShowDeleteDialog(true)
+                            setDeleteConfirmation("")
+                            setDeleteError(null)
+                          }}
+                          className="flex items-center gap-2"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                          Delete Project
+                        </Button>
+                      )}
                     </div>
                     {projectInfo.description && (
                       <CardDescription className="text-lg mb-4">
@@ -1812,6 +1891,75 @@ export default function SimpleProjectPage() {
           onClose={() => setShowEditProjectForm(false)}
         />
       )}
+
+      {/* Delete Project Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600">⚠️ Delete Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the project and all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="text-sm space-y-2">
+              <p className="font-semibold">This will permanently delete:</p>
+              <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                <li>The project "{projectInfo?.name}"</li>
+                <li>All experiment trees ({experimentTrees.length} tree{experimentTrees.length !== 1 ? 's' : ''})</li>
+                <li>All nodes and data within those trees</li>
+                <li>All software entries linked to this project</li>
+                <li>All datasets linked to this project</li>
+                <li>All outputs linked to this project</li>
+                <li>All team member associations</li>
+              </ul>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="deleteConfirmation">
+                Type the project name <span className="font-bold">"{projectInfo?.name}"</span> to confirm:
+              </Label>
+              <Input
+                id="deleteConfirmation"
+                value={deleteConfirmation}
+                onChange={(e) => {
+                  setDeleteConfirmation(e.target.value)
+                  setDeleteError(null)
+                }}
+                placeholder={projectInfo?.name || "Project name"}
+                className="font-mono"
+                disabled={isDeleting}
+              />
+            </div>
+
+            {deleteError && (
+              <div className="text-sm p-3 rounded-md bg-red-50 border border-red-200">
+                <p className="text-red-600 font-medium">{deleteError}</p>
+              </div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProject}
+              disabled={deleteConfirmation !== projectInfo?.name || isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-2 inline-block" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <TrashIcon className="h-4 w-4 mr-2 inline-block" />
+                  Delete Project
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
