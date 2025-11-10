@@ -108,6 +108,25 @@ export default function SimpleExperimentTreePage() {
   const [showReferenceModal, setShowReferenceModal] = useState(false)
   const [referenceModalNode, setReferenceModalNode] = useState<ExperimentNode | null>(null)
   const [showAIChatSidebar, setShowAIChatSidebar] = useState(false)
+  const [isMac, setIsMac] = useState(false)
+
+  // Detect Mac vs Windows for keyboard shortcut display
+  useEffect(() => {
+    setIsMac(/Mac|iPhone|iPod|iPad/i.test(navigator.platform))
+  }, [])
+
+  // Handle Command+K (Mac) or Ctrl+K (Windows) to toggle AI chat sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setShowAIChatSidebar(prev => !prev)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
   
   // Tab editing states
   const [editingContent, setEditingContent] = useState(false)
@@ -3179,22 +3198,33 @@ export default function SimpleExperimentTreePage() {
       )}
       
       {/* Permanent AI Chat Sidebar Toggle - Full Height Bar */}
-      <div className="fixed right-0 top-0 bottom-0 w-12 z-40 bg-background border-l border-border">
+      <div className="fixed right-0 top-0 bottom-0 w-12 z-50 bg-background border-l border-border">
         <button
           onClick={() => {
-            setShowAIChatSidebar(true)
+            setShowAIChatSidebar(prev => !prev)
           }}
           className={cn(
             "w-full h-full flex flex-col items-center justify-center gap-3",
             "hover:bg-muted/50 transition-colors",
             "group"
           )}
-          aria-label="Open AI Chat"
+          aria-label="Toggle AI Chat"
         >
           <div className="flex flex-col items-center gap-2">
-            <Sparkles className="h-5 w-5 text-purple-600 group-hover:text-purple-700 transition-colors" />
+            <div className="relative">
+              <Sparkles className="h-5 w-5 text-purple-500 dark:text-purple-400 group-hover:text-purple-600 dark:group-hover:text-purple-300 transition-colors relative z-10" />
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="h-7 w-7 rounded-full bg-purple-500/40 dark:bg-purple-400/40 blur-lg animate-pulse" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="h-5 w-5 rounded-full bg-purple-500/30 dark:bg-purple-400/30 blur-sm animate-pulse" style={{ animationDelay: '0.5s' }} />
+                </div>
+              </div>
+            </div>
             <ChevronLeft className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
           </div>
+          <kbd className="hidden sm:flex items-center justify-center px-2.5 py-1.5 text-base font-mono font-semibold text-muted-foreground bg-muted rounded border border-border shadow-sm">
+            {isMac ? '⌘K' : 'Ctrl+K'}
+          </kbd>
         </button>
       </div>
       

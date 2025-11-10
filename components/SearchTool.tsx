@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { supabase } from "@/lib/supabase-client"
-import { Sparkles } from "lucide-react"
 // import { cn } from "@/lib/utils"
 import {
   MagnifyingGlassIcon,
@@ -38,7 +36,6 @@ interface SearchResult {
   sectionId?: string
 }
 
-
 interface SearchToolProps {
   treeId: string
   projectId?: string
@@ -52,47 +49,48 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
+  const inputContainerRef = useRef<HTMLDivElement>(null)
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; right: number } | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [showResults, setShowResults] = useState(false)
   const [searchHistory, setSearchHistory] = useState<string[]>([])
   const [showHistory, setShowHistory] = useState(false)
+  
+  // Calculate dropdown position when search opens
+  useEffect(() => {
+    if (isOpen && inputContainerRef.current) {
+      const updatePosition = () => {
+        if (inputContainerRef.current) {
+          const rect = inputContainerRef.current.getBoundingClientRect()
+          setDropdownPosition({
+            top: rect.bottom + 8, // 8px = mt-2
+            right: 48 // Account for sidebar width (w-12 = 48px)
+          })
+        }
+      }
+      
+      // Calculate position immediately
+      updatePosition()
+      
+      // Update on resize
+      window.addEventListener('resize', updatePosition)
+      window.addEventListener('scroll', updatePosition, true)
+      
+      return () => {
+        window.removeEventListener('resize', updatePosition)
+        window.removeEventListener('scroll', updatePosition, true)
+      }
+    } else {
+      setDropdownPosition(null)
+    }
+  }, [isOpen])
   
   
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<NodeJS.Timeout>()
 
-  // Load search history from localStorage on mount
-  useEffect(() => {
-    const savedHistory = localStorage.getItem(`search-history-${treeId}`)
-    if (savedHistory) {
-      try {
-        setSearchHistory(JSON.parse(savedHistory))
-      } catch (e) {
-        console.error('Failed to parse search history:', e)
-      }
-    }
-  }, [treeId])
-
-  // Save search history to localStorage
-  const saveSearchHistory = useCallback((newHistory: string[]) => {
-    setSearchHistory(newHistory)
-    localStorage.setItem(`search-history-${treeId}`, JSON.stringify(newHistory))
-  }, [treeId])
-
-  // Add search to history
-  const addToHistory = useCallback((searchTerm: string) => {
-    if (!searchTerm.trim()) return
-    
-    const trimmedTerm = searchTerm.trim()
-    setSearchHistory(prev => {
-      const newHistory = [trimmedTerm, ...prev.filter(term => term !== trimmedTerm)].slice(0, 5)
-      saveSearchHistory(newHistory)
-      return newHistory
-    })
-  }, [saveSearchHistory])
-
-  // Debounced search function (keyword search)
+  // Debounced search function
   const performSearch = useCallback(async (searchQuery: string) => {
     if (!searchQuery.trim()) {
       setResults([])
@@ -117,6 +115,32 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
     }
   }, [treeId])
 
+  // Load search history from localStorage on mount
+  useEffect(() => {
+    const savedHistory = localStorage.getItem(`search-history-${treeId}`)
+    if (savedHistory) {
+      try {
+        setSearchHistory(JSON.parse(savedHistory))
+      } catch (e) {
+        console.error('Failed to parse search history:', e)
+      }
+    }
+  }, [treeId])
+
+  // Save search history to localStorage
+  const saveSearchHistory = useCallback((newHistory: string[]) => {
+    setSearchHistory(newHistory)
+    localStorage.setItem(`search-history-${treeId}`, JSON.stringify(newHistory))
+  }, [treeId])
+
+  // Add search to history
+  const addToHistory = useCallback((searchTerm: string) => {
+    if (!searchTerm.trim()) return
+    
+    const trimmedTerm = searchTerm.trim()
+    const newHistory = [trimmedTerm, ...searchHistory.filter(term => term !== trimmedTerm)].slice(0, 5)
+    saveSearchHistory(newHistory)
+  }, [searchHistory, saveSearchHistory])
 
   // Remove search from history
   const removeFromHistory = useCallback((searchTerm: string) => {
@@ -132,7 +156,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
     }
   }
 
-  // Handle input changes with debouncing (only for keyword search)
+  // Handle input changes with debouncing
   const handleInputChange = (value: string) => {
     setQuery(value)
     
@@ -143,7 +167,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
     
     if (value.trim()) {
       setShowHistory(false)
-      // Set new timeout for keyword search
+      // Set new timeout
       debounceRef.current = setTimeout(() => {
         performSearch(value)
       }, 300)
@@ -156,29 +180,23 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showResults) return
+
     switch (e.key) {
-      case 'Enter':
-        e.preventDefault()
-        if (showResults && selectedIndex >= 0 && results[selectedIndex]) {
-          // Navigate to selected result
-          handleResultClick(results[selectedIndex])
-        } else if (query.trim()) {
-          // If no selection but has query, perform keyword search
-          performSearch(query)
-        }
-        break
       case 'ArrowDown':
-        if (showResults) {
-          e.preventDefault()
-          setSelectedIndex(prev => 
-            prev < results.length - 1 ? prev + 1 : prev
-          )
-        }
+        e.preventDefault()
+        setSelectedIndex(prev => 
+          prev < results.length - 1 ? prev + 1 : prev
+        )
         break
       case 'ArrowUp':
-        if (showResults) {
-          e.preventDefault()
-          setSelectedIndex(prev => prev > 0 ? prev - 1 : -1)
+        e.preventDefault()
+        setSelectedIndex(prev => prev > 0 ? prev - 1 : -1)
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (selectedIndex >= 0 && results[selectedIndex]) {
+          handleResultClick(results[selectedIndex])
         }
         break
       case 'Escape':
@@ -187,7 +205,6 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
         setQuery("")
         setResults([])
         setShowResults(false)
-        setShowHistory(false)
         setSelectedIndex(-1)
         break
     }
@@ -288,7 +305,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
   const cn = (...classes: (string | undefined)[]) => classes.filter(Boolean).join(' ')
   
   return (
-    <div className={cn("relative", className)} ref={resultsRef} style={{ maxWidth: 'calc(100% - 48px)' }}>
+    <div className={cn("relative", className)} ref={resultsRef} style={{ maxWidth: 'calc(100vw - 48px)', width: '100%' }}>
       {/* Search Button/Input */}
       {!isOpen ? (
         <div className="flex items-center space-x-2">
@@ -310,23 +327,11 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          {onAIChatOpen && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onAIChatOpen}
-              className="h-9 px-3 flex items-center space-x-2 border-purple-300 hover:bg-purple-50 hover:border-purple-500 text-purple-700"
-              title="Open AI Chat"
-            >
-              <Sparkles className="h-4 w-4 text-purple-600" />
-              <span className="text-sm font-medium">AI Chat</span>
-            </Button>
-          )}
         </div>
       ) : (
-        <div className="relative" style={{ marginLeft: 'auto' }}>
+        <div className="relative" style={{ marginLeft: 'auto', marginRight: 'calc(48px + env(safe-area-inset-right, 0px))' }}>
           <div className="flex items-center space-x-2 justify-end">
-            <div className="relative" style={{ marginRight: 'calc(48px + env(safe-area-inset-right, 0px))' }}>
+            <div className="relative" ref={inputContainerRef} style={{ maxWidth: 'calc(100vw - 48px - 32px)' }}>
               {loading ? (
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-gray-600"></div>
@@ -343,7 +348,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
           placeholder="Search nodes, content, attachments..."
           className="pl-10 pr-20 h-10 text-base border-2 border-blue-300 focus:border-blue-500 shadow-lg"
           autoFocus
-          style={{ width: '384px', maxWidth: 'min(384px, calc(100vw - 100px))' }}
+          style={{ width: '384px', maxWidth: 'min(384px, calc(100vw - 100px), calc(100% - 0px))' }}
         />
               <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center space-x-1">
                 <Button
@@ -368,8 +373,8 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
       )}
 
       {/* Search Results Dropdown */}
-      {isOpen && (showResults || showHistory) && (
-        <div className="absolute top-full mt-2 w-[500px] max-h-[500px] overflow-y-auto z-30 bg-white border-2 border-gray-200 rounded-lg shadow-2xl animate-in fade-in-0 slide-in-from-top-2 duration-200" style={{ maxWidth: 'min(500px, calc(100vw - 100px))', right: 'calc(48px + env(safe-area-inset-right, 0px))' }}>
+      {isOpen && (showResults || showHistory) && dropdownPosition && (
+        <div className="fixed w-[500px] max-h-[500px] overflow-y-auto z-30 bg-white border-2 border-gray-200 rounded-lg shadow-2xl animate-in fade-in-0 slide-in-from-top-2 duration-200" style={{ maxWidth: 'min(500px, calc(100vw - 100px))', top: `${dropdownPosition.top}px`, right: `${dropdownPosition.right}px` }}>
           <div className="p-0">
             {showHistory && searchHistory.length > 0 ? (
               <div className="py-2">
@@ -487,6 +492,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
           </div>
         </div>
       )}
+
     </div>
   )
 }
