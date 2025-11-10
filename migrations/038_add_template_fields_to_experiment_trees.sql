@@ -14,3 +14,4 @@ COMMENT ON COLUMN experiment_trees.is_template IS 'True if this tree is a reusab
 COMMENT ON COLUMN experiment_trees.template_category IS 'Category of the template (e.g., "RNA Extraction", "Western Blot", "PCR")';
 
 
+

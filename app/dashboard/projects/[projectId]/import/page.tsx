@@ -51,6 +51,9 @@ import {
   Settings
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import ProviderConnector from '@/components/cloud-storage/ProviderConnector';
+import CloudFilePicker from '@/components/cloud-storage/CloudFilePicker';
+import SelectedCloudFilesList from '@/components/cloud-storage/SelectedCloudFilesList';
 
 interface IngestionSource {
   id: string;
@@ -114,6 +117,11 @@ export default function ImportPage() {
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [buildingTree, setBuildingTree] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
+  
+  // Cloud storage state
+  const [selectedCloudProvider, setSelectedCloudProvider] = useState<'googledrive' | 'onedrive' | 'dropbox' | 'sharepoint' | null>(null);
+  const [selectedCloudFiles, setSelectedCloudFiles] = useState<any[]>([]);
+  const [cloudImporting, setCloudImporting] = useState(false);
   
   // Progress tracking state
   const [generationProgress, setGenerationProgress] = useState(0);
@@ -2112,6 +2120,7 @@ export default function ImportPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="upload">Upload Files</TabsTrigger>
+          <TabsTrigger value="cloud">Cloud Storage</TabsTrigger>
           <TabsTrigger value="manage">Manage Files</TabsTrigger>
           <TabsTrigger value="proposals">Review Proposals</TabsTrigger>
         </TabsList>
@@ -2279,6 +2288,148 @@ export default function ImportPage() {
                   </>
                 )}
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="cloud" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Import from Cloud Storage</CardTitle>
+              <CardDescription>
+                Connect your cloud storage accounts and import files directly
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <Label>Connect Accounts</Label>
+                <div className="mt-2">
+                  <ProviderConnector />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="cloud-provider">Select Provider</Label>
+                  <Select
+                    value={selectedCloudProvider || ''}
+                    onValueChange={(value) => {
+                      setSelectedCloudProvider(value as any);
+                      setSelectedCloudFiles([]);
+                    }}
+                  >
+                    <SelectTrigger id="cloud-provider" className="mt-2">
+                      <SelectValue placeholder="Select a cloud storage provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="googledrive">Google Drive</SelectItem>
+                      <SelectItem value="onedrive">OneDrive</SelectItem>
+                      <SelectItem value="sharepoint">SharePoint</SelectItem>
+                      <SelectItem value="dropbox">Dropbox</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedCloudProvider && (
+                  <>
+                    <div>
+                      <CloudFilePicker
+                        provider={selectedCloudProvider}
+                        selectedFiles={selectedCloudFiles}
+                        onFilesSelected={setSelectedCloudFiles}
+                      />
+                    </div>
+
+                    {selectedCloudFiles.length > 0 && (
+                      <div>
+                        <SelectedCloudFilesList
+                          files={selectedCloudFiles}
+                          onRemove={(file) => {
+                            setSelectedCloudFiles(prev => 
+                              prev.filter(f => 
+                                (selectedCloudProvider === 'dropbox' ? f.path !== file.path : f.id !== file.id)
+                              )
+                            );
+                          }}
+                          onClear={() => setSelectedCloudFiles([])}
+                        />
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={async () => {
+                        if (selectedCloudFiles.length === 0) return;
+                        
+                        setCloudImporting(true);
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession();
+                          if (!session?.access_token) {
+                            throw new Error('Not authenticated');
+                          }
+
+                          let fileIds: string[] = [];
+                          let filePaths: string[] = [];
+                          
+                          if (selectedCloudProvider === 'dropbox') {
+                            filePaths = selectedCloudFiles.map(f => f.path || '');
+                          } else {
+                            fileIds = selectedCloudFiles.map(f => f.id);
+                          }
+
+                          const apiProvider = selectedCloudProvider === 'sharepoint' ? 'onedrive' : selectedCloudProvider;
+                          const endpoint = `/api/import/${apiProvider}/import`;
+
+                          const body = selectedCloudProvider === 'dropbox'
+                            ? { filePaths, projectId }
+                            : { fileIds, projectId };
+
+                          const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: {
+                              'Authorization': `Bearer ${session.access_token}`,
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(body),
+                          });
+
+                          const result = await response.json();
+                          
+                          if (!response.ok) {
+                            throw new Error(result.error || 'Import failed');
+                          }
+
+                          setSuccess(`Successfully imported ${result.imported} file(s)`);
+                          setTimeout(() => setSuccess(null), 5000);
+                          
+                          setSelectedCloudFiles([]);
+                          fetchData();
+                          setTimeout(fetchData, 2000);
+                        } catch (error) {
+                          console.error('Cloud import error:', error);
+                          setError(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                          setTimeout(() => setError(null), 5000);
+                        } finally {
+                          setCloudImporting(false);
+                        }
+                      }}
+                      disabled={selectedCloudFiles.length === 0 || cloudImporting}
+                      className="w-full"
+                    >
+                      {cloudImporting ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Importing {selectedCloudFiles.length} file(s)...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Import {selectedCloudFiles.length} File(s)
+                        </>
+                      )}
+                    </Button>
+                  </>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
