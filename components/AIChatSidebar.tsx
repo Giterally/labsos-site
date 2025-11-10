@@ -5,7 +5,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Sparkles, X, Plus, Trash2 } from "lucide-react"
+import { Sparkles, X, Plus, Trash2, Pencil, Check } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
 import { cn } from "@/lib/utils"
 
@@ -38,8 +38,11 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [currentMessage, setCurrentMessage] = useState("")
   const [isSending, setIsSending] = useState(false)
+  const [editingChatId, setEditingChatId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const titleInputRef = useRef<HTMLInputElement>(null)
   const initialQueryHandledRef = useRef(false)
 
   // Storage key based on treeId (each tree = one project context)
@@ -86,6 +89,33 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
       }
     }
   }, [chats, activeChatId, saveChats, storageKey])
+
+  // Rename a chat
+  const startEditingTitle = useCallback((chatId: string, currentTitle: string) => {
+    setEditingChatId(chatId)
+    setEditingTitle(currentTitle)
+    setTimeout(() => titleInputRef.current?.focus(), 0)
+  }, [])
+
+  const saveEditedTitle = useCallback((chatId: string) => {
+    if (!editingTitle.trim()) {
+      setEditingChatId(null)
+      return
+    }
+    const updated = chats.map(chat => 
+      chat.id === chatId 
+        ? { ...chat, title: editingTitle.trim() }
+        : chat
+    )
+    saveChats(updated)
+    setEditingChatId(null)
+    setEditingTitle("")
+  }, [chats, editingTitle, saveChats])
+
+  const cancelEditingTitle = useCallback(() => {
+    setEditingChatId(null)
+    setEditingTitle("")
+  }, [])
 
   // Update chat title from first message
   const updateChatTitle = useCallback((chatId: string, firstMessage: string) => {
@@ -355,19 +385,20 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
           "flex flex-col p-0 gap-0 w-full sm:max-w-lg",
           "[&>button]:hidden"
         )}
+
       >
         {/* Visually hidden title for accessibility */}
         <SheetTitle className="sr-only">AI Chat</SheetTitle>
         
         {/* Chat Tabs Bar */}
-        <div className="border-b flex-shrink-0 bg-gray-50">
+        <div className="border-b flex-shrink-0 bg-background">
           {chats.length === 0 ? (
             <div className="px-4 py-3 flex items-center justify-center">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={createNewChat}
-                className="h-9 px-4 flex items-center gap-2 bg-white border-purple-200 hover:bg-purple-50 hover:border-purple-300 text-purple-700"
+                className="h-9 px-4 flex items-center gap-2"
               >
                 <Plus className="h-4 w-4" />
                 <span className="text-sm font-medium">New Chat</span>
@@ -378,33 +409,80 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
               {chats.slice(0, MAX_CHATS).map((chat) => (
                 <div
                   key={chat.id}
-                  className={cn(
+                    className={cn(
                     "flex items-center gap-1 flex-shrink-0 rounded-lg px-3 py-2 transition-all",
                     activeChatId === chat.id
-                      ? "bg-purple-600 text-white shadow-md"
-                      : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+                      ? "bg-primary text-primary-foreground shadow-md"
+                      : "bg-background text-foreground hover:bg-muted border border-border"
                   )}
                 >
-                  <button
-                    onClick={() => setActiveChatId(chat.id)}
-                    className="flex-1 min-w-0 max-w-[180px] text-left"
-                  >
-                    <span className="text-sm font-medium truncate block">{chat.title}</span>
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={cn(
-                      "h-5 w-5 p-0 opacity-70 hover:opacity-100 flex-shrink-0",
-                      activeChatId === chat.id ? "text-white hover:bg-purple-700" : "text-gray-500 hover:text-red-500"
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteChat(chat.id)
-                    }}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  {editingChatId === chat.id ? (
+                    <>
+                      <Input
+                        ref={titleInputRef}
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            saveEditedTitle(chat.id)
+                          } else if (e.key === 'Escape') {
+                            cancelEditingTitle()
+                          }
+                        }}
+                        onBlur={() => saveEditedTitle(chat.id)}
+                        className="h-6 px-2 text-sm flex-1 min-w-0 max-w-[180px]"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0 flex-shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          saveEditedTitle(chat.id)
+                        }}
+                      >
+                        <Check className="h-3 w-3" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setActiveChatId(chat.id)}
+                        className="flex-1 min-w-0 max-w-[180px] text-left"
+                      >
+                        <span className="text-sm font-medium truncate block">{chat.title}</span>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "h-5 w-5 p-0 opacity-70 hover:opacity-100 flex-shrink-0",
+                          activeChatId === chat.id ? "text-primary-foreground hover:bg-primary/80" : "text-muted-foreground hover:text-foreground"
+                        )}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startEditingTitle(chat.id, chat.title)
+                        }}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "h-5 w-5 p-0 opacity-70 hover:opacity-100 flex-shrink-0",
+                          activeChatId === chat.id ? "text-primary-foreground hover:bg-primary/80" : "text-muted-foreground hover:text-destructive"
+                        )}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteChat(chat.id)
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               ))}
               
@@ -414,7 +492,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                   variant="outline"
                   size="sm"
                   onClick={createNewChat}
-                  className="h-9 px-3 flex items-center gap-1.5 flex-shrink-0 bg-white border-gray-200 hover:bg-gray-50"
+                  className="h-9 px-3 flex items-center gap-1.5 flex-shrink-0"
                 >
                   <Plus className="h-4 w-4" />
                   <span className="text-sm">New Chat</span>
@@ -432,9 +510,9 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {activeChat.messages.length === 0 ? (
                   <div className="text-center py-12">
-                    <Sparkles className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-600 font-medium">Start a conversation</p>
-                    <p className="text-sm text-gray-500 mt-1">Ask questions about this experiment tree</p>
+                    <Sparkles className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                    <p className="text-foreground font-medium">Start a conversation</p>
+                    <p className="text-sm text-muted-foreground mt-1">Ask questions about this experiment tree</p>
                   </div>
                 ) : (
                   activeChat.messages.map((message, index) => (
@@ -449,14 +527,14 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                         className={cn(
                           "max-w-[80%] rounded-lg px-4 py-2",
                           message.role === 'user'
-                            ? "bg-blue-600 text-white"
-                            : "bg-gradient-to-r from-purple-600 to-indigo-600 text-white"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-foreground border border-border"
                         )}
                       >
                         {message.role === 'assistant' && (
                           <div className="flex items-center gap-2 mb-1">
-                            <Sparkles size={12} />
-                            <span className="text-xs font-semibold uppercase tracking-wide opacity-90">AI</span>
+                            <Sparkles size={12} className="text-primary" />
+                            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI</span>
                           </div>
                         )}
                         <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
@@ -466,10 +544,10 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                 )}
                 {isSending && (
                   <div className="flex justify-start">
-                    <div className="bg-gray-100 rounded-lg px-4 py-2">
+                    <div className="bg-muted rounded-lg px-4 py-2 border border-border">
                       <div className="flex items-center gap-2">
-                        <div className="animate-spin rounded-full h-3 w-3 border-2 border-purple-600 border-t-transparent"></div>
-                        <span className="text-sm text-gray-600">Thinking...</span>
+                        <div className="animate-spin rounded-full h-3 w-3 border-2 border-primary border-t-transparent"></div>
+                        <span className="text-sm text-foreground">Thinking...</span>
                       </div>
                     </div>
                   </div>
@@ -492,7 +570,6 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                   <Button
                     onClick={() => sendMessage(currentMessage)}
                     disabled={!currentMessage.trim() || isSending}
-                    className="bg-purple-600 hover:bg-purple-700"
                   >
                     Send
                   </Button>
@@ -501,9 +578,9 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-              <Sparkles className="h-16 w-16 text-gray-300 mb-4" />
-              <p className="text-gray-700 font-medium text-lg mb-2">Start a chat to learn about the experiment tree</p>
-              <p className="text-sm text-gray-500">Ask questions about nodes, blocks, and relationships</p>
+              <Sparkles className="h-16 w-16 text-muted-foreground mb-4" />
+              <p className="text-foreground font-medium text-lg mb-2">Start a chat to learn about the experiment tree</p>
+              <p className="text-sm text-muted-foreground">Ask questions about nodes, blocks, and relationships</p>
             </div>
           )}
         </div>
@@ -511,4 +588,5 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
     </Sheet>
   )
 }
+
 
