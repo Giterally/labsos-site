@@ -47,3 +47,4 @@ COMMENT ON COLUMN structured_documents.document_json IS 'JSONB containing Struct
 
 
 
+

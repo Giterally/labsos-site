@@ -67,3 +67,4 @@ After running the migration:
 3. ✅ Existing nodes can get embeddings via `pnpm run generate-embeddings`
 
 
+

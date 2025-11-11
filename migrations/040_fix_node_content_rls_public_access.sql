@@ -70,3 +70,4 @@ COMMENT ON POLICY "Users can view node attachments for accessible trees" ON node
   'Attachments inherit access from their tree/project (public or member access)';
 
 
+

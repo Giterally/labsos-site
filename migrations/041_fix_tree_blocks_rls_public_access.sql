@@ -63,3 +63,4 @@ COMMENT ON POLICY "tree_blocks_select" ON tree_blocks IS
   'Blocks inherit access from their tree/project (public or member access)';
 
 
+
