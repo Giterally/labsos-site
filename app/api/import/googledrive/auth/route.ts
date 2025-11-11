@@ -33,6 +33,23 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
+    // Validate that client ID is not a placeholder
+    if (GOOGLE_CLIENT_ID.includes('your-google') || GOOGLE_CLIENT_ID === 'your-google-client-id') {
+      console.error('Google OAuth client ID appears to be a placeholder');
+      return NextResponse.json({ 
+        error: 'Invalid Google OAuth configuration',
+        message: 'GOOGLE_CLIENT_ID appears to be a placeholder. Please set a valid client ID from Google Cloud Console.'
+      }, { status: 500 });
+    }
+
+    // Validate client ID format (Google client IDs typically end with .apps.googleusercontent.com or are numeric)
+    if (!GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com') && !/^\d+$/.test(GOOGLE_CLIENT_ID)) {
+      console.warn('Google OAuth client ID format may be invalid:', {
+        clientId: GOOGLE_CLIENT_ID.substring(0, 20) + '...',
+        redirectUri: GOOGLE_REDIRECT_URI,
+      });
+    }
+
     // Generate state parameter for CSRF protection
     const state = crypto.randomBytes(32).toString('hex');
     

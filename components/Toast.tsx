@@ -17,12 +17,12 @@ export default function Toast() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 space-y-2 flex flex-col items-center">
       {toasts.map((toast) => (
         <div
           key={toast.id}
           className={`
-            flex items-center space-x-3 p-4 rounded-lg shadow-lg border
+            flex items-center space-x-3 p-4 rounded-lg shadow-lg border min-w-[300px] max-w-[500px] animate-in slide-in-from-top-2
             ${toast.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' : ''}
             ${toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' : ''}
             ${toast.type === 'info' ? 'bg-blue-50 border-blue-200 text-blue-800' : ''}

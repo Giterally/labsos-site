@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase-client';
 import { CloudProvider } from '@/lib/cloud-storage/types';
+import { toast } from '@/lib/toast';
 import { 
   Cloud, 
   CheckCircle, 
@@ -112,14 +113,18 @@ export default function ProviderConnector({ onConnectionChange }: ProviderConnec
       let errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
       // Provide helpful guidance for configuration errors
-      if (errorMessage.includes('not configured')) {
+      if (errorMessage.includes('not configured') || errorMessage.includes('Invalid Google OAuth')) {
         const providerName = provider === 'googledrive' ? 'Google Drive' : 
                             provider === 'onedrive' ? 'OneDrive' : 
                             provider === 'dropbox' ? 'Dropbox' : provider;
-        errorMessage = `${providerName} OAuth is not configured. Please set the required environment variables in your .env file. See CLOUD_STORAGE_SETUP.md for instructions.`;
+        if (errorMessage.includes('placeholder')) {
+          errorMessage = `${providerName} OAuth client ID appears to be a placeholder. Please set a valid client ID from ${provider === 'googledrive' ? 'Google Cloud Console' : provider === 'onedrive' || provider === 'sharepoint' ? 'Azure Portal' : 'Dropbox App Console'}.`;
+        } else {
+          errorMessage = `${providerName} OAuth is not configured. Please set the required environment variables in your .env file. See CLOUD_STORAGE_SETUP.md for instructions.`;
+        }
       }
       
-      alert(`Failed to connect ${provider}: ${errorMessage}`);
+      toast.error(`Failed to connect ${provider}: ${errorMessage}`);
       setLoading(prev => ({ ...prev, [provider]: false }));
     }
   };
@@ -151,9 +156,10 @@ export default function ProviderConnector({ onConnectionChange }: ProviderConnec
 
       setConnections(prev => ({ ...prev, [provider]: false }));
       onConnectionChange?.(provider, false);
+      toast.success(`${provider === 'googledrive' ? 'Google Drive' : provider === 'onedrive' ? 'OneDrive' : provider === 'dropbox' ? 'Dropbox' : 'SharePoint'} disconnected successfully`);
     } catch (error) {
       console.error(`Error disconnecting ${provider}:`, error);
-      alert(`Failed to disconnect ${provider}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to disconnect ${provider}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(prev => ({ ...prev, [provider]: false }));
     }

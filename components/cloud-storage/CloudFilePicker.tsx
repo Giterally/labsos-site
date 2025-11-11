@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase-client';
 import { CloudProvider, CloudFile } from '@/lib/cloud-storage/types';
+import { toast } from '@/lib/toast';
 import { 
   Folder, 
   File, 
@@ -21,6 +22,12 @@ interface CloudFilePickerProps {
   selectedFiles: CloudFile[];
 }
 
+interface SharePointSite {
+  id: string;
+  name: string;
+  webUrl: string;
+}
+
 export default function CloudFilePicker({ 
   provider, 
   onFilesSelected, 
@@ -30,6 +37,52 @@ export default function CloudFilePicker({
   const [loading, setLoading] = useState(false);
   const [currentFolder, setCurrentFolder] = useState<string>('root');
   const [folderStack, setFolderStack] = useState<string[]>([]);
+  
+  // SharePoint-specific state
+  const [sharePointSites, setSharePointSites] = useState<SharePointSite[]>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [loadingSites, setLoadingSites] = useState(false);
+
+  const loadSharePointSites = async () => {
+    setLoadingSites(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch('/api/import/onedrive/sites', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        const errorMessage = errorData.message || errorData.error || 'Failed to load SharePoint sites';
+        
+        // Check for MSA account error
+        if (errorData.code === 'MSA_NOT_SUPPORTED' || errorMessage.includes('work or school')) {
+          throw new Error('SharePoint is only available for work or school Microsoft accounts. Personal accounts (like @gmail.com) cannot access SharePoint sites.');
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      setSharePointSites(data.sites || []);
+    } catch (error) {
+      console.error('Error loading SharePoint sites:', error);
+      if (error instanceof Error) {
+        toast.error(`Failed to load SharePoint sites: ${error.message}`);
+      } else {
+        toast.error('Failed to load SharePoint sites');
+      }
+      setSharePointSites([]);
+    } finally {
+      setLoadingSites(false);
+    }
+  };
 
   const checkConnectionAndLoadFiles = async () => {
     try {
@@ -51,25 +104,48 @@ export default function CloudFilePicker({
         
         if (!isConnected) {
           setFiles([]);
-          alert(`Please connect your ${provider === 'googledrive' ? 'Google Drive' : provider === 'onedrive' ? 'OneDrive' : provider === 'sharepoint' ? 'SharePoint' : 'Dropbox'} account first`);
+          toast.error(`Please connect your ${provider === 'googledrive' ? 'Google Drive' : provider === 'onedrive' ? 'OneDrive' : provider === 'sharepoint' ? 'SharePoint' : 'Dropbox'} account first`);
           return;
         }
       }
 
-      // If connected, load files
+      // For SharePoint, load sites first if no site is selected
+      if (provider === 'sharepoint' && !selectedSiteId) {
+        await loadSharePointSites();
+        return;
+      }
+
+      // If connected (and site selected for SharePoint), load files
       await loadFiles();
     } catch (error) {
       console.error('Error checking connection:', error);
     }
   };
 
+  // Reset state when provider changes
+  useEffect(() => {
+    if (provider) {
+      // Clear files when provider changes to avoid key conflicts
+      setFiles([]);
+      setCurrentFolder('root');
+      setFolderStack([]);
+      
+      // Reset SharePoint site selection when provider changes
+      if (provider !== 'sharepoint') {
+        setSelectedSiteId(null);
+        setSharePointSites([]);
+      }
+    }
+  }, [provider]);
+
+  // Load files when provider, folder, or site selection changes
   useEffect(() => {
     if (provider) {
       // Check if provider is connected before loading files
       checkConnectionAndLoadFiles();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, currentFolder]);
+  }, [provider, currentFolder, selectedSiteId]);
 
   const loadFiles = async () => {
     setLoading(true);
@@ -86,8 +162,17 @@ export default function CloudFilePicker({
             'Authorization': `Bearer ${session.access_token}`,
           },
         });
-      } else if (provider === 'onedrive' || provider === 'sharepoint') {
-        response = await fetch(`/api/import/onedrive/files?folderId=${currentFolder}${provider === 'sharepoint' ? '&siteId=' : ''}`, {
+      } else if (provider === 'onedrive') {
+        response = await fetch(`/api/import/onedrive/files?folderId=${currentFolder}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
+      } else if (provider === 'sharepoint') {
+        if (!selectedSiteId) {
+          throw new Error('Please select a SharePoint site first');
+        }
+        response = await fetch(`/api/import/onedrive/files?folderId=${currentFolder}&siteId=${encodeURIComponent(selectedSiteId)}&isSharePoint=true`, {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
           },
@@ -102,7 +187,13 @@ export default function CloudFilePicker({
 
       if (!response?.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        const errorMessage = errorData.error || errorData.message || `HTTP ${response.status}: Failed to load files`;
+        let errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: Failed to load files`;
+        
+        // Check for MSA account error
+        if (errorData.code === 'MSA_NOT_SUPPORTED' || errorMessage.includes('work or school') || errorMessage.includes('personal Microsoft account')) {
+          errorMessage = 'This feature requires a work or school Microsoft account. Personal Microsoft accounts have limited access.';
+        }
+        
         console.error('Failed to load files:', errorMessage, errorData);
         throw new Error(errorMessage);
       }
@@ -113,7 +204,9 @@ export default function CloudFilePicker({
       console.error('Error loading files:', error);
       // Show error to user
       if (error instanceof Error) {
-        alert(`Failed to load files: ${error.message}`);
+        toast.error(`Failed to load files: ${error.message}`);
+      } else {
+        toast.error('Failed to load files');
       }
       setFiles([]);
     } finally {
@@ -172,9 +265,47 @@ export default function CloudFilePicker({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {loading ? (
+        {loading || loadingSites ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        ) : provider === 'sharepoint' && !selectedSiteId ? (
+          <div className="space-y-4">
+            <div className="text-sm text-muted-foreground mb-4">
+              Please select a SharePoint site to browse files
+            </div>
+            {sharePointSites.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                No SharePoint sites found
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {sharePointSites.map((site) => (
+                  <div
+                    key={site.id}
+                    className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent ${
+                      selectedSiteId === site.id ? 'bg-primary/10 border-primary' : ''
+                    }`}
+                    onClick={() => {
+                      setSelectedSiteId(site.id);
+                      setCurrentFolder('root');
+                      setFolderStack([]);
+                    }}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <Folder className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{site.name}</div>
+                        <div className="text-sm text-muted-foreground truncate">{site.webUrl}</div>
+                      </div>
+                    </div>
+                    {selectedSiteId === site.id && (
+                      <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : files.length === 0 ? (
           <div className="text-center text-muted-foreground py-8">
@@ -182,9 +313,16 @@ export default function CloudFilePicker({
           </div>
         ) : (
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {files.map((file) => (
+            {files.map((file, index) => {
+              // Generate a unique key that combines provider and file identifier
+              const fileKey = provider === 'dropbox' 
+                ? (file.path || `dropbox-${index}`)
+                : (file.id || `${provider}-${index}`);
+              const uniqueKey = `${provider}-${fileKey}`;
+              
+              return (
               <div
-                key={provider === 'dropbox' ? file.path : file.id}
+                key={uniqueKey}
                 className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent ${
                   isFileSelected(file) ? 'bg-primary/10 border-primary' : ''
                 }`}
@@ -209,7 +347,8 @@ export default function CloudFilePicker({
                   <Check className="h-5 w-5 text-primary flex-shrink-0" />
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>

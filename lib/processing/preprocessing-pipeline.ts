@@ -5,6 +5,20 @@ import { parseVideo, parseAudio } from './parsers/video-parser';
 import { parseText } from './parsers/text-parser';
 import type { StructuredDocument } from './parsers/pdf-parser';
 
+/**
+ * Determine source type from MIME type
+ * Used as fallback when source_type is a cloud storage provider
+ */
+function getSourceTypeFromMimeType(mimeType: string): string {
+  if (mimeType === 'application/pdf') return 'pdf';
+  if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'excel';
+  if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'audio';
+  if (mimeType === 'text/markdown') return 'markdown';
+  if (mimeType === 'text/plain') return 'text';
+  return 'text'; // Default fallback
+}
+
 export async function preprocessFile(sourceId: string, projectId: string) {
   const startTime = Date.now();
   
@@ -62,7 +76,17 @@ export async function preprocessFile(sourceId: string, projectId: string) {
 
       let structuredDoc: StructuredDocument;
 
-      switch (source.source_type) {
+      // Determine actual file type - handle cloud storage provider types
+      let actualSourceType = source.source_type;
+      const cloudProviders = ['googledrive', 'onedrive', 'dropbox', 'sharepoint'];
+      
+      if (cloudProviders.includes(source.source_type) && source.mime_type) {
+        // If source_type is a provider, determine file type from MIME type
+        actualSourceType = getSourceTypeFromMimeType(source.mime_type);
+        console.log(`[PREPROCESSING] Detected cloud storage provider '${source.source_type}', using file type '${actualSourceType}' from MIME type '${source.mime_type}'`);
+      }
+
+      switch (actualSourceType) {
         case 'pdf':
           console.log(`[PREPROCESSING] Starting PDF parsing...`);
           try {
@@ -89,7 +113,7 @@ export async function preprocessFile(sourceId: string, projectId: string) {
           structuredDoc = await parseText(source.storage_path, sourceId, source.source_name, true);
           break;
         default:
-          throw new Error(`Unsupported source type: ${source.source_type}`);
+          throw new Error(`Unsupported source type: ${source.source_type} (resolved to: ${actualSourceType})`);
       }
 
       console.log(`[PREPROCESSING] Parsed document: ${structuredDoc.sections.length} sections`);

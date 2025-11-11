@@ -13,17 +13,29 @@ export const maxDuration = 300; // 5 minutes
  * Import files from Dropbox
  */
 export async function POST(request: NextRequest) {
+  console.log('[Dropbox Import API] ========== POST request received ==========');
   try {
     const body = await request.json();
+    console.log('[Dropbox Import API] Request body:', {
+      hasFilePaths: !!body.filePaths,
+      filePathsType: Array.isArray(body.filePaths),
+      filePathsLength: body.filePaths?.length || 0,
+      filePaths: body.filePaths,
+      hasProjectId: !!body.projectId,
+      projectId: body.projectId,
+    });
+    
     const { filePaths, projectId } = body;
 
     if (!filePaths || !Array.isArray(filePaths) || filePaths.length === 0) {
+      console.error('[Dropbox Import API] Validation failed: filePaths missing or empty');
       return NextResponse.json({ 
         error: 'File paths array is required' 
       }, { status: 400 });
     }
 
     if (!projectId) {
+      console.error('[Dropbox Import API] Validation failed: projectId missing');
       return NextResponse.json({ 
         error: 'Project ID is required' 
       }, { status: 400 });
@@ -45,18 +57,45 @@ export async function POST(request: NextRequest) {
     const results = [];
     const errors = [];
 
+    console.log('[Dropbox Import API] Starting to process files:', {
+      totalFiles: filePaths.length,
+      filePaths: filePaths,
+    });
+
     // Process each file
-    for (const filePath of filePaths) {
+    for (let i = 0; i < filePaths.length; i++) {
+      const filePath = filePaths[i];
+      console.log(`[Dropbox Import API] Processing file ${i + 1}/${filePaths.length}:`, {
+        filePath,
+        pathType: typeof filePath,
+        pathLength: filePath?.length || 0,
+        isEmpty: !filePath || filePath === '',
+      });
+      
       try {
         // Get file metadata
+        console.log(`[Dropbox Import API] Getting metadata for: ${filePath}`);
         const fileMetadata = await getFileMetadata(user.id, filePath);
+        console.log(`[Dropbox Import API] Metadata retrieved:`, {
+          name: fileMetadata.name,
+          size: fileMetadata.size,
+          mimeType: fileMetadata.mimeType,
+          id: fileMetadata.id,
+        });
         
         // Download file
+        console.log(`[Dropbox Import API] Downloading file: ${filePath}`);
         const { buffer, mimeType, fileName } = await downloadFile(user.id, filePath);
+        console.log(`[Dropbox Import API] File downloaded:`, {
+          fileName,
+          mimeType,
+          bufferSize: buffer.length,
+        });
 
         // Validate file size (100MB limit)
         const maxSize = 100 * 1024 * 1024;
         if (buffer.length > maxSize) {
+          console.warn(`[Dropbox Import API] File too large: ${fileMetadata.name} (${buffer.length} bytes)`);
           errors.push({
             filePath,
             fileName: fileMetadata.name,
@@ -81,7 +120,9 @@ export async function POST(request: NextRequest) {
           'audio/mpeg',
         ];
 
+        console.log(`[Dropbox Import API] Validating file type: ${mimeType}, allowed: ${allowedTypes.includes(mimeType)}`);
         if (!allowedTypes.includes(mimeType)) {
+          console.warn(`[Dropbox Import API] File type not supported: ${fileMetadata.name} (${mimeType})`);
           errors.push({
             filePath,
             fileName: fileMetadata.name,
@@ -118,11 +159,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Create ingestion source record
+        // Use the actual file type (pdf, excel, etc.) not the provider name
         const { data: source, error: sourceError } = await supabaseServer
           .from('ingestion_sources')
           .insert({
             project_id: resolvedProjectId,
-            source_type: 'dropbox',
+            source_type: sourceType, // Use actual file type, not 'dropbox'
             source_name: fileMetadata.name,
             source_url: `https://www.dropbox.com/home${filePath}`,
             storage_path: storagePath,
@@ -135,7 +177,7 @@ export async function POST(request: NextRequest) {
               dropboxFileId: fileMetadata.id,
               uploadedAt: new Date().toISOString(),
               uploadedBy: user.id,
-              provider: 'dropbox',
+              provider: 'dropbox', // Store provider in metadata
             },
             created_by: user.id,
           })
@@ -165,24 +207,44 @@ export async function POST(request: NextRequest) {
           const { preprocessFile } = await import('@/lib/processing/preprocessing-pipeline');
           preprocessFile(source.id, resolvedProjectId)
             .catch((error) => {
-              console.error('Preprocessing error:', error);
+              console.error('[Dropbox Import API] Preprocessing error:', error);
             });
         } else {
-          // Use Inngest in production
-          await sendEvent('ingestion/preprocess-file', {
-            sourceId: source.id,
-            projectId: resolvedProjectId,
-            sourceType,
-            storagePath,
-            metadata: {
-              fileName: fileMetadata.name,
-              fileSize: buffer.length,
-              mimeType,
-              provider: 'dropbox',
-            },
-          });
+          // Use Inngest in production, with fallback to direct preprocessing
+          try {
+            await sendEvent('ingestion/preprocess-file', {
+              sourceId: source.id,
+              projectId: resolvedProjectId,
+              sourceType,
+              storagePath,
+              metadata: {
+                fileName: fileMetadata.name,
+                fileSize: buffer.length,
+                mimeType,
+                provider: 'dropbox',
+              },
+            });
+            console.log('[Dropbox Import API] Inngest event sent successfully for source:', source.id);
+          } catch (eventError) {
+            console.error('[Dropbox Import API] Failed to send Inngest event:', eventError);
+            console.log('[Dropbox Import API] Inngest failed, falling back to preprocessing pipeline');
+            
+            // Fallback to preprocessing if Inngest fails
+            try {
+              const { preprocessFile } = await import('@/lib/processing/preprocessing-pipeline');
+              preprocessFile(source.id, resolvedProjectId)
+                .catch((preprocessingError) => {
+                  console.error('[Dropbox Import API] Fallback preprocessing failed:', preprocessingError);
+                });
+              console.log('[Dropbox Import API] Fallback preprocessing started');
+            } catch (preprocessingError) {
+              console.error('[Dropbox Import API] Failed to start fallback preprocessing:', preprocessingError);
+              // Don't throw - we still want to mark the file as imported
+            }
+          }
         }
 
+        console.log(`[Dropbox Import API] File successfully imported: ${fileMetadata.name} (sourceId: ${source.id})`);
         results.push({
           filePath,
           fileName: fileMetadata.name,
@@ -190,7 +252,12 @@ export async function POST(request: NextRequest) {
           status: 'imported',
         });
       } catch (fileError) {
-        console.error(`Error processing file ${filePath}:`, fileError);
+        console.error(`[Dropbox Import API] Error processing file ${filePath}:`, {
+          error: fileError instanceof Error ? fileError.message : String(fileError),
+          stack: fileError instanceof Error ? fileError.stack : undefined,
+          name: fileError instanceof Error ? fileError.name : undefined,
+          errorObject: fileError,
+        });
         errors.push({
           filePath,
           fileName: 'Unknown',
@@ -199,7 +266,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    console.log('[Dropbox Import API] Processing complete:', {
+      totalFiles: filePaths.length,
+      successful: results.length,
+      failed: errors.length,
+      results: results.map(r => r.fileName),
+      errors: errors.map(e => ({ filePath: e.filePath, error: e.error })),
+    });
+
+    const response = {
       success: results.length > 0,
       imported: results.length,
       failed: errors.length,
@@ -208,7 +283,10 @@ export async function POST(request: NextRequest) {
       message: errors.length > 0
         ? `Imported ${results.length} file(s), ${errors.length} failed`
         : `Successfully imported ${results.length} file(s)`,
-    });
+    };
+    
+    console.log('[Dropbox Import API] Returning response:', response);
+    return NextResponse.json(response);
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });

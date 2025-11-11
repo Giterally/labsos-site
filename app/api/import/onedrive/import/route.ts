@@ -119,11 +119,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Create ingestion source record
+        // Use the actual file type (pdf, excel, etc.) not the provider name
         const { data: source, error: sourceError } = await supabaseServer
           .from('ingestion_sources')
           .insert({
             project_id: resolvedProjectId,
-            source_type: provider,
+            source_type: sourceType, // Use actual file type, not provider
             source_name: fileMetadata.name,
             source_url: fileMetadata.url || fileMetadata.downloadUrl,
             storage_path: storagePath,
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
               webUrl: fileMetadata.url,
               uploadedAt: new Date().toISOString(),
               uploadedBy: user.id,
-              provider,
+              provider, // Store provider in metadata
             },
             created_by: user.id,
           })
@@ -170,21 +171,41 @@ export async function POST(request: NextRequest) {
               console.error('Preprocessing error:', error);
             });
         } else {
-          // Use Inngest in production
-          await sendEvent('ingestion/preprocess-file', {
-            sourceId: source.id,
-            projectId: resolvedProjectId,
-            sourceType,
-            storagePath,
-            metadata: {
-              fileName: fileMetadata.name,
-              fileSize: buffer.length,
-              mimeType,
-              provider,
-            },
-          });
+          // Use Inngest in production, with fallback to direct preprocessing
+          try {
+            await sendEvent('ingestion/preprocess-file', {
+              sourceId: source.id,
+              projectId: resolvedProjectId,
+              sourceType,
+              storagePath,
+              metadata: {
+                fileName: fileMetadata.name,
+                fileSize: buffer.length,
+                mimeType,
+                provider,
+              },
+            });
+            console.log('[OneDrive Import API] Inngest event sent successfully for source:', source.id);
+          } catch (eventError) {
+            console.error('[OneDrive Import API] Failed to send Inngest event:', eventError);
+            console.log('[OneDrive Import API] Inngest failed, falling back to preprocessing pipeline');
+            
+            // Fallback to preprocessing if Inngest fails
+            try {
+              const { preprocessFile } = await import('@/lib/processing/preprocessing-pipeline');
+              preprocessFile(source.id, resolvedProjectId)
+                .catch((preprocessingError) => {
+                  console.error('[OneDrive Import API] Fallback preprocessing failed:', preprocessingError);
+                });
+              console.log('[OneDrive Import API] Fallback preprocessing started');
+            } catch (preprocessingError) {
+              console.error('[OneDrive Import API] Failed to start fallback preprocessing:', preprocessingError);
+              // Don't throw - we still want to mark the file as imported
+            }
+          }
         }
 
+        console.log(`[OneDrive Import API] File successfully imported: ${fileMetadata.name} (sourceId: ${source.id})`);
         results.push({
           fileId,
           fileName: fileMetadata.name,

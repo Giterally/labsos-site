@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from '@/lib/toast';
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -101,8 +102,6 @@ export default function ImportPage() {
   // Import management state
   const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
   const [clearing, setClearing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [generatingProposals, setGeneratingProposals] = useState(false);
   const [proposals, setProposals] = useState<any[]>([]);
   const [proposalsStats, setProposalsStats] = useState<{ totalNodes: number; totalBlocks: number; blockBreakdown: { type: string; count: number }[] } | null>(null);
@@ -1037,7 +1036,7 @@ export default function ImportPage() {
                 setGeneratingProposals(false);
                 setGenerationProgress(0);
                 setGenerationStatus('');
-                setError(progress.message || 'Generation failed');
+                toast.error(progress.message || 'Generation failed');
               } else {
                 console.log('[IMPORT] Resuming job tracking for:', storedJobId);
                 setCurrentJobId(storedJobId);
@@ -1111,7 +1110,7 @@ export default function ImportPage() {
                 setBuildingTree(false);
                 setTreeBuildProgress(0);
                 setTreeBuildStatus('');
-                setError(progress.message || 'Tree building failed');
+                toast.error(progress.message || 'Tree building failed');
               } else {
                 console.log('[IMPORT] Resuming tree build job tracking for:', storedTreeJobId);
                 setTreeBuildJobId(storedTreeJobId);
@@ -1215,8 +1214,7 @@ export default function ImportPage() {
       
       // Show success message using the notification system
       const successCount = results.filter(r => r.success).length;
-      setSuccess(`${successCount} file(s) uploaded successfully! Processing started.`);
-      setTimeout(() => setSuccess(null), 5000); // Clear after 5 seconds
+      toast.success(`${successCount} file(s) uploaded successfully! Processing started.`);
       
       // Clear selected files and refresh data
       setSelectedFiles([]);
@@ -1295,7 +1293,6 @@ export default function ImportPage() {
     if (selectedSources.size === 0) return;
     
     setClearing(true);
-    setError(null);
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1316,19 +1313,16 @@ export default function ImportPage() {
 
       if (response.ok) {
         const result = await response.json();
-        setSuccess(`Successfully deleted ${result.deletedCount} source(s)`);
+        toast.success(`Successfully deleted ${result.deletedCount} source(s)`);
         setSelectedSources(new Set());
         await fetchData();
-        
-        // Clear success message after 3 seconds
-        setTimeout(() => setSuccess(null), 3000);
       } else {
         const errorData = await response.json();
-        setError(errorData.error || 'Failed to delete sources');
+        toast.error(errorData.error || 'Failed to delete sources');
       }
     } catch (error) {
       console.error('Clear sources error:', error);
-      setError(`Failed to delete sources: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to delete sources: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setClearing(false);
     }
@@ -1342,7 +1336,6 @@ export default function ImportPage() {
     if (!confirmed) return;
     
     setClearing(true);
-    setError(null);
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1363,19 +1356,16 @@ export default function ImportPage() {
 
       if (response.ok) {
         const result = await response.json();
-        setSuccess(`Successfully cleared all imports (${result.deletedCount} sources)`);
+        toast.success(`Successfully cleared all imports (${result.deletedCount} sources)`);
         setSelectedSources(new Set());
         await fetchData();
-        
-        // Clear success message after 3 seconds
-        setTimeout(() => setSuccess(null), 3000);
       } else {
         const errorData = await response.json();
-        setError(errorData.error || 'Failed to clear all sources');
+        toast.error(errorData.error || 'Failed to clear all sources');
       }
     } catch (error) {
       console.error('Clear all sources error:', error);
-      setError(`Failed to clear all sources: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to clear all sources: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setClearing(false);
     }
@@ -1395,8 +1385,6 @@ export default function ImportPage() {
 
   const generateProposalsInternal = async () => {
     setGeneratingProposals(true);
-    setError(null);
-    setSuccess(null);
     setGenerationProgress(0);
     setGenerationStatus('Initializing...');
 
@@ -1447,7 +1435,7 @@ export default function ImportPage() {
 
     } catch (error: any) {
       console.error('Generate proposals error:', error);
-      setError(error.message || 'Failed to generate proposals');
+      toast.error(error.message || 'Failed to generate proposals');
       setGeneratingProposals(false);
       setGenerationProgress(0);
       setGenerationStatus('');
@@ -1491,7 +1479,7 @@ export default function ImportPage() {
       
     } catch (error: any) {
       console.error('[STOP] Error cancelling generation:', error);
-      setError(error.message || 'Failed to stop generation');
+      toast.error(error.message || 'Failed to stop generation');
     }
   };
 
@@ -1539,11 +1527,11 @@ export default function ImportPage() {
       setTreeBuildStatus('');
       setTreeBuildJobId(null);
       
-      setSuccess('Tree building cancelled successfully');
+      toast.success('Tree building cancelled successfully');
       
     } catch (error: any) {
       console.error('[STOP_TREE] Error cancelling tree building:', error);
-      setError(error.message || 'Failed to cancel tree building');
+      toast.error(error.message || 'Failed to cancel tree building');
     }
   };
 
@@ -1596,7 +1584,7 @@ export default function ImportPage() {
         setGenerationProgress(0);
         setGenerationStatus('');
         setCurrentJobId(null);
-        setSuccess(progress.message || 'Generation cancelled. Nodes created are preserved.');
+        toast.success(progress.message || 'Generation cancelled. Nodes created are preserved.');
         fetchData();
         return 'cancelled';
       }
@@ -1618,7 +1606,7 @@ export default function ImportPage() {
           // Refresh data to show new proposals
           fetchData();
           setActiveTab('proposals');
-          setSuccess('Generated proposals successfully!');
+          toast.success('Generated proposals successfully!');
         }, 1500);
         
         return 'complete';
@@ -1629,7 +1617,7 @@ export default function ImportPage() {
         setGenerationProgress(0);
         setGenerationStatus('');
         setCurrentJobId(null);
-        setError(progress.message || 'Generation failed');
+        toast.error(progress.message || 'Generation failed');
         return 'error';
       }
       
@@ -1638,7 +1626,7 @@ export default function ImportPage() {
       console.error('[POLL] Error fetching progress:', error);
       return 'running'; // Continue polling on error
     }
-  }, [projectId, supabase, setGenerationProgress, setGenerationStatus, setGeneratingProposals, setCurrentJobId, setError, setSuccess, setActiveTab, fetchData, clearStoredJobId]);
+  }, [projectId, supabase, setGenerationProgress, setGenerationStatus, setGeneratingProposals, setCurrentJobId, setActiveTab, fetchData, clearStoredJobId]);
 
   const pollTreeProgress = useCallback(async (jobId: string) => {
     console.log('[TREE_POLL] ===== Starting poll for jobId:', jobId, '=====');
@@ -1718,7 +1706,7 @@ export default function ImportPage() {
             router.push(`/project/${projectId}/trees/${treeId}`);
           } else {
             console.log('[TREE_POLL] No tree ID found, showing success message');
-            setSuccess('Tree created successfully!');
+            toast.success('Tree created successfully!');
           }
         }, 1500);
         
@@ -1732,7 +1720,7 @@ export default function ImportPage() {
         setTreeBuildProgress(0);
         setTreeBuildStatus('');
         setTreeBuildJobId(null);
-        setError(progress.message || 'Tree building failed');
+        toast.error(progress.message || 'Tree building failed');
         
         return 'error';
       }
@@ -1747,7 +1735,7 @@ export default function ImportPage() {
       console.error('[TREE_POLL] Error stack:', error.stack);
       return 'running'; // Continue polling on error
     }
-  }, [projectId, supabase, router, setTreeBuildProgress, setTreeBuildStatus, setBuildingTree, setTreeBuildJobId, setError, setSuccess, clearStoredTreeJobId, fetchData]);
+  }, [projectId, supabase, router, setTreeBuildProgress, setTreeBuildStatus, setBuildingTree, setTreeBuildJobId, clearStoredTreeJobId, fetchData]);
 
   const handleDeleteSource = async (sourceId: string) => {
     if (!confirm('Are you sure you want to delete this file? This action cannot be undone.')) {
@@ -1772,11 +1760,11 @@ export default function ImportPage() {
         throw new Error(errorData.error || 'Failed to delete source');
       }
 
-      setSuccess('File deleted successfully');
+      toast.success('File deleted successfully');
       await fetchData();
     } catch (error: any) {
       console.error('Delete source error:', error);
-      setError(error.message || 'Failed to delete file');
+      toast.error(error.message || 'Failed to delete file');
     }
   };
 
@@ -1813,10 +1801,10 @@ export default function ImportPage() {
       }
 
       await fetchData();
-      setSuccess('All proposals cleared successfully');
+      toast.success('All proposals cleared successfully');
     } catch (error: any) {
       console.error('Clear proposals error:', error);
-      setError(error.message || 'Failed to clear proposals');
+      toast.error(error.message || 'Failed to clear proposals');
     }
   };
 
@@ -1829,15 +1817,12 @@ export default function ImportPage() {
     
     if (selectedProposals.size === 0) {
       console.log('[DEBUG] No proposals selected, returning early');
-      setError('Please select at least one proposal to build the tree');
+      toast.error('Please select at least one proposal to build the tree');
       return;
     }
 
     console.log('[DEBUG] Setting buildingTree to true');
     setBuildingTree(true);
-    console.log('[DEBUG] Clearing error and success states');
-    setError(null);
-    setSuccess(null);
     console.log('[DEBUG] Setting initial progress state');
     setTreeBuildProgress(0);
     setTreeBuildStatus('Starting tree build...');
@@ -1963,13 +1948,13 @@ export default function ImportPage() {
       // Detect specific error types
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
         console.error('[BUILD_TREE] Network error detected');
-        setError('Network error: Unable to connect to server');
+        toast.error('Network error: Unable to connect to server');
       } else if (error.name === 'AbortError') {
         console.error('[BUILD_TREE] Request was aborted');
-        setError('Request was cancelled');
+        toast.error('Request was cancelled');
       } else {
         console.error('[BUILD_TREE] Unknown error:', error);
-        setError(error.message || 'An unknown error occurred');
+        toast.error(error.message || 'An unknown error occurred');
       }
       
       // Clear stored job ID on error
@@ -2100,21 +2085,6 @@ export default function ImportPage() {
         </div>
       </div>
 
-      {/* Error Alert */}
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      
-      {/* Success Alert */}
-      {success && (
-        <Alert className="!bg-green-600 !border-green-600 !text-white">
-          <CheckCircle className="h-4 w-4" />
-          <AlertDescription className="!text-white">{success}</AlertDescription>
-        </Alert>
-      )}
 
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -2372,6 +2342,9 @@ export default function ImportPage() {
                           
                           if (selectedCloudProvider === 'dropbox') {
                             filePaths = selectedCloudFiles.map(f => f.path || '');
+                            console.log('[Import Frontend] Dropbox - Selected files:', selectedCloudFiles);
+                            console.log('[Import Frontend] Dropbox - Mapped filePaths:', filePaths);
+                            console.log('[Import Frontend] Dropbox - File paths check:', selectedCloudFiles.map(f => ({ name: f.name, path: f.path, hasPath: !!f.path })));
                           } else {
                             fileIds = selectedCloudFiles.map(f => f.id);
                           }
@@ -2379,9 +2352,21 @@ export default function ImportPage() {
                           const apiProvider = selectedCloudProvider === 'sharepoint' ? 'onedrive' : selectedCloudProvider;
                           const endpoint = `/api/import/${apiProvider}/import`;
 
+                          // Extract siteId from first SharePoint file's metadata (all files from same site)
+                          const siteId = selectedCloudProvider === 'sharepoint' && selectedCloudFiles.length > 0
+                            ? selectedCloudFiles[0].metadata?.siteId
+                            : undefined;
+
                           const body = selectedCloudProvider === 'dropbox'
                             ? { filePaths, projectId }
-                            : { fileIds, projectId };
+                            : { fileIds, projectId, ...(siteId ? { siteId } : {}) };
+
+                          console.log('[Import Frontend] Sending import request:', {
+                            endpoint,
+                            body,
+                            filePathsCount: filePaths?.length || 0,
+                            fileIdsCount: fileIds?.length || 0,
+                          });
 
                           const response = await fetch(endpoint, {
                             method: 'POST',
@@ -2393,21 +2378,20 @@ export default function ImportPage() {
                           });
 
                           const result = await response.json();
+                          console.log('[Import Frontend] Import response:', result);
                           
                           if (!response.ok) {
                             throw new Error(result.error || 'Import failed');
                           }
 
-                          setSuccess(`Successfully imported ${result.imported} file(s)`);
-                          setTimeout(() => setSuccess(null), 5000);
+                          toast.success(`Successfully imported ${result.imported} file(s)`);
                           
                           setSelectedCloudFiles([]);
                           fetchData();
                           setTimeout(fetchData, 2000);
                         } catch (error) {
                           console.error('Cloud import error:', error);
-                          setError(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                          setTimeout(() => setError(null), 5000);
+                          toast.error(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
                         } finally {
                           setCloudImporting(false);
                         }
@@ -2833,7 +2817,7 @@ export default function ImportPage() {
                             onClick={() => {
                               const completedCount = sources.filter(s => s.status === 'completed').length;
                               if (completedCount === 0) {
-                                setError('No completed files found. Please upload files first.');
+                                toast.error('No completed files found. Please upload files first.');
                                 return;
                               }
                               generateProposalsInternal();
