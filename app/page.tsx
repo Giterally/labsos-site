@@ -357,12 +357,12 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Capture</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-semibold">Problem</p>
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-medium">Experiments and data scattered across Dropbox, Sharepoint, and forgotten folders</p>
+                    <p className="text-sm text-foreground font-semibold">Problem</p>
+                    <p className="text-sm text-foreground font-medium">Experiments and data scattered across Dropbox, Sharepoint, and forgotten folders</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-semibold">Solution</p>
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-medium">Olvaro centralizes all experiments and data into organized knowledge trees</p>
+                    <p className="text-sm text-foreground font-semibold">Solution</p>
+                    <p className="text-sm text-foreground font-medium">Olvaro centralizes all experiments and data into organized knowledge trees</p>
                   </div>
                 </div>
               </CardContent>
@@ -379,12 +379,12 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Organise</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-semibold">Problem</p>
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-medium">Documentation missing or not presented in context, making research irreproducible</p>
+                    <p className="text-sm text-foreground font-semibold">Problem</p>
+                    <p className="text-sm text-foreground font-medium">Documentation missing or not presented in context, making research irreproducible</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-semibold">Solution</p>
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-medium">Olvaro links everything contextually, making your research fully reproducible</p>
+                    <p className="text-sm text-foreground font-semibold">Solution</p>
+                    <p className="text-sm text-foreground font-medium">Olvaro links everything contextually, making your research fully reproducible</p>
                   </div>
                 </div>
               </CardContent>
@@ -401,12 +401,12 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Manage</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-semibold">Problem</p>
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-medium">Tacit knowledge walks out when team members leave, causing work duplication</p>
+                    <p className="text-sm text-foreground font-semibold">Problem</p>
+                    <p className="text-sm text-foreground font-medium">Tacit knowledge walks out when team members leave, causing work duplication</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-semibold">Solution</p>
-                    <p className="text-sm text-[#000000] dark:text-[#ffffff] font-medium">Olvaro preserves team knowledge and streamlines handovers</p>
+                    <p className="text-sm text-foreground font-semibold">Solution</p>
+                    <p className="text-sm text-foreground font-medium">Olvaro preserves team knowledge and streamlines handovers</p>
                   </div>
                 </div>
               </CardContent>
