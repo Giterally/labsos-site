@@ -145,6 +145,8 @@ export async function GET(
       evidence_text?: string
     }>>()
     
+    console.log(`[FETCH_NODES] Fetching dependencies for ${nodeIds.length} nodes in tree ${treeId}`)
+    
     if (nodeIds.length > 0) {
       // Fetch dependencies using from_node_id (new schema from migration 035)
       // Support both old (node_id) and new (from_node_id) columns for backwards compatibility
@@ -163,6 +165,16 @@ export async function GET(
         `)
         .in('from_node_id', nodeIds)
       
+      console.log(`[FETCH_NODES] New schema dependencies query: found ${newDeps?.length || 0}, error:`, newDepsError?.message)
+      if (newDeps && newDeps.length > 0) {
+        console.log(`[FETCH_NODES] Sample new schema dependency:`, {
+          id: newDeps[0].id,
+          from_node_id: newDeps[0].from_node_id,
+          to_node_id: newDeps[0].to_node_id,
+          dependency_type: newDeps[0].dependency_type
+        })
+      }
+      
       // Query for old schema (for backwards compatibility)
       const { data: oldDeps, error: oldDepsError } = await client
         .from('node_dependencies')
@@ -179,12 +191,16 @@ export async function GET(
         .in('node_id', nodeIds)
         .is('from_node_id', null) // Only get old schema entries
       
+      console.log(`[FETCH_NODES] Old schema dependencies query: found ${oldDeps?.length || 0}, error:`, oldDepsError?.message)
+      
       // Combine results, preferring new schema
       const dependencies = [
         ...(newDeps || []),
         ...(oldDeps || [])
       ]
       const depsError = newDepsError || oldDepsError
+      
+      console.log(`[FETCH_NODES] Total dependencies found: ${dependencies.length}`)
       
       if (!depsError && dependencies && dependencies.length > 0) {
         // Get all target node IDs (support both old and new schema)
@@ -214,7 +230,10 @@ export async function GET(
           const fromNodeId = dep.from_node_id || dep.node_id
           const toNodeId = dep.to_node_id || dep.depends_on_node_id
           
-          if (!fromNodeId || !toNodeId) return
+          if (!fromNodeId || !toNodeId) {
+            console.warn(`[FETCH_NODES] Skipping dependency ${dep.id}: missing from_node_id (${fromNodeId}) or to_node_id (${toNodeId})`)
+            return
+          }
           
           const toNodeName = targetNodesMap.get(toNodeId) || 'Unknown node'
           
@@ -230,6 +249,14 @@ export async function GET(
             evidence_text: dep.evidence_text
           })
         })
+        
+        console.log(`[FETCH_NODES] Built dependencies map with ${dependenciesMap.size} nodes having dependencies`)
+        if (dependenciesMap.size > 0) {
+          const sampleEntry = Array.from(dependenciesMap.entries())[0]
+          console.log(`[FETCH_NODES] Sample: node ${sampleEntry[0]} has ${sampleEntry[1].length} dependency/dependencies`)
+        }
+      } else {
+        console.warn(`[FETCH_NODES] No dependencies found or error occurred:`, depsError?.message)
       }
     }
 
@@ -260,6 +287,10 @@ export async function GET(
       
       // Get dependencies for this node
       const dependencies = dependenciesMap.get(node.id) || []
+      
+      if (dependencies.length > 0) {
+        console.log(`[FETCH_NODES] Node "${node.name}" (${node.id.substring(0, 8)}) has ${dependencies.length} dependency/dependencies`)
+      }
       
       return {
         id: node.id,

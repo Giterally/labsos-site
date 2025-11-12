@@ -1057,54 +1057,237 @@ async function buildTreeInBackground(
       // Map proposal titles to node IDs (more reliable than node names)
       // This ensures dependencies can match even if nodes have generic names
       const proposalTitleToNodeIdMap = new Map<string, string>();
+      let nodesWithProvenance = 0;
+      let nodesWithoutProvenance = 0;
+      let nodesWithProposalId = 0;
+      let nodesWithoutProposalId = 0;
+      let proposalsFound = 0;
+      let proposalsNotFound = 0;
+      
+      console.log(`[BUILD_TREE] ===== BUILDING PROPOSAL TITLE MAP =====`);
+      console.log(`[BUILD_TREE] Processing ${createdTreeNodes.length} created nodes...`);
+      
       for (const createdNode of createdTreeNodes) {
-        const proposal = createdNode.provenance?.proposal_id 
-          ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
-          : null;
+        // Check provenance structure
+        if (!createdNode.provenance) {
+          nodesWithoutProvenance++;
+          console.warn(`[BUILD_TREE] Node "${createdNode.name}" (${createdNode.id.substring(0, 8)}) has NO provenance field`);
+          continue;
+        }
         
-        if (proposal) {
-          const proposalTitle = proposal.node_json?.title || proposal.node_json?.name || '';
-          if (proposalTitle) {
-            proposalTitleToNodeIdMap.set(proposalTitle.toLowerCase(), createdNode.id);
+        nodesWithProvenance++;
+        const provenanceType = typeof createdNode.provenance;
+        console.log(`[BUILD_TREE] Node "${createdNode.name}" provenance type: ${provenanceType}`);
+        
+        // Handle both object and string provenance
+        let proposalId: string | null = null;
+        if (typeof createdNode.provenance === 'string') {
+          try {
+            const parsed = JSON.parse(createdNode.provenance);
+            proposalId = parsed?.proposal_id || null;
+          } catch (e) {
+            console.error(`[BUILD_TREE] Failed to parse provenance string for node "${createdNode.name}":`, e);
           }
-          // Also add node name as fallback
+        } else if (typeof createdNode.provenance === 'object' && createdNode.provenance !== null) {
+          proposalId = (createdNode.provenance as any)?.proposal_id || null;
+        }
+        
+        if (!proposalId) {
+          nodesWithoutProposalId++;
+          console.warn(`[BUILD_TREE] Node "${createdNode.name}" (${createdNode.id.substring(0, 8)}) has NO proposal_id in provenance:`, JSON.stringify(createdNode.provenance).substring(0, 100));
+          // Still add node name to map as fallback
           if (createdNode.name) {
             proposalTitleToNodeIdMap.set(createdNode.name.toLowerCase(), createdNode.id);
           }
+          continue;
+        }
+        
+        nodesWithProposalId++;
+        console.log(`[BUILD_TREE] Node "${createdNode.name}" has proposal_id: ${proposalId.substring(0, 8)}`);
+        
+        const proposal = sortedProposals.find(p => p.id === proposalId);
+        
+        if (!proposal) {
+          proposalsNotFound++;
+          console.error(`[BUILD_TREE] ❌ Proposal ${proposalId.substring(0, 8)} NOT FOUND in sortedProposals (${sortedProposals.length} proposals available)`);
+          console.error(`[BUILD_TREE] Available proposal IDs:`, sortedProposals.slice(0, 5).map(p => p.id.substring(0, 8)));
+          // Still add node name to map as fallback
+          if (createdNode.name) {
+            proposalTitleToNodeIdMap.set(createdNode.name.toLowerCase(), createdNode.id);
+          }
+          continue;
+        }
+        
+        proposalsFound++;
+        const proposalTitle = proposal.node_json?.title || proposal.node_json?.name || '';
+        console.log(`[BUILD_TREE] ✓ Found proposal for node "${createdNode.name}": title="${proposalTitle}"`);
+        
+        if (proposalTitle) {
+          proposalTitleToNodeIdMap.set(proposalTitle.toLowerCase(), createdNode.id);
+          console.log(`[BUILD_TREE]   Added to map: "${proposalTitle.toLowerCase()}" -> ${createdNode.id.substring(0, 8)}`);
+        }
+        // Also add node name as fallback
+        if (createdNode.name) {
+          proposalTitleToNodeIdMap.set(createdNode.name.toLowerCase(), createdNode.id);
+          console.log(`[BUILD_TREE]   Added node name to map: "${createdNode.name.toLowerCase()}" -> ${createdNode.id.substring(0, 8)}`);
         }
       }
       
+      console.log(`[BUILD_TREE] ===== PROPOSAL TITLE MAP SUMMARY =====`);
+      console.log(`[BUILD_TREE] Total nodes: ${createdTreeNodes.length}`);
+      console.log(`[BUILD_TREE] Nodes with provenance: ${nodesWithProvenance}, without: ${nodesWithoutProvenance}`);
+      console.log(`[BUILD_TREE] Nodes with proposal_id: ${nodesWithProposalId}, without: ${nodesWithoutProposalId}`);
+      console.log(`[BUILD_TREE] Proposals found: ${proposalsFound}, not found: ${proposalsNotFound}`);
       console.log(`[BUILD_TREE] Built proposal title map with ${proposalTitleToNodeIdMap.size} entries`);
+      
       if (proposalTitleToNodeIdMap.size > 0) {
-        const sampleEntries = Array.from(proposalTitleToNodeIdMap.entries()).slice(0, 3);
-        console.log(`[BUILD_TREE] Sample title map entries:`, sampleEntries.map(([title, id]) => ({ title: title.substring(0, 40), nodeId: id.substring(0, 8) })));
+        const allEntries = Array.from(proposalTitleToNodeIdMap.entries());
+        console.log(`[BUILD_TREE] All title map entries (first 10):`, allEntries.slice(0, 10).map(([title, id]) => ({ 
+          title: title.substring(0, 50), 
+          nodeId: id.substring(0, 8) 
+        })));
+      } else {
+        console.error(`[BUILD_TREE] ❌ CRITICAL: proposalTitleToNodeIdMap is EMPTY! Dependencies cannot be matched!`);
       }
 
       // Extract dependencies from proposals
+      console.log(`[BUILD_TREE] ===== EXTRACTING DEPENDENCIES =====`);
+      let nodesProcessed = 0;
+      let nodesWithDependencies = 0;
+      let nodesWithoutDependencies = 0;
+      let totalDependenciesFound = 0;
+      let dependenciesMatched = 0;
+      let dependenciesUnmatched = 0;
+      const unmatchedDependencies: Array<{ node: string; referencedTitle: string; reason: string }> = [];
+      
       for (const createdNode of createdTreeNodes) {
-        const proposal = createdNode.provenance?.proposal_id 
-          ? sortedProposals.find(p => p.id === createdNode.provenance.proposal_id)
-          : null;
-
-        if (proposal && proposal.node_json?.dependencies && Array.isArray(proposal.node_json.dependencies)) {
-          for (const dep of proposal.node_json.dependencies) {
-            const referencedTitle = dep.referenced_title || dep.referencedNodeTitle;
-            if (!referencedTitle) continue;
-
-            // Find referenced node by title using proposal-based mapping
-            const referencedNodeId = proposalTitleToNodeIdMap.get(referencedTitle.toLowerCase());
+        nodesProcessed++;
+        
+        // Handle both object and string provenance
+        let proposalId: string | null = null;
+        if (createdNode.provenance) {
+          if (typeof createdNode.provenance === 'string') {
+            try {
+              const parsed = JSON.parse(createdNode.provenance);
+              proposalId = parsed?.proposal_id || null;
+            } catch (e) {
+              // Already logged above
+            }
+          } else if (typeof createdNode.provenance === 'object' && createdNode.provenance !== null) {
+            proposalId = (createdNode.provenance as any)?.proposal_id || null;
+          }
+        }
+        
+        if (!proposalId) {
+          console.warn(`[BUILD_TREE] [${nodesProcessed}/${createdTreeNodes.length}] Node "${createdNode.name}" has no proposal_id, skipping dependency extraction`);
+          continue;
+        }
+        
+        const proposal = sortedProposals.find(p => p.id === proposalId);
+        
+        if (!proposal) {
+          console.warn(`[BUILD_TREE] [${nodesProcessed}/${createdTreeNodes.length}] Node "${createdNode.name}" proposal ${proposalId.substring(0, 8)} not found in sortedProposals`);
+          continue;
+        }
+        
+        if (!proposal.node_json?.dependencies || !Array.isArray(proposal.node_json.dependencies)) {
+          nodesWithoutDependencies++;
+          console.log(`[BUILD_TREE] [${nodesProcessed}/${createdTreeNodes.length}] Node "${createdNode.name}" has no dependencies in proposal`);
+          continue;
+        }
+        
+        nodesWithDependencies++;
+        const deps = proposal.node_json.dependencies;
+        totalDependenciesFound += deps.length;
+        console.log(`[BUILD_TREE] [${nodesProcessed}/${createdTreeNodes.length}] Node "${createdNode.name}" has ${deps.length} dependency/dependencies in proposal`);
+        
+        for (let depIndex = 0; depIndex < deps.length; depIndex++) {
+          const dep = deps[depIndex];
+          const referencedTitle = dep.referenced_title || dep.referencedNodeTitle;
+          
+          if (!referencedTitle) {
+            console.warn(`[BUILD_TREE]   Dependency ${depIndex + 1}/${deps.length} has no referenced_title or referencedNodeTitle:`, JSON.stringify(dep).substring(0, 100));
+            unmatchedDependencies.push({
+              node: createdNode.name,
+              referencedTitle: 'MISSING',
+              reason: 'No referenced_title or referencedNodeTitle field'
+            });
+            dependenciesUnmatched++;
+            continue;
+          }
+          
+          const referencedTitleLower = referencedTitle.toLowerCase();
+          console.log(`[BUILD_TREE]   Dependency ${depIndex + 1}/${deps.length}: looking for "${referencedTitle}" (lowercase: "${referencedTitleLower}")`);
+          
+          // Find referenced node by title using proposal-based mapping
+          const referencedNodeId = proposalTitleToNodeIdMap.get(referencedTitleLower);
+          
+          if (!referencedNodeId) {
+            console.error(`[BUILD_TREE]   ❌ Dependency ${depIndex + 1}/${deps.length}: "${referencedTitle}" NOT FOUND in proposalTitleToNodeIdMap`);
+            console.error(`[BUILD_TREE]   Available keys in map (first 10):`, Array.from(proposalTitleToNodeIdMap.keys()).slice(0, 10));
             
-            if (referencedNodeId && referencedNodeId !== createdNode.id) {
+            // Try fuzzy matching
+            let fuzzyMatch: string | null = null;
+            for (const [key, nodeId] of proposalTitleToNodeIdMap.entries()) {
+              if (key.includes(referencedTitleLower) || referencedTitleLower.includes(key)) {
+                fuzzyMatch = nodeId;
+                console.log(`[BUILD_TREE]   ⚠️  Fuzzy match found: "${key}" -> ${nodeId.substring(0, 8)}`);
+                break;
+              }
+            }
+            
+            if (!fuzzyMatch) {
+              unmatchedDependencies.push({
+                node: createdNode.name,
+                referencedTitle: referencedTitle,
+                reason: `Not found in map (searched for: "${referencedTitleLower}")`
+              });
+              dependenciesUnmatched++;
+              continue;
+            }
+            
+            // Use fuzzy match
+            if (fuzzyMatch !== createdNode.id) {
               dependencyEntries.push({
                 from_node_id: createdNode.id,
-                to_node_id: referencedNodeId,
+                to_node_id: fuzzyMatch,
                 dependency_type: dep.dependency_type || dep.dependencyType || 'requires',
                 evidence_text: dep.extractedPhrase || dep.evidence || '',
                 confidence: dep.confidence || 0.8,
               });
+              dependenciesMatched++;
+              console.log(`[BUILD_TREE]   ✓ Added dependency (fuzzy match): "${createdNode.name}" -> "${referencedTitle}"`);
+            } else {
+              console.warn(`[BUILD_TREE]   ⚠️  Skipped self-reference: "${createdNode.name}" -> "${referencedTitle}"`);
             }
+          } else if (referencedNodeId === createdNode.id) {
+            console.warn(`[BUILD_TREE]   ⚠️  Skipped self-reference: "${createdNode.name}" -> "${referencedTitle}" (same node)`);
+          } else {
+            dependencyEntries.push({
+              from_node_id: createdNode.id,
+              to_node_id: referencedNodeId,
+              dependency_type: dep.dependency_type || dep.dependencyType || 'requires',
+              evidence_text: dep.extractedPhrase || dep.evidence || '',
+              confidence: dep.confidence || 0.8,
+            });
+            dependenciesMatched++;
+            console.log(`[BUILD_TREE]   ✓ Added dependency: "${createdNode.name}" -> "${referencedTitle}" (${dep.dependency_type || dep.dependencyType || 'requires'})`);
           }
         }
+      }
+      
+      console.log(`[BUILD_TREE] ===== DEPENDENCY EXTRACTION SUMMARY =====`);
+      console.log(`[BUILD_TREE] Nodes processed: ${nodesProcessed}`);
+      console.log(`[BUILD_TREE] Nodes with dependencies: ${nodesWithDependencies}, without: ${nodesWithoutDependencies}`);
+      console.log(`[BUILD_TREE] Total dependencies found in proposals: ${totalDependenciesFound}`);
+      console.log(`[BUILD_TREE] Dependencies matched: ${dependenciesMatched}, unmatched: ${dependenciesUnmatched}`);
+      console.log(`[BUILD_TREE] Dependency entries created: ${dependencyEntries.length}`);
+      
+      if (unmatchedDependencies.length > 0) {
+        console.error(`[BUILD_TREE] ❌ ${unmatchedDependencies.length} UNMATCHED DEPENDENCIES:`);
+        unmatchedDependencies.forEach((unmatched, idx) => {
+          console.error(`[BUILD_TREE]   ${idx + 1}. Node "${unmatched.node}" -> "${unmatched.referencedTitle}": ${unmatched.reason}`);
+        });
       }
 
        // Validate dependencies before inserting

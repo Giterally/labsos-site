@@ -905,6 +905,20 @@ export default function SimpleExperimentTreePage() {
           throw new Error('Failed to fetch nodes')
         }
         const data = await response.json()
+        console.log(`[TreePage] Fetched ${data.nodes.length} nodes`)
+        
+        // Log dependencies info
+        const nodesWithDeps = data.nodes.filter((n: ExperimentNode) => n.dependencies && n.dependencies.length > 0)
+        console.log(`[TreePage] Nodes with dependencies: ${nodesWithDeps.length}`)
+        if (nodesWithDeps.length > 0) {
+          nodesWithDeps.forEach((node: ExperimentNode) => {
+            console.log(`[TreePage] Node "${node.title}" has ${node.dependencies?.length || 0} dependency/dependencies:`, 
+              node.dependencies?.map((d: any) => `${d.dependency_type} -> ${d.to_node_name}`).join(', '))
+          })
+        } else {
+          console.warn(`[TreePage] ⚠️ No nodes with dependencies found!`)
+        }
+        
         setExperimentNodes(data.nodes)
         
         // Node order is now handled by position field, no need for nodeOrder state

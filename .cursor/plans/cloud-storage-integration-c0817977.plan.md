@@ -1,186 +1,99 @@
-<!-- c0817977-ac4c-4192-b77f-87e6f1a0c214 e829eb51-e04d-42cc-a3a3-ff74c2c72d67 -->
-# User-Scoped Files and Project-Scoped Proposals Implementation
+<!-- c0817977-ac4c-4192-b77f-87e6f1a0c214 8efc0fbd-64cb-4945-b06a-10cdacc257cc -->
+# AI Chat Attachments, Links, and Tree Hierarchy Enhancement
 
 ## Overview
 
-Transform the system to have:
+Enhance the AI chat to display clickable attachments and links (with YouTube video embeds) and make the AI aware of tree hierarchy and nesting relationships.
 
-- **Files & Chunks**: User-scoped (shared across all user's projects, like cloud provider logins)
-- **Proposals**: Per-user, per-project (isolated per project)
-- **Tree Building**: Uses proposals from specific user+project combination
+## Changes
 
-## Database Migrations
+### 1. Update Tree Context to Include Full Attachment/Link Data and Nesting Info
 
-### Migration 045: Make files and chunks user-scoped, keep proposals per-user-per-project
+**File: `lib/tree-context.ts`**
 
-**File**: `migrations/045_user_scoped_files_project_scoped_proposals.sql`
+- Update `TreeContext` interface to include:
+  - `file_url` in attachments array
+  - `parent_trees` array with tree names, descriptions, and which nodes reference this tree
+  - `child_trees` array with tree names, descriptions, and which nodes reference them
+  - `hierarchy_info` object describing block→node structure and dependency chains
 
-**Changes**:
+- Update `fetchTreeContext` function:
+  - Modify attachment fetch (line 209-213) to include `file_url` in SELECT
+  - Add new step to fetch parent trees (trees that reference this tree via `referenced_tree_ids`)
+  - Add new step to fetch child trees (trees referenced by nodes in this tree)
+  - Build hierarchy summary showing block→node relationships and dependency chains
 
-1. **ingestion_sources**: Make `project_id` nullable, add `user_id` required
-2. **chunks**: Make `project_id` nullable, add `user_id` required, set all `project_id` to NULL
-3. **proposed_nodes**: Keep `project_id` required, add `user_id` required
-4. **structured_documents**: Make `project_id` nullable, add `user_id` required
-5. Update indexes for new schema
-6. Update `match_chunks` function to use `user_id` and optional `source_ids` filter
+- Update `formatTreeContextForLLM` function:
+  - Add section describing tree hierarchy (blocks contain nodes, dependency chains)
+  - Add section describing nesting hierarchy (parent/child trees with positions)
+  - Include full URLs for attachments and links in the formatted output
 
-### Migration 046: Create user-uploads storage bucket
+### 2. Enhance AI Prompt for Hierarchy Awareness
 
-**File**: `migrations/046_create_user_uploads_bucket.sql`
+**File: `lib/embeddings.ts`**
 
-**Changes**:
+- Update system prompt in `generateAnswer` function (lines 250-274):
+  - Add explanation of tree hierarchy (blocks contain nodes, nodes have dependencies)
+  - Add explanation of nesting hierarchy (parent/child trees, positions in nest)
+  - Instruct AI to reference attachments/links by name when relevant
+  - Explain that attachments/links will be rendered automatically
 
-1. Create `user-uploads` storage bucket
-2. Create RLS policies for user-scoped file access
-3. Update storage policies to use `user_id` instead of `project_id`
+### 3. Modify AI Response to Include Structured References
 
-## API Route Updates
+**File: `lib/embeddings.ts`**
 
-### Import Routes (Remove project_id requirement)
+- Change `generateAnswer` return type to include structured data:
+  ```typescript
+  { text: string, referencedAttachments?: string[], referencedLinks?: string[] }
+  ```
 
-Files to update:
+- Use OpenAI function calling or parse response for attachment/link references
+- Alternative: Return plain text and parse in frontend (simpler, lower latency)
 
-- `app/api/import/upload/route.ts`
-- `app/api/import/googledrive/import/route.ts`
-- `app/api/import/onedrive/import/route.ts`
-- `app/api/import/dropbox/import/route.ts`
-- `app/api/import/github/route.ts`
+### 4. Update AI Chat Sidebar to Render Attachments/Links
 
-**Changes**:
+**File: `components/AIChatSidebar.tsx`**
 
-- Remove `projectId` from request body validation
-- Use `user.id` from authenticated session
-- Update storage path: `user-uploads/${userId}/${filename}`
-- Store `user_id` in `ingestion_sources`, set `project_id` to NULL
+- Update `ChatMessage` interface to include optional `referencedAttachments` and `referencedLinks` arrays
+- Create helper function `parseAIResponse` to:
+  - Extract URLs from markdown links and plain text
+  - Match attachment names against tree context
+  - Detect YouTube URLs for embedding
+- Update message rendering (line 540-568):
+  - Parse AI response for attachments/links
+  - Render clickable links with previews
+  - Render embedded YouTube videos using `VideoEmbed` component
+  - Render attachment cards for non-video attachments
+- Import `VideoEmbed` component and `detectVideoType` utility
 
-### Sources API Route
+### 5. Update API Route to Pass Tree Context
 
-**File**: `app/api/projects/[projectId]/sources/route.ts`
+**File: `app/api/trees/[treeId]/ai-search/route.ts`**
 
-**Changes**:
+- Ensure `fetchTreeContext` is called with full context (already done)
+- Return structured response if using function calling approach
+- Otherwise, return plain text (parsing happens in frontend)
 
-- GET: Fetch sources by `user_id` (all user's files, not project files)
-- DELETE: Delete by `user_id` (removes from all projects)
+## Implementation Notes
 
-### Proposals API Route
+- Use frontend parsing approach for simplicity and lower latency
+- Match attachments by name (case-insensitive, partial matching)
+- Match links by URL
+- YouTube videos: auto-detect and embed using existing `VideoEmbed` component
+- Other attachments: show as clickable cards with file type icons
+- Links: render as clickable links with previews where possible
 
-**File**: `app/api/projects/[projectId]/proposals/route.ts`
+## Testing
 
-**Changes**:
-
-- GET: Fetch proposals by `user_id` + `project_id` combination
-- POST (generate): Accept `selectedSourceIds[]` parameter, delete existing proposals for `user_id` + `project_id`, store new proposals with both `user_id` and `project_id`
-- POST (tree build): Fetch proposals by `user_id` + `project_id`, build tree into `project_id`
-
-## Processing Pipeline Updates
-
-### Preprocessing Pipeline
-
-**File**: `lib/processing/preprocessing-pipeline.ts`
-
-**Changes**:
-
-- Update `preprocessFile(sourceId: string, projectId: string)` → `preprocessFile(sourceId: string, userId: string)`
-- Get `user_id` from source record
-- Store chunks with `user_id`, set `project_id` to NULL
-- Update `structured_documents` to use `user_id` instead of `project_id`
-
-### RAG Retriever
-
-**File**: `lib/ai/rag-retriever.ts`
-
-**Changes**:
-
-- Update `retrieveContextForSynthesis` to accept `userId` and `selectedSourceIds[]`
-- Update `getPrimaryChunks` to filter by `user_id` AND `selectedSourceIds`
-- Update vector search calls to use `user_id_filter` and `source_ids_filter`
-
-### Embedding Storage
-
-**File**: `lib/ai/embeddings.ts`
-
-**Changes**:
-
-- Update `storeEmbeddings` to use `userId` instead of `projectId`
-- Store chunks with `user_id`, `project_id = NULL`
-
-### Proposal Generation
-
-**File**: `lib/ai/synthesis.ts`
-
-**Changes**:
-
-- Update `storeSynthesizedNode` to accept both `userId` and `projectId`
-- Store proposals with both `user_id` and `project_id` (required)
-
-## Frontend Updates
-
-### Import Page
-
-**File**: `app/dashboard/projects/[projectId]/import/page.tsx`
-
-**Changes**:
-
-- Remove `projectId` from import API calls (files are user-scoped)
-- Update `fetchData()` to fetch user-scoped sources (all user's files)
-- Update proposal fetching to filter by `user_id` + `project_id`
-- Add file selection UI for proposal generation:
-- Add checkboxes to file list in "Manage Files" tab
-- Add "Select Files for Proposals" button/mode
-- Show selected file count
-- Pass `selectedSourceIds[]` to proposal generation API
-- Update "Generate Proposals" to require file selection
-- Update file deletion warning: "This will delete the file from all your projects"
-- Keep project context for proposal generation and tree building
-
-### Inngest Functions
-
-**File**: `lib/inngest/functions.ts`
-
-**Changes**:
-
-- Update `processChunks` to use `userId` instead of `projectId`
-- Update chunk storage to use `user_id`
-
-## Migration Tracking
-
-**File**: `migrations/045_user_scoped_files_project_scoped_proposals_TRACKING.md`
-
-**Content**: Document before/after schema for:
-
-- `ingestion_sources` table
-- `chunks` table
-- `proposed_nodes` table
-- `structured_documents` table
-- `match_chunks` function
-- All affected indexes
-
-## Testing Checklist
-
-1. File upload stores with `user_id`, `project_id = NULL`
-2. File visible in all user's projects
-3. File processing creates chunks with `user_id`, `project_id = NULL`
-4. File selection UI works for proposal generation
-5. Proposal generation uses only selected files' chunks
-6. Proposals stored with `user_id` + `project_id`
-7. Proposals isolated per project
-8. Proposal regeneration deletes old proposals for that project
-9. Tree building uses proposals from specific user+project
-10. File deletion removes from all projects
-11. RAG retrieval filters by `user_id` and `selectedSourceIds`
-12. Vector search function works with new parameters
+- Test with tree containing attachments and links
+- Test with nested trees (parent/child relationships)
+- Test YouTube video embedding
+- Test hierarchy questions (blocks, nodes, dependencies, nesting)
 
 ### To-dos
 
-- [ ] Create migration 045: Update ingestion_sources, chunks, proposed_nodes, structured_documents tables
-- [ ] Create migration 046: Create user-uploads storage bucket with RLS policies
-- [ ] Create migration tracking document with before/after schema
-- [ ] Update all import API routes to use user_id instead of project_id
-- [ ] Update preprocessing pipeline to use user_id
-- [ ] Update RAG retriever to accept userId and selectedSourceIds
-- [ ] Update proposal generation to accept selectedSourceIds and store with user_id + project_id
-- [ ] Update frontend import page to show user-scoped files and add file selection UI
-- [ ] Update sources API route to fetch by user_id
-- [ ] Update proposals API route to handle user_id + project_id filtering
-- [ ] Update tree building to use user_id + project_id for proposals
-- [ ] Update Inngest functions to use user_id
+- [ ] Update TreeContext interface and fetchTreeContext to include file_url, parent_trees, child_trees, and hierarchy_info
+- [ ] Update formatTreeContextForLLM to include hierarchy and nesting information with full URLs
+- [ ] Enhance AI prompt in generateAnswer to explain tree hierarchy and nesting
+- [ ] Create parseAIResponse helper function in AIChatSidebar to extract attachments/links from AI responses
+- [ ] Update AIChatSidebar message rendering to display clickable links, embedded videos, and attachment cards

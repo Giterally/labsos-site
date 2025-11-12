@@ -20,6 +20,25 @@ export interface TreeContext {
       status: string;
       position: number;
       content: string | null;
+      links: Array<{
+        name: string;
+        url: string;
+        description: string | null;
+        link_type: string | null;
+      }>;
+      attachments: Array<{
+        name: string;
+        file_type: string | null;
+        file_url: string | null;
+        description: string | null;
+      }>;
+      provenance: any | null;
+      confidence: number | null;
+      referenced_tree_ids: string[];
+      referenced_trees?: Array<{
+        name: string;
+        description: string | null;
+      }>;
       dependencies: Array<{
         to_node_name: string;
         dependency_type: string;
@@ -27,6 +46,28 @@ export interface TreeContext {
       }>;
     }>;
   }>;
+  parent_trees?: Array<{
+    tree_id: string;
+    tree_name: string;
+    tree_description: string | null;
+    node_id: string;
+    node_name: string;
+  }>;
+  child_trees?: Array<{
+    tree_id: string;
+    tree_name: string;
+    tree_description: string | null;
+    node_id: string;
+    node_name: string;
+  }>;
+  hierarchy_info?: {
+    block_count: number;
+    node_count: number;
+    dependency_chains: Array<{
+      chain: string[];
+      depth: number;
+    }>;
+  };
 }
 
 /**
@@ -125,9 +166,12 @@ export async function fetchTreeContext(
       console.log('[fetchTreeContext] Node details (first 3):', nodes.slice(0, 3).map(n => ({ id: n.id, name: n.name, block_id: n.block_id })));
     }
 
-    // Fetch node content
+    // Fetch node content, links, attachments, and metadata
     const nodeIds = (nodes || []).map(n => n.id);
     let nodeContentMap = new Map<string, string | null>();
+    let nodeLinksMap = new Map<string, Array<{ name: string; url: string; description: string | null; link_type: string | null }>>();
+    let nodeAttachmentsMap = new Map<string, Array<{ name: string; file_type: string | null; description: string | null }>>();
+    let nodeMetadataMap = new Map<string, { provenance: any | null; confidence: number | null; referenced_tree_ids: string[] }>();
     
     if (nodeIds.length > 0) {
       console.log('[fetchTreeContext] Step 4: Fetching node content for', nodeIds.length, 'nodes...');
@@ -152,6 +196,88 @@ export async function fetchTreeContext(
         console.log('[fetchTreeContext] ✓ Node content fetched:', contentData.length, 'content entries');
       } else {
         console.log('[fetchTreeContext] ✓ No node content found (empty result)');
+      }
+
+      // Fetch node links
+      console.log('[fetchTreeContext] Step 4b: Fetching node links for', nodeIds.length, 'nodes...');
+      const { data: linksData, error: linksError } = await supabase
+        .from('node_links')
+        .select('node_id, name, url, description, link_type')
+        .in('node_id', nodeIds)
+        .order('position', { ascending: true });
+
+      if (linksError) {
+        console.error('[fetchTreeContext] ERROR fetching node links:', {
+          error: linksError.message,
+          code: linksError.code
+        });
+        // Continue without links
+      } else if (linksData) {
+        linksData.forEach((link: any) => {
+          if (!nodeLinksMap.has(link.node_id)) {
+            nodeLinksMap.set(link.node_id, []);
+          }
+          nodeLinksMap.get(link.node_id)!.push({
+            name: link.name,
+            url: link.url,
+            description: link.description,
+            link_type: link.link_type,
+          });
+        });
+        console.log('[fetchTreeContext] ✓ Node links fetched:', linksData.length, 'link entries');
+      }
+
+      // Fetch node attachments
+      console.log('[fetchTreeContext] Step 4c: Fetching node attachments for', nodeIds.length, 'nodes...');
+      const { data: attachmentsData, error: attachmentsError } = await supabase
+        .from('node_attachments')
+        .select('node_id, name, file_type, file_url, description')
+        .in('node_id', nodeIds)
+        .order('position', { ascending: true });
+
+      if (attachmentsError) {
+        console.error('[fetchTreeContext] ERROR fetching node attachments:', {
+          error: attachmentsError.message,
+          code: attachmentsError.code
+        });
+        // Continue without attachments
+      } else if (attachmentsData) {
+        attachmentsData.forEach((attachment: any) => {
+          if (!nodeAttachmentsMap.has(attachment.node_id)) {
+            nodeAttachmentsMap.set(attachment.node_id, []);
+          }
+          nodeAttachmentsMap.get(attachment.node_id)!.push({
+            name: attachment.name,
+            file_type: attachment.file_type,
+            file_url: attachment.file_url,
+            description: attachment.description,
+          });
+        });
+        console.log('[fetchTreeContext] ✓ Node attachments fetched:', attachmentsData.length, 'attachment entries');
+      }
+
+      // Fetch node metadata (provenance, confidence, referenced_tree_ids)
+      console.log('[fetchTreeContext] Step 4d: Fetching node metadata for', nodeIds.length, 'nodes...');
+      const { data: nodesWithMetadata, error: metadataError } = await supabase
+        .from('tree_nodes')
+        .select('id, provenance, confidence, referenced_tree_ids')
+        .in('id', nodeIds);
+
+      if (metadataError) {
+        console.error('[fetchTreeContext] ERROR fetching node metadata:', {
+          error: metadataError.message,
+          code: metadataError.code
+        });
+        // Continue without metadata
+      } else if (nodesWithMetadata) {
+        nodesWithMetadata.forEach((node: any) => {
+          nodeMetadataMap.set(node.id, {
+            provenance: node.provenance,
+            confidence: node.confidence,
+            referenced_tree_ids: node.referenced_tree_ids || [],
+          });
+        });
+        console.log('[fetchTreeContext] ✓ Node metadata fetched:', nodesWithMetadata.length, 'metadata entries');
       }
     } else {
       console.log('[fetchTreeContext] Step 4: Skipping content fetch (no nodes)');
@@ -244,14 +370,57 @@ export async function fetchTreeContext(
       console.log('[fetchTreeContext] Step 5: Skipping dependencies fetch (no nodes)');
     }
 
+    // Fetch referenced tree names if any nodes have referenced_tree_ids
+    const allReferencedTreeIds = new Set<string>();
+    nodes?.forEach(node => {
+      const metadata = nodeMetadataMap.get(node.id);
+      if (metadata?.referenced_tree_ids) {
+        metadata.referenced_tree_ids.forEach((treeId: string) => {
+          if (treeId) allReferencedTreeIds.add(treeId);
+        });
+      }
+    });
+
+    let referencedTreesMap = new Map<string, { name: string; description: string | null }>();
+    if (allReferencedTreeIds.size > 0) {
+      console.log('[fetchTreeContext] Step 5b: Fetching referenced tree names for', allReferencedTreeIds.size, 'trees...');
+      const { data: referencedTrees, error: treesError } = await supabase
+        .from('experiment_trees')
+        .select('id, name, description')
+        .in('id', Array.from(allReferencedTreeIds));
+
+      if (treesError) {
+        console.error('[fetchTreeContext] ERROR fetching referenced trees:', {
+          error: treesError.message,
+          code: treesError.code
+        });
+      } else if (referencedTrees) {
+        referencedTrees.forEach((tree: any) => {
+          referencedTreesMap.set(tree.id, {
+            name: tree.name,
+            description: tree.description,
+          });
+        });
+        console.log('[fetchTreeContext] ✓ Referenced trees fetched:', referencedTrees.length, 'trees');
+      }
+    }
+
     // Organize nodes by block
     console.log('[fetchTreeContext] Step 6: Organizing nodes by block...');
     const blocksWithNodes = (blocks || []).map(block => {
       const blockNodes = (nodes || [])
         .filter(node => node.block_id === block.id)
         .map(node => {
-          // Get content from the map
+          // Get content, links, attachments, and metadata from maps
           const content = nodeContentMap.get(node.id) || null;
+          const links = nodeLinksMap.get(node.id) || [];
+          const attachments = nodeAttachmentsMap.get(node.id) || [];
+          const metadata = nodeMetadataMap.get(node.id) || { provenance: null, confidence: null, referenced_tree_ids: [] };
+          
+          // Get referenced tree names if available
+          const referencedTrees = metadata.referenced_tree_ids
+            ?.map((treeId: string) => referencedTreesMap.get(treeId))
+            .filter(Boolean) || [];
 
           return {
             id: node.id,
@@ -261,6 +430,12 @@ export async function fetchTreeContext(
             status: node.status,
             position: node.position,
             content: content,
+            links: links,
+            attachments: attachments,
+            provenance: metadata.provenance,
+            confidence: metadata.confidence,
+            referenced_tree_ids: metadata.referenced_tree_ids,
+            referenced_trees: referencedTrees.length > 0 ? referencedTrees : undefined,
             dependencies: dependenciesMap.get(node.id) || [],
           };
         })
@@ -280,7 +455,151 @@ export async function fetchTreeContext(
       totalNodes: blocksWithNodes.reduce((sum, b) => sum + b.nodes.length, 0)
     });
 
-    const result = {
+    // Fetch parent trees (trees that reference this tree)
+    console.log('[fetchTreeContext] Step 7: Fetching parent trees...');
+    const { data: parentNodes, error: parentError } = await supabase
+      .from('tree_nodes')
+      .select(`
+        id,
+        name,
+        tree_id,
+        tree:experiment_trees!tree_id (
+          id,
+          name,
+          description
+        )
+      `)
+      .contains('referenced_tree_ids', [treeId]);
+
+    let parentTrees: Array<{
+      tree_id: string;
+      tree_name: string;
+      tree_description: string | null;
+      node_id: string;
+      node_name: string;
+    }> = [];
+
+    if (!parentError && parentNodes) {
+      parentNodes.forEach((node: any) => {
+        const parentTree = Array.isArray(node.tree) ? node.tree[0] : node.tree;
+        if (parentTree) {
+          parentTrees.push({
+            tree_id: parentTree.id,
+            tree_name: parentTree.name,
+            tree_description: parentTree.description,
+            node_id: node.id,
+            node_name: node.name,
+          });
+        }
+      });
+      console.log('[fetchTreeContext] ✓ Parent trees fetched:', parentTrees.length);
+    } else if (parentError) {
+      console.error('[fetchTreeContext] ERROR fetching parent trees:', parentError.message);
+    }
+
+    // Fetch child trees (trees referenced by nodes in this tree)
+    console.log('[fetchTreeContext] Step 8: Fetching child trees...');
+    const allChildTreeIds = new Set<string>();
+    const childTreeNodeMap = new Map<string, { node_id: string; node_name: string }[]>();
+    
+    nodes?.forEach(node => {
+      const metadata = nodeMetadataMap.get(node.id);
+      if (metadata?.referenced_tree_ids) {
+        metadata.referenced_tree_ids.forEach((treeId: string) => {
+          if (treeId) {
+            allChildTreeIds.add(treeId);
+            if (!childTreeNodeMap.has(treeId)) {
+              childTreeNodeMap.set(treeId, []);
+            }
+            childTreeNodeMap.get(treeId)!.push({
+              node_id: node.id,
+              node_name: node.name,
+            });
+          }
+        });
+      }
+    });
+
+    let childTrees: Array<{
+      tree_id: string;
+      tree_name: string;
+      tree_description: string | null;
+      node_id: string;
+      node_name: string;
+    }> = [];
+
+    if (allChildTreeIds.size > 0) {
+      const { data: childTreesData, error: childTreesError } = await supabase
+        .from('experiment_trees')
+        .select('id, name, description')
+        .in('id', Array.from(allChildTreeIds));
+
+      if (!childTreesError && childTreesData) {
+        childTreesData.forEach((tree: any) => {
+          const referencingNodes = childTreeNodeMap.get(tree.id) || [];
+          referencingNodes.forEach(nodeInfo => {
+            childTrees.push({
+              tree_id: tree.id,
+              tree_name: tree.name,
+              tree_description: tree.description,
+              node_id: nodeInfo.node_id,
+              node_name: nodeInfo.node_name,
+            });
+          });
+        });
+        console.log('[fetchTreeContext] ✓ Child trees fetched:', childTrees.length);
+      } else if (childTreesError) {
+        console.error('[fetchTreeContext] ERROR fetching child trees:', childTreesError.message);
+      }
+    }
+
+    // Build hierarchy info
+    console.log('[fetchTreeContext] Step 9: Building hierarchy info...');
+    const dependencyChains: Array<{ chain: string[]; depth: number }> = [];
+    const visited = new Set<string>();
+
+    const buildChain = (nodeId: string, chain: string[] = [], depth: number = 0): void => {
+      if (visited.has(nodeId) || depth > 10) return; // Prevent infinite loops
+      visited.add(nodeId);
+
+      const node = nodes?.find(n => n.id === nodeId);
+      if (!node) return;
+
+      const newChain = [...chain, node.name];
+      const deps = dependenciesMap.get(nodeId) || [];
+
+      if (deps.length === 0) {
+        // End of chain
+        if (newChain.length > 1) {
+          dependencyChains.push({ chain: newChain, depth });
+        }
+      } else {
+        deps.forEach(dep => {
+          const depNode = nodes?.find(n => n.name === dep.to_node_name);
+          if (depNode) {
+            buildChain(depNode.id, newChain, depth + 1);
+          }
+        });
+      }
+    };
+
+    // Build chains starting from nodes with no dependencies
+    nodes?.forEach(node => {
+      const deps = dependenciesMap.get(node.id) || [];
+      if (deps.length === 0) {
+        buildChain(node.id);
+      }
+    });
+
+    const hierarchyInfo = {
+      block_count: blocksWithNodes.length,
+      node_count: blocksWithNodes.reduce((sum, b) => sum + b.nodes.length, 0),
+      dependency_chains: dependencyChains.slice(0, 10), // Limit to 10 chains to avoid token bloat
+    };
+
+    console.log('[fetchTreeContext] ✓ Hierarchy info built');
+
+    const result: TreeContext = {
       tree: {
         id: tree.id,
         name: tree.name,
@@ -288,6 +607,9 @@ export async function fetchTreeContext(
         status: tree.status,
       },
       blocks: blocksWithNodes,
+      ...(parentTrees.length > 0 && { parent_trees: parentTrees }),
+      ...(childTrees.length > 0 && { child_trees: childTrees }),
+      hierarchy_info: hierarchyInfo,
     };
 
     console.log('[fetchTreeContext] ✓ SUCCESS - Returning tree context');
@@ -313,6 +635,57 @@ export function formatTreeContextForLLM(context: TreeContext): string {
   }
   
   formatted += `Status: ${context.tree.status}\n\n`;
+
+  // Add hierarchy information
+  if (context.hierarchy_info) {
+    formatted += `HIERARCHY:\n`;
+    formatted += `- This tree contains ${context.hierarchy_info.block_count} block(s) with ${context.hierarchy_info.node_count} total node(s)\n`;
+    formatted += `- Blocks are workflow sections that organize nodes into logical groups\n`;
+    formatted += `- Nodes are individual steps/components within blocks\n`;
+    if (context.hierarchy_info.dependency_chains.length > 0) {
+      formatted += `- Dependency chains (showing workflow relationships):\n`;
+      context.hierarchy_info.dependency_chains.forEach((chain, idx) => {
+        formatted += `  ${idx + 1}. ${chain.chain.join(' → ')}\n`;
+      });
+    }
+    formatted += `\n`;
+  }
+
+  // Add nesting hierarchy information
+  if (context.parent_trees && context.parent_trees.length > 0) {
+    formatted += `NESTING HIERARCHY - PARENT TREES (trees that reference this tree):\n`;
+    context.parent_trees.forEach((parent, idx) => {
+      formatted += `  ${idx + 1}. "${parent.tree_name}"`;
+      if (parent.tree_description) {
+        formatted += ` - ${parent.tree_description}`;
+      }
+      formatted += `\n     Referenced by node "${parent.node_name}" in that tree\n`;
+    });
+    formatted += `\n`;
+  }
+
+  if (context.child_trees && context.child_trees.length > 0) {
+    formatted += `NESTING HIERARCHY - CHILD TREES (trees referenced by nodes in this tree):\n`;
+    const uniqueChildTrees = new Map<string, { tree_name: string; tree_description: string | null; nodes: string[] }>();
+    context.child_trees.forEach(child => {
+      if (!uniqueChildTrees.has(child.tree_id)) {
+        uniqueChildTrees.set(child.tree_id, {
+          tree_name: child.tree_name,
+          tree_description: child.tree_description,
+          nodes: [],
+        });
+      }
+      uniqueChildTrees.get(child.tree_id)!.nodes.push(child.node_name);
+    });
+    uniqueChildTrees.forEach((child, idx) => {
+      formatted += `  ${idx + 1}. "${child.tree_name}"`;
+      if (child.tree_description) {
+        formatted += ` - ${child.tree_description}`;
+      }
+      formatted += `\n     Referenced by node(s): ${child.nodes.join(', ')}\n`;
+    });
+    formatted += `\n`;
+  }
   
   formatted += `STRUCTURE:\n`;
   formatted += `This tree contains ${context.blocks.length} block(s) with a total of ${context.blocks.reduce((sum, block) => sum + block.nodes.length, 0)} node(s).\n\n`;
@@ -338,6 +711,63 @@ export function formatTreeContextForLLM(context: TreeContext): string {
           ? node.content.substring(0, 2000) + '... [content truncated]'
           : node.content;
         formatted += `     - Content: ${contentPreview}\n`;
+      }
+      
+      if (node.links.length > 0) {
+        formatted += `     - Links (${node.links.length}):\n`;
+        node.links.forEach(link => {
+          formatted += `       • ${link.name}${link.link_type ? ` (${link.link_type})` : ''}: ${link.url}`;
+          if (link.description) {
+            formatted += ` - ${link.description}`;
+          }
+          formatted += `\n`;
+        });
+      }
+      
+      if (node.attachments.length > 0) {
+        formatted += `     - Attachments (${node.attachments.length}):\n`;
+        node.attachments.forEach(attachment => {
+          formatted += `       • ${attachment.name}${attachment.file_type ? ` (${attachment.file_type})` : ''}`;
+          if (attachment.file_url) {
+            formatted += ` - URL: ${attachment.file_url}`;
+          }
+          if (attachment.description) {
+            formatted += ` - ${attachment.description}`;
+          }
+          formatted += `\n`;
+        });
+      }
+      
+      if (node.provenance) {
+        // Summarize provenance instead of full JSON
+        const prov = node.provenance;
+        let provSummary = 'Source: ';
+        if (prov.source) {
+          provSummary += prov.source;
+        } else if (prov.sources && Array.isArray(prov.sources) && prov.sources.length > 0) {
+          const sourceTypes = [...new Set(prov.sources.map((s: any) => s.source_type || 'unknown'))];
+          provSummary += sourceTypes.join(', ');
+          provSummary += ` (${prov.sources.length} chunk${prov.sources.length > 1 ? 's' : ''})`;
+        } else {
+          provSummary += 'unknown';
+        }
+        if (prov.confidence !== undefined) {
+          provSummary += `, confidence: ${prov.confidence}`;
+        } else if (node.confidence !== null) {
+          provSummary += `, confidence: ${node.confidence}`;
+        }
+        formatted += `     - Provenance: ${provSummary}\n`;
+      } else if (node.confidence !== null) {
+        formatted += `     - Confidence: ${node.confidence}\n`;
+      }
+      
+      if (node.referenced_tree_ids && node.referenced_tree_ids.length > 0) {
+        if (node.referenced_trees && node.referenced_trees.length > 0) {
+          const treeNames = node.referenced_trees.map(t => t.name).join(', ');
+          formatted += `     - References nested tree(s): ${treeNames}\n`;
+        } else {
+          formatted += `     - References ${node.referenced_tree_ids.length} nested tree(s)\n`;
+        }
       }
       
       if (node.dependencies.length > 0) {

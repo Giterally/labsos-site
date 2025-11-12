@@ -142,6 +142,7 @@ async function handleAISearch(
       answerGenerated: !!answer,
       answerError,
       tree_name: treeContext.tree.name,
+      tree_context: treeContext, // Include full tree context for frontend parsing
     });
   } catch (error) {
     console.error('AI search error:', error);
