@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Sparkles, X, Plus, Trash2, Pencil, Check, ExternalLink, FileText, Video, Link as LinkIcon } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
+import { useUser } from "@/lib/user-context"
 import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
 import VideoEmbed from "@/components/VideoEmbed"
@@ -149,6 +150,7 @@ function parseAIResponse(
 }
 
 export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, initialQuery }: AIChatSidebarProps) {
+  const { user, loading: userLoading } = useUser()
   const [chats, setChats] = useState<Chat[]>([])
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [currentMessage, setCurrentMessage] = useState("")
@@ -160,10 +162,14 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   const titleInputRef = useRef<HTMLInputElement>(null)
   const initialQueryHandledRef = useRef(false)
   
-  // Resizable sidebar state
+  // Storage key based on userId and treeId (per-user, per-tree)
+  const storageKey = user ? `ai-chats-${user.id}-${treeId}` : null
+  const sidebarWidthKey = user ? `ai-chat-sidebar-width-${user.id}-${treeId}` : null
+  
+  // Resizable sidebar state - initialize after user loads
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(`ai-chat-sidebar-width-${treeId}`)
+    if (typeof window !== 'undefined' && sidebarWidthKey) {
+      const saved = localStorage.getItem(sidebarWidthKey)
       return saved ? parseInt(saved, 10) : 512 // Default to 512px (lg)
     }
     return 512
@@ -171,14 +177,23 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   const [isDragging, setIsDragging] = useState(false)
   const dragStartX = useRef(0)
   const dragStartWidth = useRef(0)
+  
+  // Update sidebar width when user loads
+  useEffect(() => {
+    if (!userLoading && sidebarWidthKey && typeof window !== 'undefined') {
+      const saved = localStorage.getItem(sidebarWidthKey)
+      if (saved) {
+        setSidebarWidth(parseInt(saved, 10))
+      }
+    }
+  }, [userLoading, sidebarWidthKey])
 
-  // Storage key based on treeId (each tree = one project context)
-  const storageKey = `ai-chats-${treeId}`
-
-  // Save chats to localStorage
+  // Save chats to localStorage (only if user is authenticated)
   const saveChats = useCallback((updatedChats: Chat[]) => {
     setChats(updatedChats)
-    localStorage.setItem(storageKey, JSON.stringify(updatedChats))
+    if (storageKey) {
+      localStorage.setItem(storageKey, JSON.stringify(updatedChats))
+    }
   }, [storageKey])
 
   // Create a new chat
@@ -206,7 +221,9 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
     const updated = chats.filter(c => c.id !== chatId)
     // Clear localStorage if no chats remain
     if (updated.length === 0) {
-      localStorage.removeItem(storageKey)
+      if (storageKey) {
+        localStorage.removeItem(storageKey)
+      }
       setChats([])
       setActiveChatId(null)
     } else {
@@ -391,9 +408,22 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
     }
   }, [activeChatId, chats, treeId, activeChat, saveChats, updateChatTitle, isSending])
 
-  // Load chats from localStorage
+  // Reset chats and ref when user changes (logout/login or user switch)
   useEffect(() => {
-    if (open && !initialQueryHandledRef.current) {
+    if (!userLoading) {
+      if (!user) {
+        // User logged out - clear chats
+        setChats([])
+        setActiveChatId(null)
+      }
+      // Reset ref when user changes (allows reloading chats for new user)
+      initialQueryHandledRef.current = false
+    }
+  }, [userLoading, user?.id]) // Use user?.id to detect user changes
+
+  // Load chats from localStorage (only after user loads)
+  useEffect(() => {
+    if (open && !userLoading && user && storageKey && !initialQueryHandledRef.current) {
       initialQueryHandledRef.current = true
       const saved = localStorage.getItem(storageKey)
       if (saved) {
@@ -441,7 +471,9 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
         } catch (e) {
           console.error('Failed to parse saved chats:', e)
           // Clear invalid data
-          localStorage.removeItem(storageKey)
+          if (storageKey) {
+            localStorage.removeItem(storageKey)
+          }
           if (initialQuery && initialQuery.trim()) {
             const newChat: Chat = {
               id: `chat-${Date.now()}`,
@@ -479,7 +511,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
         }
       }
     }
-  }, [open, storageKey, initialQuery, saveChats, createNewChat, sendMessage])
+  }, [open, userLoading, user, storageKey, initialQuery, saveChats, createNewChat, sendMessage])
 
   // Reset initial query handler when sidebar closes
   useEffect(() => {
@@ -527,7 +559,9 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
 
     const handleMouseUp = () => {
       setIsDragging(false)
-      localStorage.setItem(`ai-chat-sidebar-width-${treeId}`, currentWidth.toString())
+      if (sidebarWidthKey) {
+        localStorage.setItem(sidebarWidthKey, currentWidth.toString())
+      }
     }
 
     document.addEventListener('mousemove', handleMouseMove)
@@ -537,7 +571,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, sidebarWidth, treeId])
+  }, [isDragging, sidebarWidth, sidebarWidthKey])
 
   if (!open) return null
 
