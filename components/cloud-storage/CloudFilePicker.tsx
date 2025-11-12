@@ -178,7 +178,9 @@ export default function CloudFilePicker({
           },
         });
       } else if (provider === 'dropbox') {
-        response = await fetch(`/api/import/dropbox/files?path=${encodeURIComponent(currentFolder)}`, {
+        // Dropbox uses empty string for root, not 'root'
+        const dropboxPath = currentFolder === 'root' ? '' : currentFolder;
+        response = await fetch(`/api/import/dropbox/files?path=${encodeURIComponent(dropboxPath)}`, {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
           },
@@ -188,6 +190,16 @@ export default function CloudFilePicker({
       if (!response?.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         let errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: Failed to load files`;
+        
+        // Check for Google Drive API not enabled error
+        if (errorData.code === 'API_NOT_ENABLED' || errorMessage.includes('API has not been used') || errorMessage.includes('API is not enabled')) {
+          errorMessage = 'The Google Drive API has not been enabled for this project. Please enable it in the Google Cloud Console and wait a few minutes for the changes to propagate.';
+        }
+        
+        // Check for authentication errors
+        if (errorData.code === 'AUTH_ERROR' || errorMessage.includes('connection has expired')) {
+          errorMessage = 'Your Google Drive connection has expired. Please disconnect and reconnect your Google Drive account.';
+        }
         
         // Check for MSA account error
         if (errorData.code === 'MSA_NOT_SUPPORTED' || errorMessage.includes('work or school') || errorMessage.includes('personal Microsoft account')) {
@@ -283,8 +295,8 @@ export default function CloudFilePicker({
                 {sharePointSites.map((site) => (
                   <div
                     key={site.id}
-                    className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent ${
-                      selectedSiteId === site.id ? 'bg-primary/10 border-primary' : ''
+                    className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-muted/50 ${
+                      selectedSiteId === site.id ? 'bg-muted/50 border-muted' : ''
                     }`}
                     onClick={() => {
                       setSelectedSiteId(site.id);
@@ -323,10 +335,19 @@ export default function CloudFilePicker({
               return (
               <div
                 key={uniqueKey}
-                className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent ${
-                  isFileSelected(file) ? 'bg-primary/10 border-primary' : ''
+                className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-muted/50 ${
+                  isFileSelected(file) ? 'bg-muted/50 border-muted' : ''
                 }`}
-                onClick={() => handleFileSelect(file)}
+                onClick={() => {
+                  if (file.isFolder) {
+                    // Navigate into folder
+                    const folderId = provider === 'dropbox' ? file.path! : file.id;
+                    handleFolderClick(folderId);
+                  } else {
+                    // Select file
+                    handleFileSelect(file);
+                  }
+                }}
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   {file.isFolder ? (

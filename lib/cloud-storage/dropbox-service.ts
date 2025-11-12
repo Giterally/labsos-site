@@ -309,10 +309,23 @@ export async function listFiles(
           provider: 'dropbox',
           path: file.path_lower || file.path_display,
           modifiedTime: file.client_modified || file.server_modified,
+          isFolder: false,
           metadata: {
             rev: file.rev,
             contentHash: file.content_hash,
           },
+        });
+      } else if (entry['.tag'] === 'folder') {
+        const folder = entry as any;
+        files.push({
+          id: folder.id || folder.path_lower || folder.path_display,
+          name: folder.name,
+          size: 0,
+          mimeType: 'application/vnd.dropbox.folder',
+          provider: 'dropbox',
+          path: folder.path_lower || folder.path_display,
+          isFolder: true,
+          metadata: {},
         });
       }
     }

@@ -168,19 +168,38 @@ export async function POST(request: NextRequest) {
               console.error('Preprocessing error:', error);
             });
         } else {
-          // Use Inngest in production
-          await sendEvent('ingestion/preprocess-file', {
-            sourceId: source.id,
-            projectId: resolvedProjectId,
-            sourceType,
-            storagePath,
-            metadata: {
-              fileName: fileMetadata.name,
-              fileSize: buffer.length,
-              mimeType,
-              provider: 'googledrive',
-            },
-          });
+          // Use Inngest in production, with fallback to direct preprocessing
+          try {
+            await sendEvent('ingestion/preprocess-file', {
+              sourceId: source.id,
+              projectId: resolvedProjectId,
+              sourceType,
+              storagePath,
+              metadata: {
+                fileName: fileMetadata.name,
+                fileSize: buffer.length,
+                mimeType,
+                provider: 'googledrive',
+              },
+            });
+            console.log('[Google Drive Import API] Inngest event sent successfully for source:', source.id);
+          } catch (eventError) {
+            console.error('[Google Drive Import API] Failed to send Inngest event:', eventError);
+            console.log('[Google Drive Import API] Inngest failed, falling back to preprocessing pipeline');
+            
+            // Fallback to preprocessing if Inngest fails
+            try {
+              const { preprocessFile } = await import('@/lib/processing/preprocessing-pipeline');
+              preprocessFile(source.id, resolvedProjectId)
+                .catch((preprocessingError) => {
+                  console.error('[Google Drive Import API] Fallback preprocessing failed:', preprocessingError);
+                });
+              console.log('[Google Drive Import API] Fallback preprocessing started');
+            } catch (preprocessingError) {
+              console.error('[Google Drive Import API] Failed to start fallback preprocessing:', preprocessingError);
+              // Don't throw - we still want to mark the file as imported
+            }
+          }
         }
 
         results.push({

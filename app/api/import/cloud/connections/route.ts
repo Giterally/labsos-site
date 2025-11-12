@@ -13,10 +13,13 @@ export async function GET(request: NextRequest) {
 
     const providers = await getConnectedProviders(user.id);
 
+    // SharePoint uses the same OAuth tokens as OneDrive
+    const isOneDriveConnected = providers.includes('onedrive');
+    
     const connections = {
       googledrive: providers.includes('googledrive'),
-      onedrive: providers.includes('onedrive'),
-      sharepoint: providers.includes('sharepoint'),
+      onedrive: isOneDriveConnected,
+      sharepoint: isOneDriveConnected, // SharePoint uses OneDrive tokens
       dropbox: providers.includes('dropbox'),
     };
 

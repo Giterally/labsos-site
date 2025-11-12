@@ -173,34 +173,72 @@ export async function listFiles(
   folderId: string = 'root',
   pageToken?: string
 ): Promise<{ files: CloudFile[]; nextPageToken?: string }> {
-  const drive = await getDriveClient(userId);
+  try {
+    const drive = await getDriveClient(userId);
 
-  const response = await drive.files.list({
-    q: folderId === 'root'
-      ? "trashed=false and mimeType!='application/vnd.google-apps.folder'"
-      : `'${folderId}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`,
-    fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, webViewLink)',
-    pageSize: 100,
-    pageToken,
-  });
+    const response = await drive.files.list({
+      q: folderId === 'root'
+        ? "trashed=false"
+        : `'${folderId}' in parents and trashed=false`,
+      fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, webViewLink)',
+      pageSize: 100,
+      pageToken,
+    });
 
-  const files: CloudFile[] = (response.data.files || []).map((file) => ({
-    id: file.id!,
-    name: file.name!,
-    size: parseInt(file.size || '0', 10),
-    mimeType: file.mimeType!,
-    provider: 'googledrive',
-    webViewLink: file.webViewLink || undefined,
-    modifiedTime: file.modifiedTime || undefined,
-    metadata: {
-      modifiedTime: file.modifiedTime,
-    },
-  }));
+    const files: CloudFile[] = (response.data.files || []).map((file) => ({
+      id: file.id!,
+      name: file.name!,
+      size: parseInt(file.size || '0', 10),
+      mimeType: file.mimeType!,
+      provider: 'googledrive',
+      webViewLink: file.webViewLink || undefined,
+      modifiedTime: file.modifiedTime || undefined,
+      isFolder: file.mimeType === 'application/vnd.google-apps.folder',
+      metadata: {
+        modifiedTime: file.modifiedTime,
+      },
+    }));
 
-  return {
-    files,
-    nextPageToken: response.data.nextPageToken || undefined,
-  };
+    return {
+      files,
+      nextPageToken: response.data.nextPageToken || undefined,
+    };
+  } catch (error: any) {
+    console.error('[Google Drive Service] Error listing files:', error);
+    console.error('[Google Drive Service] Error details:', {
+      message: error.message,
+      code: error.code,
+      status: error.status,
+      statusCode: error.statusCode,
+      response: error.response?.data,
+      errors: error.errors,
+    });
+    
+    // Extract error details from Google API error
+    // Google API errors can be in different formats:
+    // 1. error.message (string)
+    // 2. error.response.data.error.message (nested)
+    // 3. error.errors[0].message (array)
+    let errorMessage = error.message || error.toString();
+    let errorCode = error.code || error.status || error.statusCode;
+    
+    // Check nested error structures
+    if (error.response?.data?.error?.message) {
+      errorMessage = error.response.data.error.message;
+      errorCode = error.response.data.error.code || errorCode;
+    } else if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
+      errorMessage = error.errors[0].message || errorMessage;
+      errorCode = error.errors[0].domain || errorCode;
+    }
+    
+    // Re-throw with more context
+    const enhancedError = new Error(errorMessage);
+    (enhancedError as any).code = errorCode;
+    (enhancedError as any).body = errorMessage;
+    (enhancedError as any).statusCode = errorCode;
+    (enhancedError as any).response = error.response;
+    throw enhancedError;
+  }
 }
 
 /**

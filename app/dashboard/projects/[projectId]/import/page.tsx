@@ -318,7 +318,7 @@ export default function ImportPage() {
             return (
               <div key={block.id} className="border rounded-lg overflow-hidden">
                 <div
-                  className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-2 p-2 cursor-pointer"
                   onClick={(e) => {
                     e.stopPropagation();
                     const newExpanded = new Set(expandedNestedBlocks);
@@ -330,7 +330,7 @@ export default function ImportPage() {
                     setExpandedNestedBlocks(newExpanded);
                   }}
                 >
-                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-600 rounded-full text-xs font-medium">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium">
                     {blockIndex + 1}
                   </div>
                   <h4 className="text-sm font-medium flex-1">{block.name}</h4>
@@ -354,61 +354,61 @@ export default function ImportPage() {
                           </CardHeader>
                           <CardContent onClick={(e) => e.stopPropagation()}>
                             <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
-                              <TabsList className="grid w-full grid-cols-4 h-8" onClick={(e) => e.stopPropagation()}>
-                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                              <TabsList className="grid w-full grid-cols-4 h-8 !bg-gray-100 dark:!bg-transparent" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <FileText className="h-3 w-3" />
                                   Content
                                 </TabsTrigger>
-                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Link className="h-3 w-3" />
                                   Links
                                 </TabsTrigger>
-                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Paperclip className="h-3 w-3" />
                                   Attachments
                                 </TabsTrigger>
-                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Settings className="h-3 w-3" />
                                   Metadata
                                 </TabsTrigger>
                               </TabsList>
                               
-                              <TabsContent value="content" className="mt-3">
+                              <TabsContent value="content" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
                                   {contentText ? (
-                                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                    <p className="text-xs !text-foreground whitespace-pre-wrap">
                                       {contentText}
                                     </p>
                                   ) : (
-                                    <p className="text-xs text-muted-foreground italic">
+                                    <p className="text-xs !text-foreground italic">
                                       No content available
                                     </p>
                                   )}
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="links" className="mt-3">
+                              <TabsContent value="links" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
-                                  <p className="text-xs text-muted-foreground">
+                                  <p className="text-xs !text-foreground">
                                     Links and references will be displayed here
                                   </p>
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="attachments" className="mt-3">
+                              <TabsContent value="attachments" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
-                                  <p className="text-xs text-muted-foreground">
+                                  <p className="text-xs !text-foreground">
                                     File attachments and resources will be displayed here
                                   </p>
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="metadata" className="mt-3">
+                              <TabsContent value="metadata" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
                                   <div className="grid grid-cols-2 gap-2 text-xs">
                                     <div>
-                                      <span className="font-medium">Type:</span>{' '}
-                                      {node.node_type || 'uncategorized'}
+                                      <span className="font-medium !text-foreground">Type:</span>{' '}
+                                      <span className="!text-foreground">{node.node_type || 'uncategorized'}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -447,7 +447,7 @@ export default function ImportPage() {
             return (
               <div key={block.id || blockIndex} className="border rounded-lg overflow-hidden">
                 <div
-                  className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-2 p-2 cursor-pointer"
                   onClick={(e) => {
                     e.stopPropagation();
                     const newExpanded = new Set(expandedNestedBlocks);
@@ -459,7 +459,7 @@ export default function ImportPage() {
                     setExpandedNestedBlocks(newExpanded);
                   }}
                 >
-                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full text-xs font-medium">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium">
                     {blockIndex + 1}
                   </div>
                   <h4 className="text-sm font-medium flex-1 text-gray-900 dark:text-gray-100">{block.name}</h4>
@@ -484,56 +484,56 @@ export default function ImportPage() {
                           </CardHeader>
                           <CardContent onClick={(e) => e.stopPropagation()}>
                             <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
-                              <TabsList className="grid w-full grid-cols-4 h-8" onClick={(e) => e.stopPropagation()}>
-                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                              <TabsList className="grid w-full grid-cols-4 h-8 !bg-gray-100 dark:!bg-transparent" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <FileText className="h-3 w-3" />
                                   Content
                                 </TabsTrigger>
-                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Link className="h-3 w-3" />
                                   Links
                                 </TabsTrigger>
-                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Paperclip className="h-3 w-3" />
                                   Attachments
                                 </TabsTrigger>
-                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Settings className="h-3 w-3" />
                                   Metadata
                                 </TabsTrigger>
                               </TabsList>
                               
-                              <TabsContent value="content" className="mt-3">
+                              <TabsContent value="content" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
                                   {contentText ? (
-                                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                    <p className="text-xs !text-foreground whitespace-pre-wrap">
                                       {contentText}
                                     </p>
                                   ) : (
-                                    <p className="text-xs text-muted-foreground italic">
+                                    <p className="text-xs !text-foreground italic">
                                       No content available
                                     </p>
                                   )}
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="links" className="mt-3">
+                              <TabsContent value="links" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
-                                  <p className="text-xs text-muted-foreground">
+                                  <p className="text-xs !text-foreground">
                                     Links and references will be displayed here
                                   </p>
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="attachments" className="mt-3">
+                              <TabsContent value="attachments" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
-                                  <p className="text-xs text-muted-foreground">
+                                  <p className="text-xs !text-foreground">
                                     File attachments and resources will be displayed here
                                   </p>
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="metadata" className="mt-3">
+                              <TabsContent value="metadata" className="mt-3 bg-gray-100 dark:bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
                                   <div className="grid grid-cols-2 gap-2 text-xs">
                                     <div>
@@ -599,7 +599,7 @@ export default function ImportPage() {
             return (
               <div key={blockType} className="border rounded-lg overflow-hidden">
                 <div
-                  className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-2 p-2 cursor-pointer"
                   onClick={(e) => {
                     e.stopPropagation();
                     const newExpanded = new Set(expandedNestedBlocks);
@@ -611,7 +611,7 @@ export default function ImportPage() {
                     setExpandedNestedBlocks(newExpanded);
                   }}
                 >
-                  <div className="flex items-center justify-center w-6 h-6 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full text-xs font-medium">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium">
                     {blockIndex + 1}
                   </div>
                   <h4 className="text-sm font-medium flex-1">{formatBlockName(blockType)} Block</h4>
@@ -636,56 +636,56 @@ export default function ImportPage() {
                           </CardHeader>
                           <CardContent onClick={(e) => e.stopPropagation()}>
                             <Tabs defaultValue="content" className="w-full" onClick={(e) => e.stopPropagation()}>
-                              <TabsList className="grid w-full grid-cols-4 h-8" onClick={(e) => e.stopPropagation()}>
-                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                              <TabsList className="grid w-full grid-cols-4 h-8 !bg-gray-100 dark:!bg-transparent" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="content" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <FileText className="h-3 w-3" />
                                   Content
                                 </TabsTrigger>
-                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="links" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Link className="h-3 w-3" />
                                   Links
                                 </TabsTrigger>
-                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="attachments" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Paperclip className="h-3 w-3" />
                                   Attachments
                                 </TabsTrigger>
-                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2" onClick={(e) => e.stopPropagation()}>
+                                <TabsTrigger value="metadata" className="flex items-center gap-1 text-xs px-2 !text-foreground" onClick={(e) => e.stopPropagation()}>
                                   <Settings className="h-3 w-3" />
                                   Metadata
                                 </TabsTrigger>
                               </TabsList>
                               
-                              <TabsContent value="content" className="mt-3">
+                              <TabsContent value="content" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
                                   {contentText ? (
-                                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                    <p className="text-xs !text-foreground whitespace-pre-wrap">
                                       {contentText}
                                     </p>
                                   ) : (
-                                    <p className="text-xs text-muted-foreground italic">
+                                    <p className="text-xs !text-foreground italic">
                                       No content available
                                     </p>
                                   )}
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="links" className="mt-3">
+                              <TabsContent value="links" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
-                                  <p className="text-xs text-muted-foreground">
+                                  <p className="text-xs !text-foreground">
                                     Links and references will be displayed here
                                   </p>
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="attachments" className="mt-3">
+                              <TabsContent value="attachments" className="mt-3 !bg-gray-100 dark:!bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
-                                  <p className="text-xs text-muted-foreground">
+                                  <p className="text-xs !text-foreground">
                                     File attachments and resources will be displayed here
                                   </p>
                                 </div>
                               </TabsContent>
                               
-                              <TabsContent value="metadata" className="mt-3">
+                              <TabsContent value="metadata" className="mt-3 bg-gray-100 dark:bg-transparent p-3 rounded-md">
                                 <div className="space-y-2">
                                   <div className="grid grid-cols-2 gap-2 text-xs">
                                     <div>
@@ -1366,6 +1366,58 @@ export default function ImportPage() {
     } catch (error) {
       console.error('Clear all sources error:', error);
       toast.error(`Failed to clear all sources: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const handleClearAllUploadedFiles = async () => {
+    if (sources.length === 0) {
+      toast.error('No files to clear');
+      return;
+    }
+
+    const confirmed = confirm(
+      'Are you sure you want to clear all uploaded files? This will delete all uploaded files but will keep your proposals. This action cannot be undone.'
+    );
+    
+    if (!confirmed) return;
+    
+    setClearing(true);
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Not authenticated');
+      }
+
+      // Get all source IDs
+      const sourceIds = sources.map(source => source.id);
+
+      // Delete only the sources (not proposals)
+      const response = await fetch(`/api/projects/${projectId}/sources`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          sourceIds: sourceIds,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast.success(`Successfully cleared ${result.deletedCount || sourceIds.length} uploaded file(s)`);
+        setSelectedSources(new Set());
+        await fetchData();
+      } else {
+        const errorData = await response.json();
+        toast.error(errorData.error || 'Failed to clear uploaded files');
+      }
+    } catch (error) {
+      console.error('Clear uploaded files error:', error);
+      toast.error(`Failed to clear uploaded files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setClearing(false);
     }
@@ -2584,54 +2636,6 @@ export default function ImportPage() {
                   </CardContent>
                 </Card>
               </div>
-
-              {/* Clear All Section */}
-              <Card className="border-red-200 dark:border-red-800">
-                <CardHeader>
-                  <CardTitle className="text-base text-red-700 dark:text-red-400 flex items-center gap-2">
-                    <RotateCcw className="h-4 w-4" />
-                    Start Fresh
-                  </CardTitle>
-                  <CardDescription>
-                    Clear all imports and start over. This will delete all uploaded files, processed data, and generated nodes.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                      <h4 className="font-medium text-red-800 dark:text-red-300 mb-2">⚠️ Warning</h4>
-                      <p className="text-sm text-red-700 dark:text-red-300">
-                        This action will permanently delete:
-                      </p>
-                      <ul className="text-sm text-red-700 dark:text-red-300 mt-2 ml-4 list-disc">
-                        <li>All uploaded files and their storage</li>
-                        <li>All processed chunks and embeddings</li>
-                        <li>All AI-generated proposed nodes</li>
-                        <li>All experiment trees created from these sources</li>
-                      </ul>
-                    </div>
-                    
-                    <Button
-                      variant="destructive"
-                      onClick={handleClearAll}
-                      disabled={clearing || sources.length === 0}
-                      className="w-full"
-                    >
-                      {clearing ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                          Clearing All Data...
-                        </>
-                      ) : (
-                        <>
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Clear All Imports ({sources.length} sources)
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
             </CardContent>
           </Card>
         </TabsContent>
@@ -2752,14 +2756,29 @@ export default function ImportPage() {
               ) : (
                 <>
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-muted-foreground">
-                      {sources.length} file(s) uploaded
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm text-muted-foreground">
+                        {sources.length} file(s) uploaded
+                      </p>
+                      <Button
+                        onClick={handleClearAllUploadedFiles}
+                        disabled={clearing || sources.length === 0}
+                        variant="outline"
+                        className="border-red-300 text-red-600 hover:bg-red-50 hover:text-black dark:hover:text-red-600"
+                      >
+                        {clearing ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 mr-2" />
+                        )}
+                        Clear All Uploaded Files
+                      </Button>
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         onClick={handleClearAllProposals}
                         variant="outline"
-                        className="border-red-300 text-red-600 hover:bg-red-50"
+                        className="border-red-300 text-red-600 hover:bg-red-50 hover:text-black dark:hover:text-red-600"
                       >
                         <XCircle className="h-4 w-4 mr-2" />
                         Clear All Proposals
@@ -2770,7 +2789,7 @@ export default function ImportPage() {
                           <Button
                             onClick={handleStopGeneration}
                             variant="outline"
-                            className="border-red-300 text-red-600 hover:bg-red-50"
+                            className="border-red-300 text-red-600 hover:bg-red-50 hover:text-black dark:hover:text-red-600"
                           >
                             <Square className="h-4 w-4 mr-2 fill-current" />
                             Stop Generation
@@ -2807,7 +2826,7 @@ export default function ImportPage() {
                           <Button
                             onClick={handleStopGeneration}
                             variant="outline"
-                            className="border-red-300 text-red-600 hover:bg-red-50"
+                            className="border-red-300 text-red-600 hover:bg-red-50 hover:text-black dark:hover:text-red-600"
                           >
                             <Square className="h-4 w-4 mr-2 fill-current" />
                             Stop Generation
@@ -2830,18 +2849,6 @@ export default function ImportPage() {
                           </Button>
                         )
                       )}
-                      <Button
-                        onClick={handleClearAll}
-                        disabled={clearing || sources.length === 0}
-                        variant="outline"
-                      >
-                        {clearing ? (
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4 mr-2" />
-                        )}
-                        Clear All
-                      </Button>
                     </div>
                   </div>
                   
@@ -2962,6 +2969,14 @@ export default function ImportPage() {
                       </p>
                     </div>
                     <div className="flex gap-2">
+                      <Button
+                        onClick={handleClearAllProposals}
+                        variant="outline"
+                        className="border-red-300 text-red-600 hover:bg-red-50 hover:text-black dark:hover:text-red-600"
+                      >
+                        <XCircle className="h-4 w-4 mr-2" />
+                        Clear All Proposals
+                      </Button>
                       <Button
                         onClick={() => {
                           const allSelected = selectedProposals.size === proposals.length;
@@ -3188,13 +3203,13 @@ export default function ImportPage() {
                                               onChange={() => {}} // Handled by parent onClick
                                               className="mt-1"
                                             />
-                                            <div className="flex items-center justify-center w-6 h-6 dark:bg-gray-700 dark:text-white rounded-full text-xs font-medium">
+                                            <div className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium">
                                               {nodeIndex + 1}
                                             </div>
                                           </div>
                                           <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-2">
-                                              <h4 className="font-medium text-sm dark:text-white">{node.title}</h4>
+                                              <h4 className="font-medium text-sm">{node.title}</h4>
                                               {/* Nested Tree Dropdown Link */}
                                               {(node.isNestedTree || node.metadata?.isNestedTree) && (
                                                 <button

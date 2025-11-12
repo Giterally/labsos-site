@@ -1269,7 +1269,7 @@ export default function SimpleProjectPage() {
                           <Button
                             variant="outline"
                             onClick={() => router.push(`/dashboard/projects/${projectId}/import`)}
-                            className="flex items-center space-x-2"
+                            className="flex items-center space-x-2 hover:!text-foreground"
                           >
                             <UploadIcon className="h-4 w-4" />
                             <span>Import Data</span>

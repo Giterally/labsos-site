@@ -43,17 +43,25 @@ export async function POST(request: NextRequest) {
     const resolvedProjectId = access.projectId;
     const provider = siteId ? 'sharepoint' : 'onedrive';
 
+    // Validate siteId is provided for SharePoint files
+    // Note: siteId should be in file metadata, but we also accept it in the request body
+    // If siteId is in body but not in file metadata, we'll use the body siteId
+
     const results = [];
     const errors = [];
 
     // Process each file
     for (const fileId of fileIds) {
       try {
+        // For SharePoint, ensure siteId is available
+        // It should be in the request body, but we can also extract it from file metadata if needed
+        const fileSiteId = siteId; // Use siteId from request body (set from file metadata in frontend)
+        
         // Get file metadata
-        const fileMetadata = await getFileMetadata(user.id, fileId, siteId);
+        const fileMetadata = await getFileMetadata(user.id, fileId, fileSiteId);
         
         // Download file
-        const { buffer, mimeType, fileName } = await downloadFile(user.id, fileId, siteId);
+        const { buffer, mimeType, fileName } = await downloadFile(user.id, fileId, fileSiteId);
 
         // Validate file size (100MB limit)
         const maxSize = 100 * 1024 * 1024;

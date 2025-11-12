@@ -196,7 +196,7 @@ export default function ProviderConnector({ onConnectionChange }: ProviderConnec
                   variant="outline"
                   onClick={() => handleDisconnect(provider.id)}
                   disabled={isLoading}
-                  className="w-full"
+                  className="w-full hover:text-gray-500 dark:hover:text-foreground"
                 >
                   {isLoading ? (
                     <>
