@@ -13,7 +13,7 @@ export async function parseText(
   try {
     // Download text file from storage
     const { data: textData, error: downloadError } = await supabaseServer.storage
-      .from('project-uploads')
+      .from('user-uploads')
       .download(storagePath);
 
     if (downloadError) {

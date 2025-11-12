@@ -411,7 +411,7 @@ async function checkCancellation(jobId: string): Promise<boolean> {
  * Generate proposals using the new fast import pipeline
  * Single LLM call per document, no embeddings/clustering
  */
-export async function generateProposals(projectId: string, jobId?: string) {
+export async function generateProposals(userId: string, projectId: string, selectedSourceIds?: string[], jobId?: string) {
   const trackingJobId = jobId || `proposals_${projectId}_${Date.now()}`;
   
   // Initialize progress
@@ -423,7 +423,9 @@ export async function generateProposals(projectId: string, jobId?: string) {
   });
   
   console.log('[FAST_IMPORT] ===== Starting proposal generation =====');
+  console.log('[FAST_IMPORT] User ID:', userId);
   console.log('[FAST_IMPORT] Project ID:', projectId);
+  console.log('[FAST_IMPORT] Selected Source IDs:', selectedSourceIds);
   console.log('[FAST_IMPORT] Job ID:', trackingJobId);
   
     // Check for cancellation immediately after initialization
@@ -482,11 +484,20 @@ export async function generateProposals(projectId: string, jobId?: string) {
     });
 
     console.log('[FAST_IMPORT] Querying structured documents...');
-    const { data: structuredDocs, error: docsError } = await supabaseServer
+    // Query structured documents by user_id (user-scoped)
+    let query = supabaseServer
       .from('structured_documents')
       .select('*')
-      .eq('project_id', projectId)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
+    
+    // Optionally filter by selected source IDs
+    if (selectedSourceIds && selectedSourceIds.length > 0) {
+      query = query.in('source_id', selectedSourceIds);
+      console.log(`[FAST_IMPORT] Filtering by ${selectedSourceIds.length} selected source(s)`);
+    }
+    
+    const { data: structuredDocs, error: docsError } = await query;
 
     if (docsError) {
       console.error('[FAST_IMPORT] Database error loading documents:', docsError);
@@ -929,6 +940,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
         const nodeSummary = generateNodeSummary(node.content.text, node.title);
         
         const synthesizedNode = {
+          node_id: node.nodeId || crypto.randomUUID(), // Add required node_id field
           title: node.title,
           short_summary: nodeSummary,
           content: {
@@ -978,7 +990,7 @@ export async function generateProposals(projectId: string, jobId?: string) {
           },
         };
 
-        const nodeId = await storeSynthesizedNode(projectId, synthesizedNode, 'proposed');
+        const nodeId = await storeSynthesizedNode(userId, projectId, synthesizedNode, 'proposed');
         storedNodeIds.push(nodeId);
 
         // Update progress
@@ -992,6 +1004,13 @@ export async function generateProposals(projectId: string, jobId?: string) {
         }
       } catch (error: any) {
         console.error(`[FAST_IMPORT] Failed to store node ${node.nodeId}:`, error);
+        console.error(`[FAST_IMPORT] Error details:`, {
+          message: error.message,
+          stack: error.stack?.split('\n').slice(0, 5).join('\n'),
+          userId,
+          projectId,
+          nodeTitle: node.title,
+        });
         // Continue with other nodes
       }
     }

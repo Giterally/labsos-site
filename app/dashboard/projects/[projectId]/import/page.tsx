@@ -101,6 +101,7 @@ export default function ImportPage() {
   
   // Import management state
   const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
+  const [selectedSourcesForProposals, setSelectedSourcesForProposals] = useState<Set<string>>(new Set()); // Files selected for proposal generation
   const [clearing, setClearing] = useState(false);
   const [generatingProposals, setGeneratingProposals] = useState(false);
   const [proposals, setProposals] = useState<any[]>([]);
@@ -727,8 +728,8 @@ export default function ImportPage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-      // Fetch sources
-      const sourcesResponse = await fetch(`/api/import/upload?projectId=${projectId}`, { 
+      // Fetch sources (user-scoped, no projectId needed)
+      const sourcesResponse = await fetch(`/api/import/upload`, { 
         headers,
         signal: controller.signal
       });
@@ -1178,6 +1179,21 @@ export default function ImportPage() {
   const handleFileUpload = async () => {
     if (selectedFiles.length === 0) return;
 
+    // Check file limit before attempting upload
+    if (sources.length >= 10) {
+      toast.error('You have reached the maximum limit of 10 uploaded files. Please delete some files before uploading new ones.');
+      return;
+    }
+
+    // Check if adding these files would exceed the limit
+    const filesToAdd = selectedFiles.length;
+    const totalAfterUpload = sources.length + filesToAdd;
+    if (totalAfterUpload > 10) {
+      const allowed = 10 - sources.length;
+      toast.error(`You can only upload ${allowed} more file(s). You selected ${filesToAdd} file(s). Please delete some files or reduce your selection.`);
+      return;
+    }
+
     setUploading(true);
     try {
       // Get session for authentication
@@ -1186,11 +1202,11 @@ export default function ImportPage() {
         throw new Error('Not authenticated');
       }
 
-      // Upload files sequentially to avoid overwhelming the server
+      // Upload files sequentially to avoid overwhelming the server (files are user-scoped, no projectId needed)
       const uploadPromises = selectedFiles.map(async (file, index) => {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('projectId', projectId);
+        // Note: projectId removed - files are user-scoped, shared across all projects
 
         const response = await fetch('/api/import/upload', {
           method: 'POST',
@@ -1203,6 +1219,12 @@ export default function ImportPage() {
         const result = await response.json();
         
         if (!response.ok) {
+          // Show specific error message for file limit
+          if (result.error?.includes('maximum limit')) {
+            toast.error(result.error);
+          } else {
+            toast.error(`Failed to upload ${file.name}: ${result.error || 'Unknown error'}`);
+          }
           throw new Error(`Failed to upload ${file.name}: ${result.error}`);
         }
         
@@ -1214,7 +1236,9 @@ export default function ImportPage() {
       
       // Show success message using the notification system
       const successCount = results.filter(r => r.success).length;
-      toast.success(`${successCount} file(s) uploaded successfully! Processing started.`);
+      if (successCount > 0) {
+        toast.success(`${successCount} file(s) uploaded successfully! Processing started.`);
+      }
       
       // Clear selected files and refresh data
       setSelectedFiles([]);
@@ -1223,7 +1247,7 @@ export default function ImportPage() {
       
     } catch (error) {
       console.error('Upload error:', error);
-      alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Error messages are already shown via toast in the upload loop
     } finally {
       setUploading(false);
     }
@@ -1231,6 +1255,12 @@ export default function ImportPage() {
 
   const handleGitHubImport = async () => {
     if (!githubUrl) return;
+
+    // Check file limit before attempting import
+    if (sources.length >= 10) {
+      toast.error('You have reached the maximum limit of 10 uploaded files. Please delete some files before importing new ones.');
+      return;
+    }
 
     setGithubImporting(true);
     try {
@@ -1248,7 +1278,7 @@ export default function ImportPage() {
         },
         body: JSON.stringify({
           repoUrl: githubUrl,
-          projectId,
+          // Note: projectId removed - files are user-scoped, shared across all projects
           token: githubToken || undefined,
         }),
       });
@@ -1256,15 +1286,22 @@ export default function ImportPage() {
       const result = await response.json();
 
       if (response.ok) {
+        toast.success('GitHub repository imported successfully!');
         setGithubUrl('');
         setGithubToken('');
         fetchData(); // Refresh data
+        setTimeout(fetchData, 2000);
       } else {
-        alert(`Import failed: ${result.error}`);
+        // Show specific error message for file limit
+        if (result.error?.includes('maximum limit')) {
+          toast.error(result.error);
+        } else {
+          toast.error(result.error || 'Import failed');
+        }
       }
     } catch (error) {
       console.error('GitHub import error:', error);
-      alert('Import failed');
+      toast.error(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setGithubImporting(false);
     }
@@ -1279,6 +1316,26 @@ export default function ImportPage() {
       newSelected.delete(sourceId);
     }
     setSelectedSources(newSelected);
+  };
+
+  // Handle selection for proposal generation
+  const handleSelectSourceForProposals = (sourceId: string, checked: boolean) => {
+    const newSelected = new Set(selectedSourcesForProposals);
+    if (checked) {
+      newSelected.add(sourceId);
+    } else {
+      newSelected.delete(sourceId);
+    }
+    setSelectedSourcesForProposals(newSelected);
+  };
+
+  const handleSelectAllForProposals = (selectAll: boolean) => {
+    const completedSources = sources.filter(s => s.status === 'completed');
+    if (selectAll) {
+      setSelectedSourcesForProposals(new Set(completedSources.map(s => s.id)));
+    } else {
+      setSelectedSourcesForProposals(new Set());
+    }
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -1436,6 +1493,19 @@ export default function ImportPage() {
   };
 
   const generateProposalsInternal = async () => {
+    // Get selected source IDs for proposal generation (or use all completed files if none selected)
+    const completedSources = sources.filter(s => s.status === 'completed');
+    const sourceIdsToUse = selectedSourcesForProposals.size > 0 
+      ? Array.from(selectedSourcesForProposals).filter(id => 
+          completedSources.some(s => s.id === id)
+        )
+      : completedSources.map(s => s.id);
+
+    if (sourceIdsToUse.length === 0) {
+      toast.error('Please select at least one completed file to generate proposals from, or ensure you have completed files.');
+      return;
+    }
+
     setGeneratingProposals(true);
     setGenerationProgress(0);
     setGenerationStatus('Initializing...');
@@ -1449,13 +1519,16 @@ export default function ImportPage() {
       // Start generation without deleting existing proposals; backend handles safe regeneration
       setGenerationStatus('Starting AI proposal generation...');
 
-      // Then generate new proposals (starts async process)
+      // Generate new proposals with selected source IDs (starts async process)
       const response = await fetch(`/api/projects/${projectId}/generate-proposals`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          selectedSourceIds: sourceIdsToUse,
+        }),
       });
 
       if (!response.ok) {
@@ -1790,7 +1863,7 @@ export default function ImportPage() {
   }, [projectId, supabase, router, setTreeBuildProgress, setTreeBuildStatus, setBuildingTree, setTreeBuildJobId, clearStoredTreeJobId, fetchData]);
 
   const handleDeleteSource = async (sourceId: string) => {
-    if (!confirm('Are you sure you want to delete this file? This action cannot be undone.')) {
+    if (!confirm('Are you sure you want to delete this file? This will delete it from all your projects. This action cannot be undone.')) {
       return;
     }
 
@@ -1800,7 +1873,7 @@ export default function ImportPage() {
         throw new Error('Not authenticated');
       }
 
-      const response = await fetch(`/api/import/upload?projectId=${projectId}&sourceId=${sourceId}`, {
+      const response = await fetch(`/api/import/upload?sourceId=${sourceId}`, { // Files are user-scoped, no projectId needed
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -2253,6 +2326,10 @@ export default function ImportPage() {
                   Maximum file size: 100MB per file
                   <br />
                   You can select multiple files at once for batch upload
+                  <br />
+                  <span className="font-semibold text-blue-600 dark:text-blue-500">
+                    File limit: {sources.length}/10 files uploaded
+                  </span>
                 </AlertDescription>
               </Alert>
             </CardContent>
@@ -2382,6 +2459,21 @@ export default function ImportPage() {
                       onClick={async () => {
                         if (selectedCloudFiles.length === 0) return;
                         
+                        // Check file limit before attempting import
+                        if (sources.length >= 10) {
+                          toast.error('You have reached the maximum limit of 10 uploaded files. Please delete some files before importing new ones.');
+                          return;
+                        }
+
+                        // Check if adding these files would exceed the limit
+                        const filesToAdd = selectedCloudFiles.length;
+                        const totalAfterImport = sources.length + filesToAdd;
+                        if (totalAfterImport > 10) {
+                          const allowed = 10 - sources.length;
+                          toast.error(`You can only import ${allowed} more file(s). You selected ${filesToAdd} file(s). Please delete some files or reduce your selection.`);
+                          return;
+                        }
+                        
                         setCloudImporting(true);
                         try {
                           const { data: { session } } = await supabase.auth.getSession();
@@ -2410,8 +2502,8 @@ export default function ImportPage() {
                             : undefined;
 
                           const body = selectedCloudProvider === 'dropbox'
-                            ? { filePaths, projectId }
-                            : { fileIds, projectId, ...(siteId ? { siteId } : {}) };
+                            ? { filePaths } // Files are user-scoped, no projectId needed
+                            : { fileIds, ...(siteId ? { siteId } : {}) }; // Files are user-scoped, no projectId needed
 
                           console.log('[Import Frontend] Sending import request:', {
                             endpoint,
@@ -2433,17 +2525,23 @@ export default function ImportPage() {
                           console.log('[Import Frontend] Import response:', result);
                           
                           if (!response.ok) {
+                            // Show specific error message for file limit
+                            if (result.error?.includes('maximum limit') || result.error?.includes('can only import')) {
+                              toast.error(result.error);
+                            } else {
+                              toast.error(result.error || 'Import failed');
+                            }
                             throw new Error(result.error || 'Import failed');
                           }
 
-                          toast.success(`Successfully imported ${result.imported} file(s)`);
+                          toast.success(`Successfully imported ${result.imported || result.results?.length || 0} file(s)`);
                           
                           setSelectedCloudFiles([]);
                           fetchData();
                           setTimeout(fetchData, 2000);
                         } catch (error) {
                           console.error('Cloud import error:', error);
-                          toast.error(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                          // Error messages are already shown via toast above
                         } finally {
                           setCloudImporting(false);
                         }
@@ -2478,6 +2576,10 @@ export default function ImportPage() {
                   <CardTitle>Import Queue</CardTitle>
                   <CardDescription>
                     Track the status of your uploaded files and repositories
+                    <br />
+                    <span className="text-sm font-semibold text-blue-600 dark:text-blue-500">
+                      {sources.length}/10 files uploaded
+                    </span>
                   </CardDescription>
                 </div>
                 {sources.length > 0 && (
@@ -2511,36 +2613,62 @@ export default function ImportPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {sources.map((source) => (
-                    <div
-                      key={source.id}
-                      className={`flex items-center justify-between p-4 border rounded-lg ${
-                        selectedSources.has(source.id) ? 'bg-blue-50 border-blue-200' : ''
-                      }`}
-                    >
-                      <div className="flex items-center space-x-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedSources.has(source.id)}
-                          onChange={(e) => handleSelectSource(source.id, e.target.checked)}
-                          className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        {getSourceIcon(source.source_type)}
-                        <div>
-                          <p className="font-medium">{source.source_name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {source.source_type.toUpperCase()} • {formatFileSize(source.file_size)} • 
-                            {new Date(source.created_at).toLocaleDateString()}
-                          </p>
+                  {/* Helper text for checkboxes */}
+                  <div className="text-xs text-muted-foreground flex items-center gap-4 pb-2 border-b">
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" disabled className="h-3 w-3" />
+                      <span>Select for deletion</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" disabled className="h-3 w-3 text-green-600" />
+                      <span>Select for proposal generation (completed files only)</span>
+                    </div>
+                  </div>
+                  {sources.map((source) => {
+                    const isCompleted = source.status === 'completed';
+                    return (
+                      <div
+                        key={source.id}
+                        className={`flex items-center justify-between p-4 border rounded-lg ${
+                          selectedSources.has(source.id) ? 'bg-blue-50 border-blue-200' : ''
+                        }`}
+                      >
+                        <div className="flex items-center space-x-4 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedSources.has(source.id)}
+                            onChange={(e) => handleSelectSource(source.id, e.target.checked)}
+                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            title="Select for deletion"
+                          />
+                          {isCompleted ? (
+                            <input
+                              type="checkbox"
+                              checked={selectedSourcesForProposals.has(source.id)}
+                              onChange={(e) => handleSelectSourceForProposals(source.id, e.target.checked)}
+                              className="h-4 w-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                              title="Select for proposal generation"
+                            />
+                          ) : (
+                            <div className="w-4" /> /* Spacer for alignment */
+                          )}
+                          {getSourceIcon(source.source_type)}
+                          <div>
+                            <p className="font-medium">{source.source_name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {source.source_type.toUpperCase()} • {formatFileSize(source.file_size)} • 
+                              {new Date(source.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-4">
+                          {getStatusIcon(source.status)}
+                          {getStatusBadge(source.status)}
                         </div>
                       </div>
-                      
-                      <div className="flex items-center space-x-4">
-                        {getStatusIcon(source.status)}
-                        {getStatusBadge(source.status)}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -2745,6 +2873,10 @@ export default function ImportPage() {
               <CardTitle>Manage Files</CardTitle>
               <CardDescription>
                 Review, delete, and manage your uploaded files before generating AI proposals
+                <br />
+                <span className="text-sm font-medium">
+                  {sources.length}/10 files uploaded
+                </span>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

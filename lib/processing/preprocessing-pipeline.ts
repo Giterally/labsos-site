@@ -19,7 +19,7 @@ function getSourceTypeFromMimeType(mimeType: string): string {
   return 'text'; // Default fallback
 }
 
-export async function preprocessFile(sourceId: string, projectId: string) {
+export async function preprocessFile(sourceId: string, userId: string) {
   const startTime = Date.now();
   
   // Wrap in timeout to prevent hanging
@@ -51,6 +51,12 @@ export async function preprocessFile(sourceId: string, projectId: string) {
       }
       
       source = fetchedSource;
+
+      // Get user_id from source (files are user-scoped)
+      const sourceUserId = source.user_id || userId;
+      if (!sourceUserId) {
+        throw new Error('Source user_id is missing and userId parameter not provided');
+      }
 
       console.log(`[PREPROCESSING] Found source: ${source.source_name} (${source.source_type})`);
 
@@ -118,14 +124,15 @@ export async function preprocessFile(sourceId: string, projectId: string) {
 
       console.log(`[PREPROCESSING] Parsed document: ${structuredDoc.sections.length} sections`);
 
-      // Step 2: Store structured document
+      // Step 2: Store structured document (user-scoped, no project_id)
       console.log(`[PREPROCESSING] Step 2/2: Storing structured document`);
       
       const { error: insertError } = await supabaseServer
         .from('structured_documents')
         .insert({
           source_id: sourceId,
-          project_id: projectId,
+          user_id: sourceUserId,
+          project_id: null, // Structured documents are user-scoped
           document_json: structuredDoc,
         });
 

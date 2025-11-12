@@ -15,7 +15,7 @@ export const maxDuration = 300; // 5 minutes
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { fileIds, projectId } = body;
+    const { fileIds } = body;
 
     if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
       return NextResponse.json({ 
@@ -23,24 +23,42 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    if (!projectId) {
+    // Authenticate request (files are user-scoped, no project permission check needed)
+    const authContext = await authenticateRequest(request);
+    const { user } = authContext;
+
+    // Check file count limit (10 files per user)
+    const { count: fileCount, error: countError } = await supabaseServer
+      .from('ingestion_sources')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+
+    if (countError) {
+      console.error('Error counting files:', countError);
       return NextResponse.json({ 
-        error: 'Project ID is required' 
+        error: 'Failed to check file limit' 
+      }, { status: 500 });
+    }
+
+    const MAX_FILES_PER_USER = 10;
+    const currentCount = fileCount || 0;
+    const maxAllowed = MAX_FILES_PER_USER - currentCount;
+
+    // Strict enforcement: reject entire batch if limit would be exceeded
+    if (maxAllowed <= 0) {
+      return NextResponse.json({ 
+        error: `You have reached the maximum limit of ${MAX_FILES_PER_USER} uploaded files. Please delete some files before importing new ones.`,
+        skipped: fileIds.length
       }, { status: 400 });
     }
 
-    // Authenticate request and check permissions
-    const authContext = await authenticateRequest(request);
-    const { user, supabase } = authContext;
-    
-    const permissionService = new PermissionService(supabase, user.id);
-    const access = await permissionService.checkProjectAccess(projectId);
-    
-    if (!access.canWrite) {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
+    // Reject if the batch would exceed the limit
+    if (fileIds.length > maxAllowed) {
+      return NextResponse.json({ 
+        error: `You can only import ${maxAllowed} more file(s), but you selected ${fileIds.length} file(s). Please delete some files or reduce your selection.`,
+        skipped: fileIds.length
+      }, { status: 400 });
     }
-
-    const resolvedProjectId = access.projectId;
 
     const results = [];
     const errors = [];
@@ -97,11 +115,11 @@ export async function POST(request: NextRequest) {
         const timestamp = Date.now();
         const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
         const uniqueFileName = `${timestamp}_${sanitizedName}`;
-        const storagePath = `${resolvedProjectId}/${uniqueFileName}`;
+        const storagePath = `${user.id}/${uniqueFileName}`;
 
-        // Upload to Supabase Storage
+        // Upload to Supabase Storage (user-scoped)
         const { error: uploadError } = await supabaseServer.storage
-          .from('project-uploads')
+          .from('user-uploads')
           .upload(storagePath, buffer, {
             contentType: mimeType,
             upsert: false,
@@ -117,11 +135,12 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Create ingestion source record
+        // Create ingestion source record (user-scoped, no project_id)
         const { data: source, error: sourceError } = await supabaseServer
           .from('ingestion_sources')
           .insert({
-            project_id: resolvedProjectId,
+            user_id: user.id,
+            project_id: null, // Files are user-scoped, shared across all projects
             source_type: sourceType,
             source_name: fileMetadata.name,
             source_url: fileMetadata.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
@@ -146,7 +165,7 @@ export async function POST(request: NextRequest) {
           console.error('Source creation error:', sourceError);
           // Clean up uploaded file
           await supabaseServer.storage
-            .from('project-uploads')
+            .from('user-uploads')
             .remove([storagePath]);
           
           errors.push({
@@ -163,7 +182,7 @@ export async function POST(request: NextRequest) {
         if (isLocalDev) {
           // Use preprocessing pipeline directly in development
           const { preprocessFile } = await import('@/lib/processing/preprocessing-pipeline');
-          preprocessFile(source.id, resolvedProjectId)
+          preprocessFile(source.id, user.id)
             .catch((error) => {
               console.error('Preprocessing error:', error);
             });
@@ -172,7 +191,7 @@ export async function POST(request: NextRequest) {
           try {
             await sendEvent('ingestion/preprocess-file', {
               sourceId: source.id,
-              projectId: resolvedProjectId,
+              userId: user.id,
               sourceType,
               storagePath,
               metadata: {
@@ -186,11 +205,11 @@ export async function POST(request: NextRequest) {
           } catch (eventError) {
             console.error('[Google Drive Import API] Failed to send Inngest event:', eventError);
             console.log('[Google Drive Import API] Inngest failed, falling back to preprocessing pipeline');
-            
+
             // Fallback to preprocessing if Inngest fails
             try {
               const { preprocessFile } = await import('@/lib/processing/preprocessing-pipeline');
-              preprocessFile(source.id, resolvedProjectId)
+              preprocessFile(source.id, user.id)
                 .catch((preprocessingError) => {
                   console.error('[Google Drive Import API] Fallback preprocessing failed:', preprocessingError);
                 });

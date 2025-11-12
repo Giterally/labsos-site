@@ -14,31 +14,36 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const projectId = formData.get('projectId') as string;
     
-    console.log('Upload request received for project:', projectId);
+    console.log('Upload request received');
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    if (!projectId) {
-      return NextResponse.json({ error: 'No project ID provided' }, { status: 400 });
-    }
-
-    // Authenticate request and check permissions
+    // Authenticate request (files are user-scoped, no project permission check needed)
     const authContext = await authenticateRequest(request);
-    const { user, supabase } = authContext;
-    
-    const permissionService = new PermissionService(supabase, user.id);
-    const access = await permissionService.checkProjectAccess(projectId);
-    
-    if (!access.canWrite) {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
+    const { user } = authContext;
+
+    // Check file count limit (10 files per user)
+    const { count: fileCount, error: countError } = await supabaseServer
+      .from('ingestion_sources')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+
+    if (countError) {
+      console.error('Error counting files:', countError);
+      return NextResponse.json({ 
+        error: 'Failed to check file limit' 
+      }, { status: 500 });
     }
 
-    // Get the resolved project ID from the permission service
-    const resolvedProjectId = access.projectId;
+    const MAX_FILES_PER_USER = 10;
+    if ((fileCount || 0) >= MAX_FILES_PER_USER) {
+      return NextResponse.json({ 
+        error: `You have reached the maximum limit of ${MAX_FILES_PER_USER} uploaded files. Please delete some files before uploading new ones.` 
+      }, { status: 400 });
+    }
 
     // Validate file type and size
     const allowedTypes = [
@@ -76,12 +81,12 @@ export async function POST(request: NextRequest) {
     const timestamp = Date.now();
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const fileName = `${timestamp}_${sanitizedName}`;
-    const storagePath = `${resolvedProjectId}/${fileName}`;
+    const storagePath = `${user.id}/${fileName}`;
 
-            // Upload file to Supabase Storage
+            // Upload file to Supabase Storage (user-scoped)
             const fileBuffer = await file.arrayBuffer();
             const { data: uploadData, error: uploadError } = await supabaseServer.storage
-              .from('project-uploads')
+              .from('user-uploads')
               .upload(storagePath, fileBuffer, {
                 contentType: file.type,
                 upsert: false,
@@ -96,11 +101,12 @@ export async function POST(request: NextRequest) {
     
     console.log('File uploaded to storage:', storagePath);
 
-    // Create ingestion source record
+    // Create ingestion source record (user-scoped, no project_id)
     const { data: source, error: sourceError } = await supabaseServer
       .from('ingestion_sources')
       .insert({
-        project_id: resolvedProjectId,
+        user_id: user.id,
+        project_id: null, // Files are user-scoped, shared across all projects
         source_type: sourceType,
         source_name: file.name,
         storage_path: storagePath,
@@ -121,7 +127,7 @@ export async function POST(request: NextRequest) {
       console.error('Source creation error:', sourceError);
               // Clean up uploaded file
               await supabaseServer.storage
-                .from('project-uploads')
+                .from('user-uploads')
                 .remove([storagePath]);
       
       return NextResponse.json({ 
@@ -166,7 +172,7 @@ export async function POST(request: NextRequest) {
         }
       }, 3 * 60 * 1000); // 3 minutes safety timeout
       
-      preprocessFile(source.id, resolvedProjectId)
+      preprocessFile(source.id, user.id)
         .then((result) => {
           clearTimeout(safetyTimeout);
           console.log('[UPLOAD] Preprocessing completed successfully:', result);
@@ -216,7 +222,7 @@ export async function POST(request: NextRequest) {
       try {
         await sendEvent('ingestion/preprocess-file', {
           sourceId: source.id,
-          projectId: resolvedProjectId,
+          userId: user.id,
           sourceType,
           storagePath,
           metadata: {
@@ -233,7 +239,7 @@ export async function POST(request: NextRequest) {
         
         // Fallback to preprocessing if Inngest fails
         try {
-          const result = await preprocessFile(source.id, resolvedProjectId);
+          const result = await preprocessFile(source.id, user.id);
           console.log('[UPLOAD] Fallback preprocessing completed:', result);
           processingStarted = true;
         } catch (preprocessingError) {
@@ -289,28 +295,11 @@ function getSourceTypeFromMimeType(mimeType: string): string {
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get('projectId');
-
-    if (!projectId) {
-      return NextResponse.json({ error: 'No project ID provided' }, { status: 400 });
-    }
-
-    // Authenticate request and check permissions
+    // Authenticate request (files are user-scoped)
     const authContext = await authenticateRequest(request);
-    const { user, supabase } = authContext;
-    
-    const permissionService = new PermissionService(supabase, user.id);
-    const access = await permissionService.checkProjectAccess(projectId);
-    
-    if (!access.canRead) {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
-    }
+    const { user } = authContext;
 
-    // Get the resolved project ID from the permission service
-    const resolvedProjectId = access.projectId;
-
-    // Get ingestion sources for project
+    // Get ingestion sources for user (all user's files across all projects)
     const { data: sources, error } = await supabaseServer
       .from('ingestion_sources')
       .select(`
@@ -324,7 +313,7 @@ export async function GET(request: NextRequest) {
         created_at,
         updated_at
       `)
-      .eq('project_id', resolvedProjectId)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -350,34 +339,19 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get('projectId');
     const sourceId = searchParams.get('sourceId');
     
-    if (!projectId) {
-      return NextResponse.json({ error: 'No project ID provided' }, { status: 400 });
-    }
-
-    // Authenticate request and check permissions
+    // Authenticate request (files are user-scoped)
     const authContext = await authenticateRequest(request);
-    const { user, supabase } = authContext;
-    
-    const permissionService = new PermissionService(supabase, user.id);
-    const access = await permissionService.checkProjectAccess(projectId);
-    
-    if (!access.canDelete) {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
-    }
-
-    // Get the resolved project ID from the permission service
-    const resolvedProjectId = access.projectId;
+    const { user } = authContext;
 
     if (sourceId) {
-      // Delete specific source
+      // Delete specific source (must belong to user)
       const { data: source, error: sourceError } = await supabaseServer
         .from('ingestion_sources')
         .select('storage_path')
         .eq('id', sourceId)
-        .eq('project_id', resolvedProjectId)
+        .eq('user_id', user.id)
         .single();
 
       if (sourceError || !source) {
@@ -387,7 +361,7 @@ export async function DELETE(request: NextRequest) {
       // Delete from storage if path exists
       if (source.storage_path) {
         const { error: storageError } = await supabaseServer.storage
-          .from('project-uploads')
+          .from('user-uploads')
           .remove([source.storage_path]);
         
         if (storageError) {
@@ -396,12 +370,12 @@ export async function DELETE(request: NextRequest) {
         }
       }
 
-      // Delete from database
+      // Delete from database (cascades to chunks)
       const { error: deleteError } = await supabaseServer
         .from('ingestion_sources')
         .delete()
         .eq('id', sourceId)
-        .eq('project_id', resolvedProjectId);
+        .eq('user_id', user.id);
 
       if (deleteError) {
         return NextResponse.json({ error: 'Failed to delete source' }, { status: 500 });
@@ -409,11 +383,11 @@ export async function DELETE(request: NextRequest) {
 
       return NextResponse.json({ success: true, message: 'Source deleted successfully' });
     } else {
-      // Delete all sources for the project
+      // Delete all sources for the user (removes from all projects)
       const { data: sources, error: sourcesError } = await supabaseServer
         .from('ingestion_sources')
         .select('storage_path')
-        .eq('project_id', resolvedProjectId);
+        .eq('user_id', user.id);
 
       if (sourcesError) {
         return NextResponse.json({ error: 'Failed to fetch sources' }, { status: 500 });
@@ -423,7 +397,7 @@ export async function DELETE(request: NextRequest) {
       const storagePaths = sources?.map(s => s.storage_path).filter(Boolean) || [];
       if (storagePaths.length > 0) {
         const { error: storageError } = await supabaseServer.storage
-          .from('project-uploads')
+          .from('user-uploads')
           .remove(storagePaths);
         
         if (storageError) {
@@ -432,11 +406,11 @@ export async function DELETE(request: NextRequest) {
         }
       }
 
-      // Delete from database
+      // Delete from database (cascades to chunks)
       const { error: deleteError } = await supabaseServer
         .from('ingestion_sources')
         .delete()
-        .eq('project_id', resolvedProjectId);
+        .eq('user_id', user.id);
 
       if (deleteError) {
         return NextResponse.json({ error: 'Failed to delete sources' }, { status: 500 });

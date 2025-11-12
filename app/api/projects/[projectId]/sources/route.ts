@@ -24,13 +24,28 @@ async function resolveProjectId(projectId: string): Promise<string> {
   return project.id;
 }
 
-// GET - Fetch all sources for a project
+// GET - Fetch all sources for a user (files are user-scoped, shared across all projects)
 export async function GET(request: NextRequest, { params }: { params: { projectId: string } }) {
   try {
-    const { projectId } = params;
-    const resolvedProjectId = await resolveProjectId(projectId);
+    // Authenticate to get user ID (files are user-scoped)
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    // Get ingestion sources for project
+    const token = authHeader.replace('Bearer ', '');
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Get ingestion sources for user (all user's files across all projects)
     const { data: sources, error } = await supabaseServer
       .from('ingestion_sources')
       .select(`
@@ -45,7 +60,7 @@ export async function GET(request: NextRequest, { params }: { params: { projectI
         updated_at,
         storage_path
       `)
-      .eq('project_id', resolvedProjectId)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -74,12 +89,30 @@ export async function DELETE(request: NextRequest, { params }: { params: { proje
     const body = await request.json();
     const { sourceIds, clearAll } = body;
 
+    // Authenticate to get user ID (files are user-scoped)
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     if (clearAll) {
-      // Get all sources for this project to clean up storage
+      // Get all sources for this user to clean up storage
       const { data: allSources, error: fetchError } = await supabaseServer
         .from('ingestion_sources')
         .select('id, storage_path')
-        .eq('project_id', resolvedProjectId);
+        .eq('user_id', user.id);
 
       if (fetchError) {
         console.error('Error fetching sources for cleanup:', fetchError);
@@ -96,7 +129,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { proje
 
         if (storagePaths.length > 0) {
           const { error: storageError } = await supabaseServer.storage
-            .from('project-uploads')
+            .from('user-uploads')
             .remove(storagePaths);
 
           if (storageError) {
@@ -106,11 +139,11 @@ export async function DELETE(request: NextRequest, { params }: { params: { proje
         }
       }
 
-      // Delete all sources from database
+      // Delete all sources from database (cascades to chunks)
       const { error: deleteError } = await supabaseServer
         .from('ingestion_sources')
         .delete()
-        .eq('project_id', resolvedProjectId);
+        .eq('user_id', user.id);
 
       if (deleteError) {
         console.error('Error deleting all sources:', deleteError);
@@ -119,18 +152,9 @@ export async function DELETE(request: NextRequest, { params }: { params: { proje
         }, { status: 500 });
       }
 
-      // Also clean up related data (chunks, proposed nodes, etc.)
-      await supabaseServer
-        .from('chunks')
-        .delete()
-        .eq('project_id', resolvedProjectId);
+      // Note: chunks are automatically deleted via CASCADE, proposals are per-project so not deleted here
 
-      await supabaseServer
-        .from('proposed_nodes')
-        .delete()
-        .eq('project_id', resolvedProjectId);
-
-      console.log(`Cleared all sources for project ${resolvedProjectId}`);
+      console.log(`Cleared all sources for user ${user.id}`);
       return NextResponse.json({ 
         success: true, 
         message: 'All sources cleared successfully',
@@ -138,11 +162,11 @@ export async function DELETE(request: NextRequest, { params }: { params: { proje
       });
 
     } else if (sourceIds && Array.isArray(sourceIds) && sourceIds.length > 0) {
-      // Delete specific sources
+      // Delete specific sources (must belong to user)
       const { data: sourcesToDelete, error: fetchError } = await supabaseServer
         .from('ingestion_sources')
         .select('id, storage_path')
-        .eq('project_id', resolvedProjectId)
+        .eq('user_id', user.id)
         .in('id', sourceIds);
 
       if (fetchError) {
@@ -160,7 +184,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { proje
 
         if (storagePaths.length > 0) {
           const { error: storageError } = await supabaseServer.storage
-            .from('project-uploads')
+            .from('user-uploads')
             .remove(storagePaths);
 
           if (storageError) {
@@ -169,11 +193,11 @@ export async function DELETE(request: NextRequest, { params }: { params: { proje
         }
       }
 
-      // Delete sources from database
+      // Delete sources from database (cascades to chunks)
       const { error: deleteError } = await supabaseServer
         .from('ingestion_sources')
         .delete()
-        .eq('project_id', resolvedProjectId)
+        .eq('user_id', user.id)
         .in('id', sourceIds);
 
       if (deleteError) {
@@ -183,7 +207,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { proje
         }, { status: 500 });
       }
 
-      console.log(`Deleted ${sourceIds.length} sources for project ${resolvedProjectId}`);
+      console.log(`Deleted ${sourceIds.length} sources for user ${user.id}`);
       return NextResponse.json({ 
         success: true, 
         message: 'Sources deleted successfully',

@@ -240,26 +240,48 @@ export async function synthesizeNode(input: NodeSynthesisInput): Promise<Synthes
 
 // Store synthesized node in the database
 export async function storeSynthesizedNode(
+  userId: string,
   projectId: string,
   node: SynthesizedNode,
   status: 'proposed' | 'accepted' | 'rejected' = 'proposed'
 ): Promise<string> {
+  console.log('[STORE_NODE] Storing proposal:', {
+    userId,
+    projectId,
+    nodeId: node.node_id,
+    title: node.title,
+    hasNodeId: !!node.node_id,
+  });
+
   const { data, error } = await supabaseServer
     .from('proposed_nodes')
     .insert({
+      user_id: userId, // Proposals are per-user, per-project
       project_id: projectId,
       node_json: node,
       status,
       confidence: node.provenance.confidence,
       provenance: node.provenance,
+      // Note: created_by column doesn't exist in proposed_nodes table
     })
     .select('id')
     .single();
 
   if (error) {
-    console.error('Error storing synthesized node:', error);
+    console.error('[STORE_NODE] Error storing synthesized node:', error);
+    console.error('[STORE_NODE] Error details:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      userId,
+      projectId,
+      nodeId: node.node_id,
+    });
     throw new Error(`Failed to store synthesized node: ${error.message}`);
   }
+
+  console.log('[STORE_NODE] Successfully stored proposal:', data.id);
 
   return data.id;
 }

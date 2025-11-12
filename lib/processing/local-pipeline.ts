@@ -5,7 +5,7 @@ import { generateBatchEmbeddings } from '../ai/embeddings';
 import { clusterChunks, storeClusteringResults } from '../ai/clustering';
 import { synthesizeNode, storeSynthesizedNode, calculateConfidence } from '../ai/synthesis';
 
-export async function processFileLocally(sourceId: string, projectId: string) {
+export async function processFileLocally(sourceId: string, userId: string) {
   try {
     console.log(`[LOCAL PIPELINE] Starting processing for source: ${sourceId}`);
 
@@ -18,6 +18,12 @@ export async function processFileLocally(sourceId: string, projectId: string) {
 
     if (sourceError || !source) {
       throw new Error(`Source not found: ${sourceError?.message}`);
+    }
+
+    // Get user_id from source (files are user-scoped)
+    const sourceUserId = source.user_id || userId;
+    if (!sourceUserId) {
+      throw new Error('Source user_id is missing and userId parameter not provided');
     }
 
     // Update status to processing
@@ -33,7 +39,7 @@ export async function processFileLocally(sourceId: string, projectId: string) {
     if (source.source_type === 'text' || source.source_type === 'markdown') {
       // For text files, read from storage
       const { data: fileData, error: downloadError } = await supabaseServer.storage
-        .from('project-uploads')
+        .from('user-uploads')
         .download(source.storage_path!);
 
       if (downloadError || !fileData) {

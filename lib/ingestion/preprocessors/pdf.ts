@@ -14,9 +14,9 @@ export async function preprocessPDF(
   metadata: any
 ): Promise<PreprocessedContent> {
   try {
-    // Download PDF file from storage
+    // Download PDF file from storage (user-scoped bucket)
     const { data: pdfData, error: downloadError } = await supabaseServer.storage
-      .from('project-uploads')
+      .from('user-uploads')
       .download(storagePath);
 
     if (downloadError) {

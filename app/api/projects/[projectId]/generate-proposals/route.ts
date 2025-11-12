@@ -26,11 +26,15 @@ export async function POST(
     // Get the resolved project ID from the permission service
     const resolvedProjectId = access.projectId;
 
-    // Check if there are any completed files to generate proposals from
+    // Get selected source IDs from request body (optional - if not provided, use all user's files)
+    const body = await request.json().catch(() => ({}));
+    const { selectedSourceIds } = body;
+
+    // Check if there are any completed files to generate proposals from (user-scoped)
     const { data: completedSources, error: sourcesError } = await supabaseServer
       .from('ingestion_sources')
       .select('id, source_name')
-      .eq('project_id', resolvedProjectId)
+      .eq('user_id', user.id) // Files are user-scoped
       .eq('status', 'completed');
 
     if (sourcesError) {
@@ -42,8 +46,38 @@ export async function POST(
       return NextResponse.json({ error: 'No completed files found. Please upload and process files first.' }, { status: 400 });
     }
 
-    console.log(`[GENERATE PROPOSALS] Starting proposal generation for project: ${resolvedProjectId}`);
-    console.log(`[GENERATE PROPOSALS] Found ${completedSources.length} completed sources`);
+    // If selectedSourceIds provided, validate they belong to the user
+    let sourceIdsToUse = selectedSourceIds;
+    if (selectedSourceIds && Array.isArray(selectedSourceIds) && selectedSourceIds.length > 0) {
+      const validSourceIds = completedSources.map(s => s.id);
+      const invalidIds = selectedSourceIds.filter(id => !validSourceIds.includes(id));
+      if (invalidIds.length > 0) {
+        return NextResponse.json({ 
+          error: `Invalid source IDs: ${invalidIds.join(', ')}. These files do not belong to you.` 
+        }, { status: 400 });
+      }
+      sourceIdsToUse = selectedSourceIds;
+    } else {
+      // Use all user's completed files if none selected
+      sourceIdsToUse = completedSources.map(s => s.id);
+    }
+
+    console.log(`[GENERATE PROPOSALS] Starting proposal generation for user: ${user.id}, project: ${resolvedProjectId}`);
+    console.log(`[GENERATE PROPOSALS] Using ${sourceIdsToUse.length} selected source(s) out of ${completedSources.length} total`);
+
+    // Delete existing proposals for this user + project combination before generating new ones
+    const { error: deleteError } = await supabaseServer
+      .from('proposed_nodes')
+      .delete()
+      .eq('project_id', resolvedProjectId)
+      .eq('user_id', user.id);
+
+    if (deleteError) {
+      console.error('[GENERATE PROPOSALS] Failed to delete existing proposals:', deleteError);
+      // Continue anyway - new proposals will be added
+    } else {
+      console.log('[GENERATE PROPOSALS] Cleared existing proposals for this user + project');
+    }
 
     // Generate jobId for progress tracking (server-side generation)
     const jobId = randomUUID();
@@ -59,8 +93,9 @@ export async function POST(
         created_by: user.id,
         started_at: new Date().toISOString(),
         payload: {
-          sourceCount: completedSources.length,
-          sourceIds: completedSources.map(s => s.id)
+          userId: user.id,
+          sourceCount: sourceIdsToUse.length,
+          sourceIds: sourceIdsToUse
         }
       })
       .select()
@@ -74,7 +109,7 @@ export async function POST(
     console.log(`[GENERATE PROPOSALS] Created job record: ${jobId}`);
 
     // Start generation in background - don't await
-    generateProposals(resolvedProjectId, jobId).catch(error => {
+    generateProposals(user.id, resolvedProjectId, sourceIdsToUse, jobId).catch(error => {
       console.error('[GENERATE PROPOSALS] Background error:', error);
       // Error handling is done inside generateProposals via progressTracker
     });

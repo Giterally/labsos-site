@@ -54,9 +54,10 @@ const DEFAULT_OPTIONS: RetrievalOptions = {
 };
 
 /**
- * Retrieve comprehensive context for node synthesis
+ * Retrieve comprehensive context for node synthesis (user-scoped chunks, per-user-per-project proposals)
  */
 export async function retrieveContextForSynthesis(
+  userId: string,
   projectId: string,
   primaryChunkIds: string[],
   sectionInfo: {
@@ -65,39 +66,42 @@ export async function retrieveContextForSynthesis(
     keyPoints: string[];
     dependencies: string[];
   },
-  options: RetrievalOptions = {}
+  options: RetrievalOptions & { selectedSourceIds?: string[] } = {}
 ): Promise<RetrievedContext> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   
   console.log(`[RAG_RETRIEVER] Retrieving context for: "${sectionInfo.title}"`);
   
-  // Get primary chunks
-  const primaryChunks = await getPrimaryChunks(projectId, primaryChunkIds);
+  // Get primary chunks (user-scoped)
+  const primaryChunks = await getPrimaryChunks(userId, primaryChunkIds);
   console.log(`[RAG_RETRIEVER] Retrieved ${primaryChunks.length} primary chunks`);
   
   // Build search query from section info
   const searchQuery = buildSearchQuery(sectionInfo);
   
-  // Retrieve related chunks via vector search
+  // Retrieve related chunks via vector search (user-scoped, optionally filtered by selectedSourceIds)
   const relatedChunks = await retrieveRelatedChunks(
-    projectId,
+    userId,
     searchQuery,
     primaryChunkIds,
     opts.maxRelatedChunks!,
-    opts.similarityThreshold!
+    opts.similarityThreshold!,
+    opts.selectedSourceIds
   );
   console.log(`[RAG_RETRIEVER] Retrieved ${relatedChunks.length} related chunks via vector search`);
   
-  // Retrieve dependency context
+  // Retrieve dependency context (user-scoped, optionally filtered by selectedSourceIds)
   const dependencyChunks = await retrieveDependencyContext(
-    projectId,
+    userId,
     sectionInfo.dependencies,
-    opts.maxDependencyChunks!
+    opts.maxDependencyChunks!,
+    opts.selectedSourceIds
   );
   console.log(`[RAG_RETRIEVER] Retrieved ${dependencyChunks.length} dependency chunks`);
   
-  // Retrieve existing nodes to avoid duplication
+  // Retrieve existing nodes to avoid duplication (per-user, per-project)
   const existingNodes = await retrieveExistingNodes(
+    userId,
     projectId,
     sectionInfo.title,
     opts.maxExistingNodes!,
@@ -118,13 +122,13 @@ export async function retrieveContextForSynthesis(
 }
 
 /**
- * Get primary chunks (the cluster chunks)
+ * Get primary chunks (the cluster chunks) - user-scoped
  */
-async function getPrimaryChunks(projectId: string, chunkIds: string[]): Promise<ContextChunk[]> {
+async function getPrimaryChunks(userId: string, chunkIds: string[]): Promise<ContextChunk[]> {
   const { data: chunks, error } = await supabaseServer
     .from('chunks')
     .select('id, text, source_type, source_ref, metadata')
-    .eq('project_id', projectId)
+    .eq('user_id', userId)
     .in('id', chunkIds);
   
   if (error) {
@@ -159,34 +163,36 @@ function buildSearchQuery(sectionInfo: {
 }
 
 /**
- * Retrieve related chunks via vector similarity search
+ * Retrieve related chunks via vector similarity search (user-scoped, optionally filtered by selectedSourceIds)
  */
 async function retrieveRelatedChunks(
-  projectId: string,
+  userId: string,
   searchQuery: string,
   excludeChunkIds: string[],
   maxChunks: number,
-  similarityThreshold: number
+  similarityThreshold: number,
+  selectedSourceIds?: string[]
 ): Promise<ContextChunk[]> {
   try {
     // Generate embedding for search query
     const aiProvider = getAIProviderInstance();
     const queryEmbedding = await aiProvider.generateEmbedding(searchQuery);
     
-    // Perform vector similarity search using pgvector
+    // Perform vector similarity search using pgvector (user-scoped, optionally filtered by source IDs)
     const { data: similarChunks, error } = await supabaseServer.rpc(
       'match_chunks',
       {
         query_embedding: queryEmbedding,
         match_threshold: similarityThreshold,
         match_count: maxChunks * 2, // Get more to filter
-        project_id_filter: projectId,
+        user_id_filter: userId,
+        source_ids_filter: selectedSourceIds && selectedSourceIds.length > 0 ? selectedSourceIds : null,
       }
     );
     
     if (error) {
       console.warn('[RAG_RETRIEVER] Vector search failed, falling back to keyword search:', error);
-      return await retrieveByKeywords(projectId, searchQuery, excludeChunkIds, maxChunks);
+      return await retrieveByKeywords(userId, searchQuery, excludeChunkIds, maxChunks, selectedSourceIds);
     }
     
     // Filter out primary chunks and limit results
@@ -205,10 +211,11 @@ async function retrieveRelatedChunks(
     // If vector search returned too few results, supplement with keyword search
     if (filtered.length < maxChunks / 2) {
       const keywordResults = await retrieveByKeywords(
-        projectId,
+        userId,
         searchQuery,
         [...excludeChunkIds, ...filtered.map(c => c.id)],
-        maxChunks - filtered.length
+        maxChunks - filtered.length,
+        selectedSourceIds
       );
       return [...filtered, ...keywordResults];
     }
@@ -217,18 +224,19 @@ async function retrieveRelatedChunks(
   } catch (error: any) {
     console.error('[RAG_RETRIEVER] Error in vector search:', error);
     // Fallback to keyword search
-    return await retrieveByKeywords(projectId, searchQuery, excludeChunkIds, maxChunks);
+    return await retrieveByKeywords(userId, searchQuery, excludeChunkIds, maxChunks, selectedSourceIds);
   }
 }
 
 /**
- * Retrieve chunks by keyword matching (fallback)
+ * Retrieve chunks by keyword matching (fallback) - user-scoped, optionally filtered by selectedSourceIds
  */
 async function retrieveByKeywords(
-  projectId: string,
+  userId: string,
   searchQuery: string,
   excludeChunkIds: string[],
-  maxChunks: number
+  maxChunks: number,
+  selectedSourceIds?: string[]
 ): Promise<ContextChunk[]> {
   // Extract key terms (words > 3 chars)
   const keywords = searchQuery
@@ -242,13 +250,32 @@ async function retrieveByKeywords(
   // Build search pattern for PostgreSQL full-text search
   const searchPattern = keywords.join(' | ');
   
-  const { data: chunks, error } = await supabaseServer
+  let query = supabaseServer
     .from('chunks')
     .select('id, text, source_type, source_ref, metadata')
-    .eq('project_id', projectId)
+    .eq('user_id', userId)
     .not('id', 'in', `(${excludeChunkIds.join(',')})`)
-    .textSearch('text', searchPattern)
-    .limit(maxChunks);
+    .textSearch('text', searchPattern);
+  
+  // Optionally filter by selected source IDs
+  if (selectedSourceIds && selectedSourceIds.length > 0) {
+    // Get chunk IDs from selected sources
+    const { data: sourceChunks } = await supabaseServer
+      .from('chunks')
+      .select('id')
+      .eq('user_id', userId)
+      .in('source_ref->>sourceId', selectedSourceIds);
+    
+    if (sourceChunks && sourceChunks.length > 0) {
+      const chunkIds = sourceChunks.map(c => c.id);
+      query = query.in('id', chunkIds);
+    } else {
+      // No chunks found for selected sources
+      return [];
+    }
+  }
+  
+  const { data: chunks, error } = await query.limit(maxChunks);
   
   if (error) {
     console.error('[RAG_RETRIEVER] Keyword search error:', error);
@@ -265,12 +292,13 @@ async function retrieveByKeywords(
 }
 
 /**
- * Retrieve chunks related to dependency sections
+ * Retrieve chunks related to dependency sections (user-scoped, optionally filtered by selectedSourceIds)
  */
 async function retrieveDependencyContext(
-  projectId: string,
+  userId: string,
   dependencyTitles: string[],
-  maxChunks: number
+  maxChunks: number,
+  selectedSourceIds?: string[]
 ): Promise<ContextChunk[]> {
   if (dependencyTitles.length === 0) return [];
   
@@ -279,12 +307,31 @@ async function retrieveDependencyContext(
   
   for (const depTitle of dependencyTitles) {
     // Search for chunks mentioning this dependency
-    const { data: chunks, error } = await supabaseServer
+    let query = supabaseServer
       .from('chunks')
       .select('id, text, source_type, source_ref, metadata')
-      .eq('project_id', projectId)
-      .ilike('text', `%${depTitle}%`)
-      .limit(chunksPerDependency);
+      .eq('user_id', userId)
+      .ilike('text', `%${depTitle}%`);
+    
+    // Optionally filter by selected source IDs
+    if (selectedSourceIds && selectedSourceIds.length > 0) {
+      // Get chunk IDs from selected sources
+      const { data: sourceChunks } = await supabaseServer
+        .from('chunks')
+        .select('id')
+        .eq('user_id', userId)
+        .in('source_ref->>sourceId', selectedSourceIds);
+      
+      if (sourceChunks && sourceChunks.length > 0) {
+        const chunkIds = sourceChunks.map(c => c.id);
+        query = query.in('id', chunkIds);
+      } else {
+        // No chunks found for selected sources
+        continue;
+      }
+    }
+    
+    const { data: chunks, error } = await query.limit(chunksPerDependency);
     
     if (!error && chunks) {
       dependencyChunks.push(...chunks.map(chunk => ({
@@ -301,19 +348,21 @@ async function retrieveDependencyContext(
 }
 
 /**
- * Retrieve existing nodes to check for duplicates
+ * Retrieve existing nodes to check for duplicates (per-user, per-project)
  */
 async function retrieveExistingNodes(
+  userId: string,
   projectId: string,
   sectionTitle: string,
   maxNodes: number,
   similarityThreshold: number
 ): Promise<ExistingNode[]> {
-  // Get all proposed and accepted nodes for this project
+  // Get all proposed and accepted nodes for this user + project combination
   const { data: nodes, error } = await supabaseServer
     .from('proposed_nodes')
     .select('id, node_json, confidence')
     .eq('project_id', projectId)
+    .eq('user_id', userId) // Proposals are per-user, per-project
     .in('status', ['proposed', 'accepted'])
     .limit(100); // Get up to 100 to check
   

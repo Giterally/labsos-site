@@ -2,31 +2,42 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sendEvent } from '../../../../lib/inngest/client';
 import { authenticateRequest, AuthError } from '@/lib/auth-middleware';
 import { PermissionService } from '@/lib/permission-service';
+import { supabaseServer } from '@/lib/supabase-server';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { repoUrl, projectId, token } = body;
+    const { repoUrl, token } = body;
 
-    if (!repoUrl || !projectId) {
+    if (!repoUrl) {
       return NextResponse.json({ 
-        error: 'Repository URL and project ID are required' 
+        error: 'Repository URL is required' 
       }, { status: 400 });
     }
 
-    // Authenticate request and check permissions
+    // Authenticate request (files are user-scoped, no project permission check needed)
     const authContext = await authenticateRequest(request);
-    const { user, supabase } = authContext;
-    
-    const permissionService = new PermissionService(supabase, user.id);
-    const access = await permissionService.checkProjectAccess(projectId);
-    
-    if (!access.canWrite) {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
+    const { user } = authContext;
+
+    // Check file count limit (10 files per user)
+    const { count: fileCount, error: countError } = await supabaseServer
+      .from('ingestion_sources')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+
+    if (countError) {
+      console.error('Error counting files:', countError);
+      return NextResponse.json({ 
+        error: 'Failed to check file limit' 
+      }, { status: 500 });
     }
 
-    // Get the resolved project ID from the permission service
-    const resolvedProjectId = access.projectId;
+    const MAX_FILES_PER_USER = 10;
+    if ((fileCount || 0) >= MAX_FILES_PER_USER) {
+      return NextResponse.json({ 
+        error: `You have reached the maximum limit of ${MAX_FILES_PER_USER} uploaded files. Please delete some files before importing new ones.` 
+      }, { status: 400 });
+    }
 
     // Validate GitHub URL
     const githubUrlPattern = /^https:\/\/github\.com\/[^\/]+\/[^\/]+(?:\/.*)?$/;
@@ -74,11 +85,12 @@ export async function POST(request: NextRequest) {
 
       const repoData = await response.json();
       
-      // Create ingestion source record
+      // Create ingestion source record (user-scoped, no project_id)
       const { data: source, error: sourceError } = await supabase
         .from('ingestion_sources')
         .insert({
-          project_id: resolvedProjectId,
+          user_id: user.id,
+          project_id: null, // Files are user-scoped, shared across all projects
           source_type: 'github',
           source_name: `${owner}/${repo}`,
           source_url: repoUrl,
@@ -109,10 +121,10 @@ export async function POST(request: NextRequest) {
         }, { status: 500 });
       }
 
-      // Trigger preprocessing job
+      // Trigger preprocessing job (user-scoped)
       await sendEvent('ingestion/preprocess-file', {
         sourceId: source.id,
-        projectId: resolvedProjectId,
+        userId: user.id,
         sourceType: 'github',
         storagePath: `github://${owner}/${repo}/${branch}`,
         metadata: {
@@ -157,28 +169,11 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get('projectId');
-
-    if (!projectId) {
-      return NextResponse.json({ error: 'No project ID provided' }, { status: 400 });
-    }
-
-    // Authenticate request and check permissions
+    // Authenticate request (files are user-scoped)
     const authContext = await authenticateRequest(request);
-    const { user, supabase } = authContext;
-    
-    const permissionService = new PermissionService(supabase, user.id);
-    const access = await permissionService.checkProjectAccess(projectId);
-    
-    if (!access.canRead) {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
-    }
+    const { user } = authContext;
 
-    // Get the resolved project ID from the permission service
-    const resolvedProjectId = access.projectId;
-
-    // Get GitHub sources for project
+    // Get GitHub sources for user (all user's GitHub imports across all projects)
     const { data: sources, error } = await supabase
       .from('ingestion_sources')
       .select(`
@@ -191,7 +186,7 @@ export async function GET(request: NextRequest) {
         created_at,
         updated_at
       `)
-      .eq('project_id', resolvedProjectId)
+      .eq('user_id', user.id)
       .eq('source_type', 'github')
       .order('created_at', { ascending: false });
 

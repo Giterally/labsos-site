@@ -32,7 +32,7 @@ export async function parseVideo(
   try {
     // Download video file from storage
     const { data: videoData, error: downloadError } = await supabaseServer.storage
-      .from('project-uploads')
+      .from('user-uploads')
       .download(storagePath);
 
     if (downloadError) {

@@ -40,19 +40,19 @@ export const preprocessFile = inngest.createFunction(
   { id: 'preprocess-file' },
   { event: 'ingestion/preprocess-file' },
   async ({ event, step }) => {
-    const { sourceId, projectId, sourceType, storagePath, metadata } = event.data;
+    const { sourceId, userId, sourceType, storagePath, metadata } = event.data;
 
     return await step.run('preprocess-file', async () => {
       let job: any = null;
       try {
-        // Create job record
+        // Create job record (jobs may still reference projects, but preprocessing is user-scoped)
         const { data: jobData } = await supabaseServer
           .from('jobs')
           .insert({
             type: 'preprocess',
             status: 'running',
-            payload: { sourceId, sourceType, storagePath, metadata },
-            project_id: projectId,
+            payload: { sourceId, sourceType, storagePath, metadata, userId },
+            project_id: null, // Preprocessing is user-scoped, not project-scoped
           })
           .select()
           .single();
@@ -72,7 +72,7 @@ export const preprocessFile = inngest.createFunction(
         // This function handles all file types, creates StructuredDocument objects,
         // stores them in structured_documents table, and updates source status
         console.log(`[INNGEST] Starting unified preprocessing for source: ${sourceId}`);
-        await preprocessFileUnified(sourceId, projectId);
+        await preprocessFileUnified(sourceId, userId);
         console.log(`[INNGEST] Unified preprocessing completed for source: ${sourceId}`);
         
         // Update job status
@@ -380,11 +380,24 @@ export const synthesizeNodes = inngest.createFunction(
 
         console.log(`Synthesizing nodes for cluster: ${clusterId}`);
 
-        // Get chunks for this cluster
+        // Get source to get user_id
+        const { data: source, error: sourceError } = await supabaseServer
+          .from('ingestion_sources')
+          .select('user_id')
+          .eq('id', sourceId)
+          .single();
+
+        if (sourceError || !source) {
+          throw new Error(`Failed to fetch source: ${sourceError?.message}`);
+        }
+
+        const userId = source.user_id;
+
+        // Get chunks for this cluster (user-scoped)
         const { data: chunks, error: chunksError } = await supabaseServer
           .from('chunks')
           .select('id, text, source_type, source_ref, metadata')
-          .eq('project_id', projectId)
+          .eq('user_id', userId)
           .in('id', chunkIds);
 
         if (chunksError || !chunks) {
@@ -416,8 +429,8 @@ export const synthesizeNodes = inngest.createFunction(
         // Calculate confidence
         const confidence = calculateConfidence(synthesizedNode);
 
-        // Store synthesized node
-        const nodeId = await storeSynthesizedNode(projectId, synthesizedNode, 'proposed');
+        // Store synthesized node (per-user, per-project)
+        const nodeId = await storeSynthesizedNode(userId, projectId, synthesizedNode, 'proposed');
 
         // Update job status
         await updateJobStatus(job.id, 'completed', { 

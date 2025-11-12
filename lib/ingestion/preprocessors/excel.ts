@@ -17,7 +17,7 @@ export async function preprocessExcel(
   try {
     // Download Excel file from storage
     const { data: excelData, error: downloadError } = await supabaseServer.storage
-      .from('project-uploads')
+      .from('user-uploads')
       .download(storagePath);
 
     if (downloadError) {

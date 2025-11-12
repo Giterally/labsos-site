@@ -303,11 +303,12 @@ export async function GET(
       }
     }
 
-    // Fetch proposed nodes
+    // Fetch proposed nodes (per-user, per-project)
     const { data: proposals, error: fetchError } = await supabaseServer
       .from('proposed_nodes')
       .select('*')
       .eq('project_id', actualProjectId)
+      .eq('user_id', user.id) // Proposals are per-user, per-project
       .eq('status', 'proposed')
       .order('created_at', { ascending: false });
 
@@ -442,13 +443,15 @@ export async function POST(
       }
 
     } else if (action === 'reject') {
-      // Reject proposed nodes
+      // Reject proposed nodes (must belong to user + project)
       const { error: updateError } = await supabaseServer
         .from('proposed_nodes')
         .update({ 
           status: 'rejected',
           rejected_at: new Date().toISOString()
         })
+        .eq('project_id', actualProjectId)
+        .eq('user_id', user.id) // Proposals are per-user, per-project
         .in('id', proposalIds);
 
       if (updateError) {
@@ -565,7 +568,8 @@ async function buildTreeInBackground(
         const { data: proposals, error: fetchError } = await supabaseServer
           .from('proposed_nodes')
           .select('*')
-      .eq('project_id', projectId)
+          .eq('project_id', projectId)
+          .eq('user_id', userId) // Proposals are per-user, per-project
           .in('id', proposalIds);
 
         if (fetchError || !proposals) {
@@ -1636,11 +1640,12 @@ export async function DELETE(
     const actualProjectId = access.projectId;
 
     if (clearAll) {
-      // Delete all proposals for this project
+      // Delete all proposals for this user + project combination
       const { error: deleteError } = await supabaseServer
         .from('proposed_nodes')
         .delete()
-        .eq('project_id', actualProjectId);
+        .eq('project_id', actualProjectId)
+        .eq('user_id', user.id); // Proposals are per-user, per-project
 
       if (deleteError) {
         console.error('Error deleting all proposals:', deleteError);
@@ -1649,18 +1654,19 @@ export async function DELETE(
         }, { status: 500 });
       }
 
-      console.log(`Cleared all proposals for project ${actualProjectId}`);
+      console.log(`Cleared all proposals for user ${user.id} in project ${actualProjectId}`);
       return NextResponse.json({ 
         success: true, 
         message: 'All proposals cleared successfully'
       });
 
     } else if (proposalIds && Array.isArray(proposalIds) && proposalIds.length > 0) {
-      // Delete specific proposals
+      // Delete specific proposals (must belong to user + project)
       const { error: deleteError } = await supabaseServer
         .from('proposed_nodes')
         .delete()
         .eq('project_id', actualProjectId)
+        .eq('user_id', user.id) // Proposals are per-user, per-project
         .in('id', proposalIds);
 
       if (deleteError) {

@@ -86,9 +86,9 @@ export async function generateBatchEmbeddings(texts: string[]): Promise<BatchEmb
   };
 }
 
-// Store embeddings in the database
+// Store embeddings in the database (user-scoped)
 export async function storeEmbeddings(
-  projectId: string,
+  userId: string,
   chunks: Array<{
     id: string;
     text: string;
@@ -100,10 +100,11 @@ export async function storeEmbeddings(
   const texts = chunks.map(chunk => chunk.text);
   const { embeddings } = await generateBatchEmbeddings(texts);
 
-  // Prepare data for database insertion
+  // Prepare data for database insertion (chunks are user-scoped, no project_id)
   const chunkData = chunks.map((chunk, index) => ({
     id: chunk.id,
-    project_id: projectId,
+    user_id: userId,
+    project_id: null, // Chunks are user-scoped, shared across all projects
     source_type: chunk.sourceType,
     source_ref: chunk.sourceRef,
     text: chunk.text,
@@ -133,12 +134,13 @@ export function countTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-// Find similar chunks using vector similarity
+// Find similar chunks using vector similarity (user-scoped, optionally filtered by source IDs)
 export async function findSimilarChunks(
-  projectId: string,
+  userId: string,
   queryEmbedding: number[],
   limit: number = 10,
-  threshold: number = 0.7
+  threshold: number = 0.7,
+  sourceIds?: string[]
 ): Promise<Array<{
   id: string;
   text: string;
@@ -151,7 +153,8 @@ export async function findSimilarChunks(
     query_embedding: queryEmbedding,
     match_threshold: threshold,
     match_count: limit,
-    project_id: projectId,
+    user_id_filter: userId,
+    source_ids_filter: sourceIds || null,
   });
 
   if (error) {

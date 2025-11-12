@@ -16,7 +16,7 @@ export async function preprocessText(
   try {
     // Download text file from storage
     const { data: textData, error: downloadError } = await supabaseServer.storage
-      .from('project-uploads')
+      .from('user-uploads')
       .download(storagePath);
 
     if (downloadError) {
@@ -48,7 +48,7 @@ export async function preprocessMarkdown(
   try {
     // Download markdown file from storage
     const { data: markdownData, error: downloadError } = await supabaseServer.storage
-      .from('project-uploads')
+      .from('user-uploads')
       .download(storagePath);
 
     if (downloadError) {
