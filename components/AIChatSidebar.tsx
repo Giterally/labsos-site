@@ -38,6 +38,33 @@ interface AIChatSidebarProps {
 
 const MAX_CHATS = 3
 
+// Helper function to normalize YouTube URLs to video ID for comparison
+function normalizeVideoUrl(url: string): string {
+  const videoInfo = detectVideoType(url)
+  if (videoInfo.type === 'youtube') {
+    // Extract video ID from YouTube URL
+    const youtubePatterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+      /youtube\.com\/v\/([^&\n?#]+)/,
+      /youtube\.com\/.*[?&]v=([^&\n?#]+)/
+    ]
+    for (const pattern of youtubePatterns) {
+      const match = url.match(pattern)
+      if (match && match[1]) {
+        return `youtube:${match[1]}`
+      }
+    }
+  } else if (videoInfo.type === 'vimeo') {
+    const vimeoRegex = /vimeo\.com\/(?:.*#|.*\/videos\/)?([0-9]+)/
+    const vimeoMatch = url.match(vimeoRegex)
+    if (vimeoMatch && vimeoMatch[1]) {
+      return `vimeo:${vimeoMatch[1]}`
+    }
+  }
+  // For non-video URLs or if we can't extract ID, return normalized URL
+  return url.toLowerCase().trim()
+}
+
 // Helper function to parse AI response and extract attachments/links
 function parseAIResponse(
   content: string,
@@ -56,7 +83,41 @@ function parseAIResponse(
     return { text: content, attachments, links, videoUrls }
   }
 
-  // Extract all URLs from the content (markdown links and plain URLs)
+  // STEP 1: Collect ALL attachments from tree context and build normalized URL map
+  const allAttachmentUrls = new Set<string>() // All attachment URLs (normalized) - prevents videoUrl extraction
+  const attachmentMap = new Map<string, { name: string; file_url: string; file_type: string | null; description: string | null }>()
+  
+  treeContext.blocks.forEach(block => {
+    block.nodes.forEach(node => {
+      node.attachments.forEach(attachment => {
+        if (!attachment.file_url) return
+        const normalizedUrl = normalizeVideoUrl(attachment.file_url)
+        allAttachmentUrls.add(normalizedUrl) // Add ALL attachment URLs immediately
+        if (!attachmentMap.has(normalizedUrl)) {
+          attachmentMap.set(normalizedUrl, attachment)
+        }
+      })
+    })
+  })
+
+  // STEP 2: Match attachments by name (simple matching)
+  const contentLower = content.toLowerCase()
+  attachmentMap.forEach((attachment) => {
+    const nameLower = attachment.name.toLowerCase().trim()
+    if (!nameLower) return
+    
+    // Simple match: name appears in content (as whole word for short names, or anywhere for longer)
+    const isShortName = nameLower.length <= 2
+    const isMatched = isShortName
+      ? new RegExp(`\\b${nameLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(content)
+      : contentLower.includes(nameLower)
+    
+    if (isMatched) {
+      attachments.push(attachment)
+    }
+  })
+
+  // STEP 3: Extract URLs from text - NEVER add to videoUrls if they match any attachment
   const urlRegex = /(https?:\/\/[^\s\)]+)/gi
   const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/gi
   const foundUrls = new Set<string>()
@@ -66,17 +127,17 @@ function parseAIResponse(
   while ((match = markdownLinkRegex.exec(content)) !== null) {
     const url = match[2]
     foundUrls.add(url)
-    
-    // Check if it's a video URL
+    const normalizedUrl = normalizeVideoUrl(url)
     const videoInfo = detectVideoType(url)
-    if (videoInfo.type !== 'not_video') {
+    
+    if (videoInfo.type !== 'not_video' && !allAttachmentUrls.has(normalizedUrl)) {
       videoUrls.push({ url, name: match[1] })
-    } else {
-      // Check if it matches a link in tree context
+    } else if (videoInfo.type === 'not_video') {
+      // Check for matching link in tree context
       treeContext.blocks.forEach(block => {
         block.nodes.forEach(node => {
           node.links.forEach(link => {
-            if (link.url === url) {
+            if (link.url === url && !links.find(l => l.url === url)) {
               links.push(link)
             }
           })
@@ -88,52 +149,46 @@ function parseAIResponse(
   // Extract plain URLs
   while ((match = urlRegex.exec(content)) !== null) {
     const url = match[1]
-    if (!foundUrls.has(url)) {
-      foundUrls.add(url)
-      
-      // Check if it's a video URL
-      const videoInfo = detectVideoType(url)
-      if (videoInfo.type !== 'not_video') {
-        videoUrls.push({ url })
-      } else {
-        // Check if it matches a link in tree context
-        treeContext.blocks.forEach(block => {
-          block.nodes.forEach(node => {
-            node.links.forEach(link => {
-              if (link.url === url) {
-                links.push(link)
-              }
-            })
+    if (foundUrls.has(url)) continue
+    foundUrls.add(url)
+    
+    const normalizedUrl = normalizeVideoUrl(url)
+    const videoInfo = detectVideoType(url)
+    
+    if (videoInfo.type !== 'not_video' && !allAttachmentUrls.has(normalizedUrl)) {
+      videoUrls.push({ url })
+    } else if (videoInfo.type === 'not_video') {
+      // Check for matching link in tree context
+      treeContext.blocks.forEach(block => {
+        block.nodes.forEach(node => {
+          node.links.forEach(link => {
+            if (link.url === url && !links.find(l => l.url === url)) {
+              links.push(link)
+            }
           })
         })
-      }
+      })
     }
   }
 
-  // Match attachment names (case-insensitive, partial matching)
-  const contentLower = content.toLowerCase()
-  treeContext.blocks.forEach(block => {
-    block.nodes.forEach(node => {
-      node.attachments.forEach(attachment => {
-        const attachmentNameLower = attachment.name.toLowerCase()
-        // Check if attachment name appears in content (as whole word or partial)
-        if (contentLower.includes(attachmentNameLower) || 
-            attachmentNameLower.includes(contentLower.split(/\s+/).find(word => word.length > 3) || '')) {
-          // Only add if not already added and has a URL
-          if (attachment.file_url && !attachments.find(a => a.file_url === attachment.file_url)) {
-            attachments.push({
-              name: attachment.name,
-              file_url: attachment.file_url,
-              file_type: attachment.file_type,
-              description: attachment.description,
-            })
-          }
-        }
-      })
-    })
+  // STEP 4: Deduplicate everything by normalized URL
+  const uniqueAttachments = new Map<string, typeof attachments[0]>()
+  attachments.forEach(attachment => {
+    const normalizedUrl = normalizeVideoUrl(attachment.file_url)
+    if (!uniqueAttachments.has(normalizedUrl)) {
+      uniqueAttachments.set(normalizedUrl, attachment)
+    }
   })
 
-  // Remove duplicate links
+  const uniqueVideoUrls = new Map<string, typeof videoUrls[0]>()
+  videoUrls.forEach(video => {
+    const normalizedUrl = normalizeVideoUrl(video.url)
+    // Final safety check: never add if it matches any attachment
+    if (!uniqueVideoUrls.has(normalizedUrl) && !allAttachmentUrls.has(normalizedUrl)) {
+      uniqueVideoUrls.set(normalizedUrl, video)
+    }
+  })
+
   const uniqueLinks = new Map<string, typeof links[0]>()
   links.forEach(link => {
     if (!uniqueLinks.has(link.url)) {
@@ -143,9 +198,9 @@ function parseAIResponse(
 
   return {
     text: content,
-    attachments: Array.from(new Map(attachments.map(a => [a.file_url, a])).values()),
+    attachments: Array.from(uniqueAttachments.values()),
     links: Array.from(uniqueLinks.values()),
-    videoUrls: Array.from(new Map(videoUrls.map(v => [v.url, v])).values()),
+    videoUrls: Array.from(uniqueVideoUrls.values()),
   }
 }
 
