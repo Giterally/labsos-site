@@ -25,50 +25,72 @@ import {
   CircleStackIcon,
   ShareIcon,
 } from "@heroicons/react/24/outline"
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useMemo, memo, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useUser } from "@/lib/user-context"
 import { KnowledgeNodesBackground } from "@/components/KnowledgeNodesBackground"
 import Image from "next/image"
-import { Sun, Moon } from "lucide-react"
+import { Sun, Moon, Sparkles } from "lucide-react"
 import { useTheme } from "next-themes"
 
-// Animated Word Component
-const AnimatedWord = ({ words }: { words: string[] }) => {
+// Animated Word Component - Optimized with requestAnimationFrame
+const AnimatedWord = memo(({ words }: { words: string[] }) => {
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [isTyping, setIsTyping] = useState(true)
   const [displayedText, setDisplayedText] = useState("")
   const [isDeleting, setIsDeleting] = useState(false)
+  const animationFrameRef = useRef<number>()
+  const lastUpdateRef = useRef(0)
+  const pauseUntilRef = useRef(0)
 
   useEffect(() => {
-    const currentWord = words[currentIndex]
-    
-    if (isDeleting) {
-      // Untyping animation
-      if (displayedText.length > 0) {
-        const timeout = setTimeout(() => {
-          setDisplayedText(currentWord.substring(0, displayedText.length - 1))
-        }, 50)
-        return () => clearTimeout(timeout)
-      } else {
-        // Move to next word
-        setIsDeleting(false)
-        setCurrentIndex((prev) => (prev + 1) % words.length)
+    const animate = (currentTime: number) => {
+      // Throttle to ~10fps for typing animation (100ms per character)
+      const typingDelay = isDeleting ? 50 : 100
+      if (currentTime - lastUpdateRef.current < typingDelay) {
+        animationFrameRef.current = requestAnimationFrame(animate)
+        return
       }
-    } else {
-      // Typing animation
-      if (displayedText.length < currentWord.length) {
-        const timeout = setTimeout(() => {
-          setDisplayedText(currentWord.substring(0, displayedText.length + 1))
-        }, 100)
-        return () => clearTimeout(timeout)
+
+      // Check if we should pause (after completing a word)
+      if (currentTime < pauseUntilRef.current) {
+        animationFrameRef.current = requestAnimationFrame(animate)
+        return
+      }
+
+      lastUpdateRef.current = currentTime
+      const currentWord = words[currentIndex]
+      
+      if (isDeleting) {
+        // Untyping animation
+        if (displayedText.length > 0) {
+          setDisplayedText(currentWord.substring(0, displayedText.length - 1))
+          animationFrameRef.current = requestAnimationFrame(animate)
+        } else {
+          // Move to next word
+          setIsDeleting(false)
+          setCurrentIndex((prev) => (prev + 1) % words.length)
+          animationFrameRef.current = requestAnimationFrame(animate)
+        }
       } else {
-        // Wait 2 seconds before starting to delete
-        const timeout = setTimeout(() => {
+        // Typing animation
+        if (displayedText.length < currentWord.length) {
+          setDisplayedText(currentWord.substring(0, displayedText.length + 1))
+          animationFrameRef.current = requestAnimationFrame(animate)
+        } else {
+          // Wait 2 seconds before starting to delete
+          pauseUntilRef.current = currentTime + 2000
           setIsDeleting(true)
-        }, 2000)
-        return () => clearTimeout(timeout)
+          animationFrameRef.current = requestAnimationFrame(animate)
+        }
+      }
+    }
+
+    animationFrameRef.current = requestAnimationFrame(animate)
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
       }
     }
   }, [displayedText, isDeleting, currentIndex, words])
@@ -83,15 +105,16 @@ const AnimatedWord = ({ words }: { words: string[] }) => {
       <span className="animate-pulse">|</span>
     </span>
   )
-}
+})
+AnimatedWord.displayName = 'AnimatedWord'
 
-function ContactDialogHandler({ 
+const ContactDialogHandler = memo(({ 
   showContactDialog, 
   setShowContactDialog 
 }: { 
   showContactDialog: boolean
   setShowContactDialog: (show: boolean) => void 
-}) {
+}) => {
   const searchParams = useSearchParams()
 
   // Check for contact parameter and open dialog
@@ -106,7 +129,87 @@ function ContactDialogHandler({
   }, [searchParams, setShowContactDialog])
 
   return null
-}
+})
+ContactDialogHandler.displayName = 'ContactDialogHandler'
+
+// Memoized Feature Card Component
+const FeatureCard = memo(({ 
+  feature, 
+  index 
+}: { 
+  feature: {
+    icon: React.ReactNode
+    title: string
+    description: string
+    features: string[]
+  }
+  index: number
+}) => {
+  const isAIFeature = feature.title === "AI Upload" || feature.title === "AI Chat"
+  
+  return (
+    <Card className="p-6">
+      <CardContent className="space-y-4">
+        <div className="flex items-center space-x-3">
+          {isAIFeature ? (
+            <div className="relative">
+              <div className="text-purple-500 dark:text-purple-400 relative z-10">
+                {feature.icon}
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="h-8 w-8 rounded-full bg-purple-500/40 dark:bg-purple-400/40 blur-lg animate-pulse" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="h-6 w-6 rounded-full bg-purple-500/30 dark:bg-purple-400/30 blur-sm animate-pulse" style={{ animationDelay: '0.5s' }} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            feature.icon
+          )}
+          <h3 className="text-xl font-semibold text-foreground">{feature.title}</h3>
+        </div>
+        <p className="text-muted-foreground">{feature.description}</p>
+        <ul className="space-y-1">
+          {feature.features.map((item, featureIndex) => (
+            <li key={featureIndex} className="text-sm text-muted-foreground flex items-center space-x-2">
+              <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  )
+})
+FeatureCard.displayName = 'FeatureCard'
+
+// Memoized FAQ Item Component
+const FAQItem = memo(({ 
+  faq, 
+  index, 
+  openFAQ, 
+  toggleFAQ 
+}: { 
+  faq: { question: string; answer: string }
+  index: number
+  openFAQ: number | null
+  toggleFAQ: (index: number) => void
+}) => (
+  <Card className="cursor-pointer" onClick={() => toggleFAQ(index)}>
+    <CardContent className="p-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-foreground">{faq.question}</h3>
+        <ChevronDownIcon className={`h-5 w-5 text-muted-foreground transition-transform ${openFAQ === index ? 'rotate-180' : ''}`} />
+      </div>
+      {openFAQ === index && (
+        <div className="mt-4 pt-4 border-t border-border">
+          <p className="text-muted-foreground leading-relaxed">{faq.answer}</p>
+        </div>
+      )}
+    </CardContent>
+  </Card>
+))
+FAQItem.displayName = 'FAQItem'
 
 export default function KnowledgeCaptureLanding() {
   const { user: currentUser, loading: userLoading } = useUser()
@@ -142,9 +245,9 @@ export default function KnowledgeCaptureLanding() {
     }
   }, [router])
 
-  const toggleFAQ = (index: number) => {
-    setOpenFAQ(openFAQ === index ? null : index)
-  }
+  const toggleFAQ = useCallback((index: number) => {
+    setOpenFAQ(prev => prev === index ? null : index)
+  }, [])
 
   const handleGetStarted = () => {
     if (isAuthenticated) {
@@ -446,62 +549,34 @@ export default function KnowledgeCaptureLanding() {
             <p className="text-lg text-muted-foreground">Transform your research workflow into organized, searchable knowledge</p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {useMemo(() => [
               {
                 icon: <FolderIcon className="h-8 w-8 text-primary" />,
                 title: "Ordered Experiment Trees",
-                description: "Organise your research as sequential workflows. Build sequential blocks consisting of sequential nodes with attached data.",
+                description: "Organise research as sequential workflows with nodes, attachments, and embedded videos.",
                 features: ["Visual experiment flow", "Nested sub-procedures", "Drag and drop reordering"]
               },
               {
-                icon: <VideoCameraIcon className="h-8 w-8 text-primary" />,
-                title: "Video + Transcripts",
-                description: "Capture tacit knowledge and instructional details with videos and searchable transcripts. Never lose the 'how' again.",
-                features: ["Auto-generated transcripts", "Embedded video", "Searchable content"]
+                icon: <DocumentTextIcon className="h-8 w-8" />,
+                title: "AI Upload",
+                description: "Upload PDFs, Excel, text, markdown, video (MP4, AVI, MOV), and audio (MP3, WAV) files to automatically build experiment trees using AI.",
+                features: ["PDF, Excel, text, markdown", "Video & audio support", "AI-powered extraction"]
               },
               {
                 icon: <CodeBracketIcon className="h-8 w-8 text-primary" />,
-                title: "Code Integration",
-                description: "Link GitHub repos, track code quality changes, and maintain analysis pipelines in context.",
-                features: ["GitHub integration", "Code quality checks", "Analysis pipelines"]
+                title: "Code & Data Integration",
+                description: "Link GitHub repos, connect datasets, and maintain data lineage throughout experiments.",
+                features: ["GitHub integration", "Data versioning", "Analysis pipelines"]
               },
               {
-                icon: <CircleStackIcon className="h-8 w-8 text-primary" />,
-                title: "Data Management",
-                description: "Connect datasets, track versions, and maintain data lineage throughout your experiments.",
-                features: ["Data versioning", "File organization", "Metadata tracking"]
-              },
-              {
-                icon: <ShareIcon className="h-8 w-8 text-primary" />,
-                title: "Handover Packages",
-                description: "Generate comprehensive handover documents with all context, files, and knowledge in the same place.",
-                features: ["Specialised reports", "Complete context", "Easy sharing"]
-              },
-              {
-                icon: <MagnifyingGlassIcon className="h-8 w-8 text-primary" />,
-                title: "Smart Search",
-                description: "Find anything in an experiment tree with full-text search across videos, documentation and more.",
-                features: ["Cross-content search", "Semantic understanding", "Quick discovery"]
+                icon: <Sparkles className="h-8 w-8" />,
+                title: "AI Chat",
+                description: "Query experiment trees using natural language. Get analysis and suggestions through conversational AI.",
+                features: ["Natural language queries", "AI-powered analysis", "Continuous chat with context"]
               }
-            ].map((feature, index) => (
-              <Card key={index} className="p-6">
-                <CardContent className="space-y-4">
-                  <div className="flex items-center space-x-3">
-                    {feature.icon}
-                    <h3 className="text-xl font-semibold text-foreground">{feature.title}</h3>
-                  </div>
-                  <p className="text-muted-foreground">{feature.description}</p>
-                  <ul className="space-y-1">
-                    {feature.features.map((item, featureIndex) => (
-                      <li key={featureIndex} className="text-sm text-muted-foreground flex items-center space-x-2">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
+            ], []).map((feature, index) => (
+              <FeatureCard key={index} feature={feature} index={index} />
             ))}
           </div>
         </div>
@@ -516,7 +591,7 @@ export default function KnowledgeCaptureLanding() {
           </div>
 
           <div className="space-y-4">
-            {[
+            {useMemo(() => [
               {
                 question: "How is this different from existing lab management tools?",
                 answer: "Olvaro focuses specifically on preserving and organising the knowledge that gets lost in research. Unlike generic project management tools, it's designed for the unique needs of experimental workflows, with features like video transcripts, code integration and handover packages."
@@ -537,20 +612,14 @@ export default function KnowledgeCaptureLanding() {
                 question: "What new features are coming soon?",
                 answer: "Features coming soon include a full suite of access controls, including ability to share and delegate access for specific team members to specific trees in a project. Also, augmented AI search to find information in experiment trees, build entirely new trees from inputting all forms of data for a project, and planning a new project or workflow using past open-source projects."
               }
-            ].map((faq, index) => (
-              <Card key={index} className="cursor-pointer" onClick={() => toggleFAQ(index)}>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-foreground">{faq.question}</h3>
-                    <ChevronDownIcon className={`h-5 w-5 text-muted-foreground transition-transform ${openFAQ === index ? 'rotate-180' : ''}`} />
-                  </div>
-                  {openFAQ === index && (
-                    <div className="mt-4 pt-4 border-t border-border">
-                      <p className="text-muted-foreground leading-relaxed">{faq.answer}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+            ], []).map((faq, index) => (
+              <FAQItem 
+                key={index} 
+                faq={faq} 
+                index={index} 
+                openFAQ={openFAQ} 
+                toggleFAQ={toggleFAQ} 
+              />
             ))}
           </div>
         </div>

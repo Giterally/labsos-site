@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import * as THREE from 'three'
 
 interface KnowledgeNodesCanvasProps {
   containerRef: React.RefObject<HTMLDivElement>
@@ -41,6 +40,10 @@ export function KnowledgeNodesCanvas({
   const mouseRef = useRef({ x: 0, y: 0 })
   const timeRef = useRef(0)
   const [isMobile, setIsMobile] = useState(false)
+  const isVisibleRef = useRef(true)
+  const lastMouseUpdateRef = useRef(0)
+  const gradientCacheRef = useRef<Map<string, CanvasGradient>>(new Map())
+  const connectionDistanceCacheRef = useRef<Map<string, number>>(new Map())
 
   // Configuration
   const config = {
@@ -359,17 +362,30 @@ export function KnowledgeNodesCanvas({
       hasTransition = true
     }
     
+    // Get viewport bounds for culling off-screen elements
+    const viewportLeft = -40
+    const viewportRight = paddedWidth + 40
+    const viewportTop = -40
+    const viewportBottom = paddedHeight + 40
+    
     // Draw connections with varying opacity and colors (only for interactive sections)
     ctx.lineWidth = 0.8
     ctx.globalAlpha = 0.2
     
     const connectionColors = ['#1B5E20', '#2E7D32', '#4FC3F7', '#81C784']
     const mouse = mouseRef.current
+    const glowRadiusSquared = 80 * 80
     
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i]
       // Skip connections for static sections
       if (hasTransition && node.y > transitionEndY) {
+        continue
+      }
+      
+      // Skip if node is completely off-screen
+      if (node.x < viewportLeft - 100 || node.x > viewportRight + 100 ||
+          node.y < viewportTop - 100 || node.y > viewportBottom + 100) {
         continue
       }
       
@@ -381,11 +397,16 @@ export function KnowledgeNodesCanvas({
             continue
           }
           
+          // Skip if connected node is off-screen
+          if (connectedNode.x < viewportLeft - 100 || connectedNode.x > viewportRight + 100 ||
+              connectedNode.y < viewportTop - 100 || connectedNode.y > viewportBottom + 100) {
+            continue
+          }
+          
           // Calculate cursor proximity for glow effect (optimized)
           const dx = (node.x + connectedNode.x) / 2 - mouse.x
           const dy = (node.y + connectedNode.y) / 2 - mouse.y
           const cursorDistanceSquared = dx * dx + dy * dy
-          const glowRadiusSquared = 80 * 80 // Reduced radius for better performance
           
           // Get consistent color for this connection
           const connectionKey = `${Math.min(i, connectionIndex)}-${Math.max(i, connectionIndex)}`
@@ -423,20 +444,26 @@ export function KnowledgeNodesCanvas({
     
     // Draw nodes
     ctx.globalAlpha = 0.9
+    const nodeGlowRadiusSquared = 70 * 70
     
     for (const node of nodes) {
+      // Skip if node is completely off-screen (with padding for glow)
+      if (node.x < viewportLeft - 150 || node.x > viewportRight + 150 ||
+          node.y < viewportTop - 150 || node.y > viewportBottom + 150) {
+        continue
+      }
+      
       // Calculate cursor proximity for enhanced glow (optimized)
       const nDx = node.x - mouse.x
       const nDy = node.y - mouse.y
       const cursorDistanceSquared = nDx * nDx + nDy * nDy
-      const glowRadiusSquared = 70 * 70 // Reduced radius for better performance
       
       // Node glow with pulsing effect
       const pulse = Math.sin(timeRef.current * 0.002 + node.originalX * 0.01) * 0.3 + 0.7
       let glowSize = node.size * 3 * pulse // Base glow size
       
       // Enhanced glow when cursor is nearby (subtle)
-      if (cursorDistanceSquared < glowRadiusSquared) {
+      if (cursorDistanceSquared < nodeGlowRadiusSquared) {
         const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 70)
         glowSize += glowIntensity * node.size * 1.5 // Subtle glow increase
         
@@ -447,10 +474,21 @@ export function KnowledgeNodesCanvas({
         ctx.shadowBlur = 0
       }
       
-      const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
-      gradient.addColorStop(0, node.color)
-      gradient.addColorStop(0.7, node.color + '40')
-      gradient.addColorStop(1, 'transparent')
+      // Cache gradient by key to avoid recreating
+      const gradientKey = `${node.x.toFixed(1)}-${node.y.toFixed(1)}-${glowSize.toFixed(1)}-${node.color}`
+      let gradient = gradientCacheRef.current.get(gradientKey)
+      if (!gradient) {
+        gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
+        gradient.addColorStop(0, node.color)
+        gradient.addColorStop(0.7, node.color + '40')
+        gradient.addColorStop(1, 'transparent')
+        // Limit cache size to prevent memory issues
+        if (gradientCacheRef.current.size > 100) {
+          const firstKey = gradientCacheRef.current.keys().next().value
+          gradientCacheRef.current.delete(firstKey)
+        }
+        gradientCacheRef.current.set(gradientKey, gradient)
+      }
       
       ctx.fillStyle = gradient
       ctx.beginPath()
@@ -464,7 +502,7 @@ export function KnowledgeNodesCanvas({
       let coreSize = node.size * (1.0 + Math.sin(timeRef.current * 0.001 + node.originalY * 0.008) * 0.2) // Base core size
       
       // Enhanced core size when cursor is nearby (subtle)
-      if (cursorDistanceSquared < glowRadiusSquared) {
+      if (cursorDistanceSquared < nodeGlowRadiusSquared) {
         const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 70)
         coreSize += glowIntensity * node.size * 0.2 // Subtle core size increase
       }
@@ -483,7 +521,7 @@ export function KnowledgeNodesCanvas({
       let highlightOpacity = 0.4
       let highlightSize = node.size * 0.25
       
-      if (cursorDistanceSquared < glowRadiusSquared) {
+      if (cursorDistanceSquared < nodeGlowRadiusSquared) {
         const glowIntensity = Math.max(0, 1 - Math.sqrt(cursorDistanceSquared) / 70)
         highlightOpacity += glowIntensity * 0.15 // Subtle highlight brightness increase
         highlightSize += glowIntensity * node.size * 0.1 // Subtle highlight size increase
@@ -503,6 +541,12 @@ export function KnowledgeNodesCanvas({
   }, [transitionStart, transitionEnd, containerRef])
 
   const animate = useCallback((currentTime: number) => {
+    // Pause animation when tab is hidden
+    if (!isVisibleRef.current) {
+      animationRef.current = requestAnimationFrame(animate)
+      return
+    }
+    
     const deltaTime = (currentTime - timeRef.current) / 1000
     timeRef.current = currentTime
     
@@ -514,6 +558,13 @@ export function KnowledgeNodesCanvas({
 
   const handleMouseMove = useCallback((event: MouseEvent) => {
     if (!canvasRef.current) return
+    
+    // Throttle mouse updates to ~60fps (16ms)
+    const now = performance.now()
+    if (now - lastMouseUpdateRef.current < 16) {
+      return
+    }
+    lastMouseUpdateRef.current = now
     
     const rect = canvasRef.current.getBoundingClientRect()
     // Adjust for padding offset (40px on each side)
@@ -552,6 +603,8 @@ export function KnowledgeNodesCanvas({
           const paddedWidth = newRect.width + 80
           const paddedHeight = newRect.height + 80
           connectionColorsRef.current.clear()
+          gradientCacheRef.current.clear()
+          connectionDistanceCacheRef.current.clear()
           nodesRef.current = generateNodes(paddedWidth, paddedHeight)
           timeRef.current = performance.now()
           animationRef.current = requestAnimationFrame(animate)
@@ -564,9 +617,18 @@ export function KnowledgeNodesCanvas({
     const paddedWidth = rect.width + 80
     const paddedHeight = rect.height + 80
     connectionColorsRef.current.clear()
+    gradientCacheRef.current.clear()
+    connectionDistanceCacheRef.current.clear()
     nodesRef.current = generateNodes(paddedWidth, paddedHeight)
     timeRef.current = performance.now()
     animationRef.current = requestAnimationFrame(animate)
+
+    // Handle visibility change to pause animation
+    const handleVisibilityChange = () => {
+      isVisibleRef.current = !document.hidden
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    isVisibleRef.current = !document.hidden
 
     // Add mouse event listeners only if interactive
     if (interactive) {
@@ -582,6 +644,7 @@ export function KnowledgeNodesCanvas({
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current)
       }
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (interactive) {
         canvas.removeEventListener('mousemove', handleMouseMove)
         canvas.removeEventListener('mouseleave', handleMouseLeave)
@@ -599,6 +662,7 @@ export function KnowledgeNodesCanvas({
         width: '100%', 
         height: '100%',
         pointerEvents: 'auto',
+        willChange: 'transform',
         ...style
       }}
     />
