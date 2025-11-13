@@ -58,7 +58,7 @@ export async function GET(
           id,
           name,
           file_type,
-          file_size,
+          version,
           file_url,
           description,
           created_at,

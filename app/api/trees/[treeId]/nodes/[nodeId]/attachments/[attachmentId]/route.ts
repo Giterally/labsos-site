@@ -10,7 +10,7 @@ export async function PUT(
   try {
     const { treeId, nodeId, attachmentId } = await params
     const body = await request.json()
-    const { name, file_type, file_size, file_url, description } = body
+    const { name, file_type, version, file_url, description } = body
 
     if (!name || !file_type || !file_url) {
       return NextResponse.json({ error: 'Name, file type, and file URL are required' }, { status: 400 })
@@ -54,7 +54,7 @@ export async function PUT(
       .update({
         name,
         file_type,
-        file_size,
+        version,
         file_url,
         description,
         updated_at: new Date().toISOString()

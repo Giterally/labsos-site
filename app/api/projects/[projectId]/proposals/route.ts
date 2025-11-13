@@ -1448,7 +1448,7 @@ async function buildTreeInBackground(
                 node_id: createdNode.id,
                 name: attachment.name || 'Untitled Attachment',
                 file_type: attachment.file_type || '',
-                file_size: attachment.file_size || 0,
+                version: attachment.version || null,
                 file_url: attachment.file_url || '',
                 description: attachment.description || '',
                 position: index

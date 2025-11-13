@@ -430,7 +430,7 @@ export default function KnowledgeCaptureLanding() {
                 size="lg" 
                 className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-bold px-12 py-6 text-lg shadow-xl hover:shadow-2xl transition-all duration-300 border-0"
               >
-                🔬 View All Research Projects
+                View All Research Projects
               </Button>
             </Link>
           </div>
@@ -442,7 +442,7 @@ export default function KnowledgeCaptureLanding() {
       <section id="features" className="py-16 px-4 relative z-10">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4 text-foreground">How Knowledge Capture Works</h2>
+            <h2 className="text-3xl font-bold mb-4 text-foreground">How Olvaro Works</h2>
             <p className="text-lg text-muted-foreground">Transform your research workflow into organized, searchable knowledge</p>
           </div>
 

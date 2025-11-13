@@ -31,6 +31,7 @@ export interface TreeContext {
         file_type: string | null;
         file_url: string | null;
         description: string | null;
+        version: string | null;
       }>;
       provenance: any | null;
       confidence: number | null;
@@ -231,7 +232,7 @@ export async function fetchTreeContext(
       console.log('[fetchTreeContext] Step 4c: Fetching node attachments for', nodeIds.length, 'nodes...');
       const { data: attachmentsData, error: attachmentsError } = await supabase
         .from('node_attachments')
-        .select('node_id, name, file_type, file_url, description')
+        .select('node_id, name, file_type, file_url, description, version')
         .in('node_id', nodeIds)
         .order('position', { ascending: true });
 
@@ -251,6 +252,7 @@ export async function fetchTreeContext(
             file_type: attachment.file_type,
             file_url: attachment.file_url,
             description: attachment.description,
+            version: attachment.version,
           });
         });
         console.log('[fetchTreeContext] ✓ Node attachments fetched:', attachmentsData.length, 'attachment entries');
@@ -728,6 +730,9 @@ export function formatTreeContextForLLM(context: TreeContext): string {
         formatted += `     - Attachments (${node.attachments.length}):\n`;
         node.attachments.forEach(attachment => {
           formatted += `       • ${attachment.name}${attachment.file_type ? ` (${attachment.file_type})` : ''}`;
+          if (attachment.version) {
+            formatted += ` - Version: ${attachment.version}`;
+          }
           if (attachment.file_url) {
             formatted += ` - URL: ${attachment.file_url}`;
           }

@@ -35,7 +35,7 @@ interface ExperimentNode {
     id: string
     name: string
     file_type: string
-    file_size: number
+    version: string | null
     file_url: string
     description: string
   }>
@@ -1174,7 +1174,7 @@ export default function SimpleExperimentTreePage() {
   }
 
   // Attachment management functions
-  const addAttachment = async (name: string, fileType: string, fileSize: number, fileUrl: string, description: string) => {
+  const addAttachment = async (name: string, fileType: string, version: string, fileUrl: string, description: string) => {
     if (!selectedNode) return
     
     try {
@@ -1193,7 +1193,7 @@ export default function SimpleExperimentTreePage() {
         body: JSON.stringify({
           name,
           file_type: fileType,
-          file_size: fileSize,
+          version: version,
           file_url: fileUrl,
           description
         })
@@ -1217,7 +1217,7 @@ export default function SimpleExperimentTreePage() {
     }
   }
 
-  const updateAttachment = async (attachmentId: string, name: string, fileType: string, fileSize: number, fileUrl: string, description: string) => {
+  const updateAttachment = async (attachmentId: string, name: string, fileType: string, version: string, fileUrl: string, description: string) => {
     if (!selectedNode) return
     
     try {
@@ -1236,7 +1236,7 @@ export default function SimpleExperimentTreePage() {
         body: JSON.stringify({
           name,
           file_type: fileType,
-          file_size: fileSize,
+          version: version,
           file_url: fileUrl,
           description
         })
@@ -2500,7 +2500,7 @@ export default function SimpleExperimentTreePage() {
                                     <div>
                                       <p className="text-sm font-medium">{attachment.name}</p>
                                       <p className="text-xs text-muted-foreground">
-                                        {attachment.file_type} • {attachment.file_size ? `${(attachment.file_size / 1024 / 1024).toFixed(1)} MB` : 'Unknown size'}
+                                        {attachment.file_type} • {attachment.version || 'No version'}
                                       </p>
                                       {attachment.description && (
                                         <p className="text-xs text-muted-foreground mt-1">{attachment.description}</p>
@@ -2814,8 +2814,8 @@ export default function SimpleExperimentTreePage() {
           <div className="bg-background p-6 rounded-lg shadow-lg w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold mb-4">Add Attachment</h3>
             <AddAttachmentForm
-              onSubmit={(name, fileType, fileSize, fileUrl, description) => {
-                addAttachment(name, fileType, fileSize, fileUrl, description)
+              onSubmit={(name, fileType, version, fileUrl, description) => {
+                addAttachment(name, fileType, version, fileUrl, description)
                 setShowAddAttachmentModal(false)
               }}
               onCancel={() => setShowAddAttachmentModal(false)}
@@ -2831,8 +2831,8 @@ export default function SimpleExperimentTreePage() {
             <h3 className="text-lg font-semibold mb-4">Edit Attachment</h3>
             <EditAttachmentForm
               attachment={editingAttachment}
-              onSubmit={(name, fileType, fileSize, fileUrl, description) => {
-                updateAttachment(editingAttachment.id, name, fileType, fileSize, fileUrl, description)
+              onSubmit={(name, fileType, version, fileUrl, description) => {
+                updateAttachment(editingAttachment.id, name, fileType, version, fileUrl, description)
                 setShowEditAttachmentModal(false)
                 setEditingAttachment(null)
               }}
@@ -3660,12 +3660,12 @@ function AddAttachmentForm({
   onSubmit, 
   onCancel
 }: { 
-  onSubmit: (name: string, fileType: string, fileSize: number, fileUrl: string, description: string) => void
+  onSubmit: (name: string, fileType: string, version: string, fileUrl: string, description: string) => void
   onCancel: () => void
 }) {
   const [name, setName] = useState('')
   const [fileType, setFileType] = useState('')
-  const [fileSize, setFileSize] = useState(0)
+  const [version, setVersion] = useState('')
   const [fileUrl, setFileUrl] = useState('')
   const [description, setDescription] = useState('')
   const [isVideo, setIsVideo] = useState(false)
@@ -3673,7 +3673,7 @@ function AddAttachmentForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (name.trim() && fileUrl.trim()) {
-      onSubmit(name.trim(), fileType, fileSize, fileUrl.trim(), description.trim())
+      onSubmit(name.trim(), fileType, version.trim(), fileUrl.trim(), description.trim())
     }
   }
 
@@ -3755,12 +3755,12 @@ function AddAttachmentForm({
       </div>
       
       <div>
-        <label className="block text-sm font-medium mb-2">File Size (bytes)</label>
+        <label className="block text-sm font-medium mb-2">Version</label>
         <input
-          type="number"
-          value={fileSize}
-          onChange={(e) => setFileSize(parseInt(e.target.value) || 0)}
-          placeholder="Enter file size in bytes"
+          type="text"
+          value={version}
+          onChange={(e) => setVersion(e.target.value)}
+          placeholder="Enter version (e.g., 1.0, v2.1, latest)"
           className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </div>
@@ -3795,12 +3795,12 @@ function EditAttachmentForm({
   onCancel
 }: { 
   attachment: ExperimentNode['attachments'][0]
-  onSubmit: (name: string, fileType: string, fileSize: number, fileUrl: string, description: string) => void
+  onSubmit: (name: string, fileType: string, version: string, fileUrl: string, description: string) => void
   onCancel: () => void
 }) {
   const [name, setName] = useState(attachment.name)
   const [fileType, setFileType] = useState(attachment.file_type)
-  const [fileSize, setFileSize] = useState(attachment.file_size)
+  const [version, setVersion] = useState(attachment.version || '')
   const [fileUrl, setFileUrl] = useState(attachment.file_url)
   const [description, setDescription] = useState(attachment.description)
   const [isVideo, setIsVideo] = useState(false)
@@ -3808,7 +3808,7 @@ function EditAttachmentForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (name.trim() && fileUrl.trim()) {
-      onSubmit(name.trim(), fileType, fileSize, fileUrl.trim(), description.trim())
+      onSubmit(name.trim(), fileType, version.trim(), fileUrl.trim(), description.trim())
     }
   }
 
@@ -3877,12 +3877,12 @@ function EditAttachmentForm({
       </div>
       
       <div>
-        <label className="block text-sm font-medium mb-2">File Size (bytes)</label>
+        <label className="block text-sm font-medium mb-2">Version</label>
         <input
-          type="number"
-          value={fileSize}
-          onChange={(e) => setFileSize(parseInt(e.target.value) || 0)}
-          placeholder="Enter file size in bytes"
+          type="text"
+          value={version}
+          onChange={(e) => setVersion(e.target.value)}
+          placeholder="Enter version (e.g., 1.0, v2.1, latest)"
           className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </div>
