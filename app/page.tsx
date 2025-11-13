@@ -249,6 +249,58 @@ export default function KnowledgeCaptureLanding() {
     setOpenFAQ(prev => prev === index ? null : index)
   }, [])
 
+  // Memoize features data
+  const features = useMemo(() => [
+    {
+      icon: <FolderIcon className="h-8 w-8 text-primary" />,
+      title: "Ordered Experiment Trees",
+      description: "Organise research as sequential workflows with nodes, attachments, and embedded videos.",
+      features: ["Visual experiment flow", "Nested sub-procedures", "Drag and drop reordering"]
+    },
+    {
+      icon: <DocumentTextIcon className="h-8 w-8" />,
+      title: "AI Upload",
+      description: "Upload PDFs, Excel, text, markdown, video (MP4, AVI, MOV), and audio (MP3, WAV) files to automatically build experiment trees using AI.",
+      features: ["PDF, Excel, text, markdown", "Video & audio support", "AI-powered extraction"]
+    },
+    {
+      icon: <CodeBracketIcon className="h-8 w-8 text-primary" />,
+      title: "Code & Data Integration",
+      description: "Link GitHub repos, connect datasets, and maintain data lineage throughout experiments.",
+      features: ["GitHub integration", "Data versioning", "Analysis pipelines"]
+    },
+    {
+      icon: <Sparkles className="h-8 w-8" />,
+      title: "AI Chat",
+      description: "Query experiment trees using natural language. Get analysis and suggestions through conversational AI.",
+      features: ["Natural language queries", "AI-powered analysis", "Continuous chat with context"]
+    }
+  ], [])
+
+  // Memoize FAQ data
+  const faqs = useMemo(() => [
+    {
+      question: "How is this different from existing lab management tools?",
+      answer: "Olvaro focuses specifically on preserving and organising the knowledge that gets lost in research. Unlike generic project management tools, it's designed for the unique needs of experimental workflows, with features like video transcripts, code integration and handover packages."
+    },
+    {
+      question: "Do I need to migrate all my existing data?",
+      answer: "No! Olvaro works as a lightweight wrapper around your existing tools. You can link to files in Dropbox, GitHub repos, and other storage without moving anything. It's designed to index and organize what you already have."
+    },
+    {
+      question: "Can I control who sees my research?",
+      answer: "Absolutely. Olvaro includes flexible access controls. You can set your project to public or private and decide wether you want to show your projects on your profile."
+    },
+    {
+      question: "What happens to my data if I stop using the service?",
+      answer: "Your data always remains yours. You can export everything at any time. We believe in data portability and won't lock you into our platform."
+    },
+    {
+      question: "What new features are coming soon?",
+      answer: "Features coming soon include a full suite of access controls, including ability to share and delegate access for specific team members to specific trees in a project. Also, augmented AI search to find information in experiment trees, build entirely new trees from inputting all forms of data for a project, and planning a new project or workflow using past open-source projects."
+    }
+  ], [])
+
   const handleGetStarted = () => {
     if (isAuthenticated) {
       window.location.href = "/dashboard/projects"
@@ -550,32 +602,7 @@ export default function KnowledgeCaptureLanding() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {useMemo(() => [
-              {
-                icon: <FolderIcon className="h-8 w-8 text-primary" />,
-                title: "Ordered Experiment Trees",
-                description: "Organise research as sequential workflows with nodes, attachments, and embedded videos.",
-                features: ["Visual experiment flow", "Nested sub-procedures", "Drag and drop reordering"]
-              },
-              {
-                icon: <DocumentTextIcon className="h-8 w-8" />,
-                title: "AI Upload",
-                description: "Upload PDFs, Excel, text, markdown, video (MP4, AVI, MOV), and audio (MP3, WAV) files to automatically build experiment trees using AI.",
-                features: ["PDF, Excel, text, markdown", "Video & audio support", "AI-powered extraction"]
-              },
-              {
-                icon: <CodeBracketIcon className="h-8 w-8 text-primary" />,
-                title: "Code & Data Integration",
-                description: "Link GitHub repos, connect datasets, and maintain data lineage throughout experiments.",
-                features: ["GitHub integration", "Data versioning", "Analysis pipelines"]
-              },
-              {
-                icon: <Sparkles className="h-8 w-8" />,
-                title: "AI Chat",
-                description: "Query experiment trees using natural language. Get analysis and suggestions through conversational AI.",
-                features: ["Natural language queries", "AI-powered analysis", "Continuous chat with context"]
-              }
-            ], []).map((feature, index) => (
+            {features.map((feature, index) => (
               <FeatureCard key={index} feature={feature} index={index} />
             ))}
           </div>
@@ -591,28 +618,7 @@ export default function KnowledgeCaptureLanding() {
           </div>
 
           <div className="space-y-4">
-            {useMemo(() => [
-              {
-                question: "How is this different from existing lab management tools?",
-                answer: "Olvaro focuses specifically on preserving and organising the knowledge that gets lost in research. Unlike generic project management tools, it's designed for the unique needs of experimental workflows, with features like video transcripts, code integration and handover packages."
-              },
-              {
-                question: "Do I need to migrate all my existing data?",
-                answer: "No! Olvaro works as a lightweight wrapper around your existing tools. You can link to files in Dropbox, GitHub repos, and other storage without moving anything. It's designed to index and organize what you already have."
-              },
-              {
-                question: "Can I control who sees my research?",
-                answer: "Absolutely. Olvaro includes flexible access controls. You can set your project to public or private and decide wether you want to show your projects on your profile."
-              },
-              {
-                question: "What happens to my data if I stop using the service?",
-                answer: "Your data always remains yours. You can export everything at any time. We believe in data portability and won't lock you into our platform."
-              },
-              {
-                question: "What new features are coming soon?",
-                answer: "Features coming soon include a full suite of access controls, including ability to share and delegate access for specific team members to specific trees in a project. Also, augmented AI search to find information in experiment trees, build entirely new trees from inputting all forms of data for a project, and planning a new project or workflow using past open-source projects."
-              }
-            ], []).map((faq, index) => (
+            {faqs.map((faq, index) => (
               <FAQItem 
                 key={index} 
                 faq={faq} 
