@@ -7,7 +7,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useUser } from "@/lib/user-context"
+import { useChatSidebar } from "@/lib/chat-sidebar-context"
 import { ChatBubbleLeftRightIcon, XMarkIcon } from "@heroicons/react/24/outline"
+import { cn } from "@/lib/utils"
 
 export default function FeedbackButton() {
   const [isOpen, setIsOpen] = useState(false)
@@ -16,6 +18,7 @@ export default function FeedbackButton() {
   const [email, setEmail] = useState("")
   const [submitMessage, setSubmitMessage] = useState("")
   const { user } = useUser()
+  const { isChatOpen } = useChatSidebar()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,7 +61,10 @@ export default function FeedbackButton() {
   return (
     <>
       {/* Floating Feedback Button */}
-      <div className="fixed bottom-6 right-6 z-50 flex items-center space-x-2">
+      <div className={cn(
+        "fixed bottom-6 z-50 flex items-center space-x-2 transition-all duration-300",
+        isChatOpen ? "left-6" : "right-6"
+      )}>
         <span className="text-xs text-muted-foreground bg-background/80 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm">
           Send Feedback
         </span>

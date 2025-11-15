@@ -789,3 +789,154 @@ export function formatTreeContextForLLM(context: TreeContext): string {
   return formatted;
 }
 
+/**
+ * Search for nodes and blocks in a tree context
+ * Used by AI action handler to resolve node/block identifiers
+ */
+export interface SearchResult {
+  node_id?: string
+  block_id?: string
+  name: string
+  confidence: number
+}
+
+export function searchNodesAndBlocks(
+  treeContext: TreeContext,
+  query: string,
+  options: {
+    limit?: number
+    minConfidence?: number
+  } = {}
+): { nodes: SearchResult[]; blocks: SearchResult[] } {
+  const limit = options.limit || 10
+  const minConfidence = options.minConfidence || 0.1
+  const lowerQuery = query.toLowerCase().trim()
+
+  const nodes: SearchResult[] = []
+  const blocks: SearchResult[] = []
+
+  // Search blocks
+  for (const block of treeContext.blocks) {
+    const blockName = block.name.toLowerCase()
+    let confidence = 0
+
+    // Exact match
+    if (blockName === lowerQuery) {
+      confidence = 1.0
+    }
+    // Starts with
+    else if (blockName.startsWith(lowerQuery)) {
+      confidence = 0.8
+    }
+    // Contains
+    else if (blockName.includes(lowerQuery)) {
+      confidence = 0.6
+    }
+    // Fuzzy match (check if all words in query are in block name)
+    else {
+      const queryWords = lowerQuery.split(/\s+/)
+      const matchingWords = queryWords.filter(word => blockName.includes(word))
+      if (matchingWords.length > 0) {
+        confidence = (matchingWords.length / queryWords.length) * 0.5
+      }
+    }
+
+    // Position-based matching (e.g., "first block", "last block")
+    if (lowerQuery.includes('first') && treeContext.blocks[0]?.id === block.id) {
+      confidence = Math.max(confidence, 0.9)
+    }
+    if (lowerQuery.includes('last') && treeContext.blocks[treeContext.blocks.length - 1]?.id === block.id) {
+      confidence = Math.max(confidence, 0.9)
+    }
+    if (lowerQuery.includes('block 1') && block.position === 1) {
+      confidence = Math.max(confidence, 0.9)
+    }
+
+    if (confidence >= minConfidence) {
+      blocks.push({
+        block_id: block.id,
+        name: block.name,
+        confidence
+      })
+    }
+  }
+
+  // Search nodes
+  for (const block of treeContext.blocks) {
+    for (const node of block.nodes) {
+      const nodeName = (node.name || '').toLowerCase()
+      const nodeDesc = (node.description || '').toLowerCase()
+      const searchText = `${nodeName} ${nodeDesc}`.toLowerCase()
+      let confidence = 0
+
+      // Exact match on name
+      if (nodeName === lowerQuery) {
+        confidence = 1.0
+      }
+      // Starts with
+      else if (nodeName.startsWith(lowerQuery)) {
+        confidence = 0.8
+      }
+      // Contains in name
+      else if (nodeName.includes(lowerQuery)) {
+        confidence = 0.6
+      }
+      // Contains in description
+      else if (nodeDesc.includes(lowerQuery)) {
+        confidence = 0.4
+      }
+      // Fuzzy match
+      else {
+        const queryWords = lowerQuery.split(/\s+/)
+        const matchingWords = queryWords.filter(word => searchText.includes(word))
+        if (matchingWords.length > 0) {
+          confidence = (matchingWords.length / queryWords.length) * 0.3
+        }
+      }
+
+      // Position-based matching (e.g., "first node", "last node in block X")
+      if (lowerQuery.includes('first node')) {
+        if (block.nodes[0]?.id === node.id) {
+          confidence = Math.max(confidence, 0.9)
+        }
+        // Check if it's the first node in the first block
+        if (lowerQuery.includes('first block') && treeContext.blocks[0]?.id === block.id && block.nodes[0]?.id === node.id) {
+          confidence = Math.max(confidence, 0.95)
+        }
+      }
+      if (lowerQuery.includes('last node')) {
+        if (block.nodes[block.nodes.length - 1]?.id === node.id) {
+          confidence = Math.max(confidence, 0.9)
+        }
+      }
+      if (node.position === 1 && lowerQuery.includes('position 1')) {
+        confidence = Math.max(confidence, 0.8)
+      }
+
+      // Block context matching (e.g., "node in Protocol Block")
+      const blockNameLower = block.name.toLowerCase()
+      if (lowerQuery.includes(blockNameLower) && searchText.includes(lowerQuery.replace(blockNameLower, '').trim())) {
+        confidence = Math.max(confidence, 0.7)
+      }
+
+      if (confidence >= minConfidence) {
+        nodes.push({
+          node_id: node.id,
+          block_id: block.id,
+          name: node.name || 'Unnamed Node',
+          confidence
+        })
+      }
+    }
+  }
+
+  // Sort by confidence and limit
+  nodes.sort((a, b) => b.confidence - a.confidence)
+  blocks.sort((a, b) => b.confidence - a.confidence)
+
+  return {
+    nodes: nodes.slice(0, limit),
+    blocks: blocks.slice(0, limit)
+  }
+}
+

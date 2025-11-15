@@ -3248,6 +3248,15 @@ export default function SimpleExperimentTreePage() {
         projectId={projectId}
         open={showAIChatSidebar}
         onOpenChange={setShowAIChatSidebar}
+        onTreeUpdated={async (updatedTreeContext) => {
+          try {
+            // Refresh the page to show updated tree
+            // TODO: Extract fetchNodes/fetchBlocks to be reusable functions
+            window.location.reload()
+          } catch (error) {
+            console.error('Error refreshing tree after AI action:', error)
+          }
+        }}
       />
     </div>
   )

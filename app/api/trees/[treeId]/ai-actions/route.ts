@@ -15,6 +15,8 @@ export async function POST(
     const { treeId } = await params
     const body = await request.json()
     const { mode, query, plan, conversationHistory, agentMode = true } = body
+    
+    console.log(`[AI_ACTIONS] Received request: mode=${mode}, query="${query?.substring(0, 50)}...", agentMode=${agentMode}`)
 
     if (!mode || (mode !== 'preview' && mode !== 'execute')) {
       return NextResponse.json(

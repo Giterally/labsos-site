@@ -34,6 +34,7 @@ export interface ActionPlanOperation {
     [key: string]: any
   }
   changes: Record<string, any>
+  before?: Record<string, any> // Current values before the change
   confidence: number
   reasoning: string
   operation_id?: string
@@ -66,16 +67,17 @@ export async function generateActionPlan(
 ${agentMode ? 'You can create, update, delete, and move nodes and blocks in the experiment tree.' : 'You can answer questions about nodes, blocks, and relationships.'}
 
 ${agentMode ? `IMPORTANT RULES:
-1. Always use the search_nodes and search_blocks functions to find nodes/blocks before operating on them
-2. Use node_identifier or block_identifier (name, ID, or position like "first node", "last block") to reference items
-3. For queries like "first node in the first block", search for the block first, then find the first node within that block
-4. For multi-step operations, plan all steps carefully
-5. Consider dependencies and relationships between nodes
-6. Be conservative - only make changes the user explicitly requests
-7. If uncertain about which node/block to modify, use search functions first
+1. When a user requests a change, you MUST call at least one action function (update_node, create_node, delete_node, etc.)
+2. You can use search_nodes and search_blocks to find items first, but you MUST follow up with an action function
+3. Use node_identifier or block_identifier (name, ID, or position like "first node", "last block") to reference items
+4. For queries like "first node in the first block", search for the block first, then find the first node within that block
+5. For multi-step operations, plan all steps carefully
+6. Consider dependencies and relationships between nodes
+7. Be conservative - only make changes the user explicitly requests
+8. If uncertain about which node/block to modify, use search functions first, then call the action function
 
-When the user requests changes, generate a plan using the available functions. 
-Each function call represents one operation in the plan.` : 'Answer questions clearly and helpfully about the experiment tree structure.'}`
+CRITICAL: When the user requests changes, you MUST generate function calls for action operations (not just search). 
+Each action function call represents one operation in the plan. Do not just respond with text - you must call functions.` : 'Answer questions clearly and helpfully about the experiment tree structure.'}`
 
   // Build messages
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -86,11 +88,16 @@ Each function call represents one operation in the plan.` : 'Answer questions cl
     })) as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     {
       role: 'user',
-      content: `Here is the current experiment tree structure:\n\n${formattedContext}\n\nUser request: ${query}\n\nGenerate a plan to fulfill this request. Use the search functions if you need to find specific nodes or blocks.`
+      content: `Here is the current experiment tree structure:\n\n${formattedContext}\n\nUser request: ${query}\n\nIMPORTANT: You must call action functions (like update_node, create_node, delete_node, etc.) to fulfill this request. You can use search_nodes or search_blocks first to find items, but you MUST follow up with an action function call. Do not just respond with text - you must use function calls.`
     }
   ]
 
   // Call OpenAI with function calling
+  // Force function calling if agent mode is enabled and query has action intent
+  const toolChoice = agentMode && hasActionIntent(query) ? 'required' : 'auto'
+  
+  console.log(`[generateActionPlan] Calling OpenAI with tool_choice: ${toolChoice}, agentMode: ${agentMode}, hasActionIntent: ${hasActionIntent(query)}`)
+  
   const response = await openai.chat.completions.create({
     model: CHAT_MODEL,
     messages,
@@ -102,7 +109,7 @@ Each function call represents one operation in the plan.` : 'Answer questions cl
         parameters: func.parameters
       }
     })),
-    tool_choice: 'auto',
+    tool_choice: toolChoice,
     temperature: 0.3, // Lower temperature for more consistent plans
   })
 
@@ -113,9 +120,12 @@ Each function call represents one operation in the plan.` : 'Answer questions cl
   if (response.choices[0]?.message) {
     const message = response.choices[0].message
     assistantMessage = message.content || ''
+    
+    console.log(`[generateActionPlan] OpenAI response - content: "${assistantMessage.substring(0, 100)}...", tool_calls: ${message.tool_calls?.length || 0}`)
 
     // Process tool calls
     if (message.tool_calls) {
+      console.log(`[generateActionPlan] Processing ${message.tool_calls.length} tool call(s)`)
       for (const toolCall of message.tool_calls) {
         if (toolCall.type === 'function') {
           const functionName = toolCall.function.name
@@ -130,6 +140,7 @@ Each function call represents one operation in the plan.` : 'Answer questions cl
 
           // Handle search functions specially - they return results, not operations
           if (functionName === 'search_nodes' || functionName === 'search_blocks') {
+            console.log(`[generateActionPlan] Search function called: ${functionName}`)
             const searchQuery = functionArgs.query || ''
             const limit = functionArgs.limit || 10
             const results = searchNodesAndBlocks(treeContext, searchQuery, { limit })
@@ -149,6 +160,8 @@ Each function call represents one operation in the plan.` : 'Answer questions cl
             }
             continue
           }
+          
+          console.log(`[generateActionPlan] Action function called: ${functionName}`, functionArgs)
 
           // For action functions, create operation
           const operation: ActionPlanOperation = {
@@ -207,6 +220,84 @@ Each function call represents one operation in the plan.` : 'Answer questions cl
             operation.changes.block_positions = functionArgs.block_positions
           }
 
+          // Capture "before" state and target name for update operations
+          if (functionName === 'update_node' && operation.target.node_id) {
+            // Find the node in treeContext to get current values
+            for (const block of treeContext.blocks) {
+              const node = block.nodes.find(n => n.id === operation.target.node_id)
+              if (node) {
+                operation.target.node_name = node.name // Store node name for display
+                operation.target.block_name = block.name // Store block name for context
+                operation.before = {
+                  name: node.name,
+                  description: node.description,
+                  node_type: node.type,
+                  position: node.position,
+                  content: node.content,
+                  status: node.status
+                }
+                break
+              }
+            }
+          } else if (functionName === 'update_block' && operation.target.block_id) {
+            // Find the block in treeContext to get current values
+            const block = treeContext.blocks.find(b => b.id === operation.target.block_id)
+            if (block) {
+              operation.target.block_name = block.name // Store block name for display
+              operation.before = {
+                name: block.name,
+                type: block.type,
+                position: block.position
+              }
+            }
+          } else if (functionName === 'update_node_content' && operation.target.node_id) {
+            // Find the node in treeContext to get current content
+            for (const block of treeContext.blocks) {
+              const node = block.nodes.find(n => n.id === operation.target.node_id)
+              if (node) {
+                operation.target.node_name = node.name // Store node name for display
+                operation.target.block_name = block.name // Store block name for context
+                operation.before = {
+                  content: node.content || '(empty)'
+                }
+                break
+              }
+            }
+          } else if (functionName === 'delete_node' && operation.target.node_id) {
+            // Find the node to show what will be deleted
+            for (const block of treeContext.blocks) {
+              const node = block.nodes.find(n => n.id === operation.target.node_id)
+              if (node) {
+                operation.target.node_name = node.name
+                operation.target.block_name = block.name
+                break
+              }
+            }
+          } else if (functionName === 'delete_block' && operation.target.block_id) {
+            // Find the block to show what will be deleted
+            const block = treeContext.blocks.find(b => b.id === operation.target.block_id)
+            if (block) {
+              operation.target.block_name = block.name
+            }
+          } else if (functionName === 'move_node' && operation.target.node_id) {
+            // Find the node to show what will be moved
+            for (const block of treeContext.blocks) {
+              const node = block.nodes.find(n => n.id === operation.target.node_id)
+              if (node) {
+                operation.target.node_name = node.name
+                operation.target.block_name = block.name
+                // Find target block name if provided
+                if (operation.changes.target_block_id) {
+                  const targetBlock = treeContext.blocks.find(b => b.id === operation.changes.target_block_id)
+                  if (targetBlock) {
+                    operation.target.target_block_name = targetBlock.name
+                  }
+                }
+                break
+              }
+            }
+          }
+
           operations.push(operation)
         }
       }
@@ -221,6 +312,11 @@ Each function call represents one operation in the plan.` : 'Answer questions cl
   const estimated_impact = operations.length > 0
     ? `This will affect ${operations.length} operation(s) in the experiment tree.`
     : 'No changes will be made.'
+
+  console.log(`[generateActionPlan] Generated ${operations.length} operations for query: "${query}"`)
+  if (operations.length === 0) {
+    console.warn(`[generateActionPlan] No operations generated. Assistant message: "${assistantMessage.substring(0, 200)}"`)
+  }
 
   return {
     operations,
