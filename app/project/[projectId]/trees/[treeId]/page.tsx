@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -843,102 +843,113 @@ export default function SimpleExperimentTreePage() {
     }
   }, [treeId, currentUser, userLoading])
 
-  // Fetch blocks and ordering
-  useEffect(() => {
-    const fetchBlocks = async () => {
-      try {
-        // Get session for API call if user is authenticated
-        let headers: HeadersInit = {}
-        if (currentUser) {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.access_token) {
-            headers['Authorization'] = `Bearer ${session.access_token}`
-          }
+  // Fetch blocks and ordering (extracted to useCallback for reuse)
+  const fetchBlocks = useCallback(async () => {
+    try {
+      console.log('[TreePage] fetchBlocks: Starting fetch...')
+      // Get session for API call if user is authenticated
+      let headers: HeadersInit = {}
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
         }
-
-        const response = await fetch(`/api/trees/${treeId}/blocks`, {
-          headers
-        })
-        if (!response.ok) {
-          throw new Error('Failed to fetch blocks')
-        }
-        const data = await response.json()
-        
-        // Use unified tree_blocks system
-        setCustomBlocks(data.treeBlocks || [])
-        
-        // Set block names from tree blocks
-        const names: Record<string, string> = {}
-        data.treeBlocks?.forEach((block: any) => {
-          names[block.id] = block.name
-        })
-        setBlockNames(names)
-      } catch (err) {
-        console.error('Error fetching blocks:', err)
       }
-    }
 
+      console.log('[TreePage] fetchBlocks: Fetching from API...')
+      const response = await fetch(`/api/trees/${treeId}/blocks`, {
+        headers
+      })
+      if (!response.ok) {
+        throw new Error('Failed to fetch blocks')
+      }
+      const data = await response.json()
+      console.log(`[TreePage] fetchBlocks: Fetched ${data.treeBlocks?.length || 0} blocks`)
+      
+      // Use unified tree_blocks system
+      console.log('[TreePage] fetchBlocks: Updating customBlocks state...')
+      setCustomBlocks(data.treeBlocks || [])
+      
+      // Set block names from tree blocks
+      const names: Record<string, string> = {}
+      data.treeBlocks?.forEach((block: any) => {
+        names[block.id] = block.name
+      })
+      setBlockNames(names)
+      console.log('[TreePage] fetchBlocks: State updated, blocks count:', data.treeBlocks?.length || 0)
+    } catch (err) {
+      console.error('[TreePage] fetchBlocks: Error fetching blocks:', err)
+    }
+  }, [treeId, currentUser])
+
+  useEffect(() => {
     if (!userLoading) {
       fetchBlocks()
     }
-  }, [treeId, currentUser, userLoading])
+  }, [userLoading, fetchBlocks])
 
-  // Fetch nodes from Supabase
-  useEffect(() => {
-    const fetchNodes = async () => {
-      try {
-        setLoading(true)
-        
-        // Get session for API call if user is authenticated
-        let headers: HeadersInit = {}
-        if (currentUser) {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session?.access_token) {
-            headers['Authorization'] = `Bearer ${session.access_token}`
-          }
+  // Fetch nodes from Supabase (extracted to useCallback for reuse)
+  const fetchNodes = useCallback(async () => {
+    try {
+      console.log('[TreePage] fetchNodes: Starting fetch...')
+      setLoading(true)
+      
+      // Get session for API call if user is authenticated
+      let headers: HeadersInit = {}
+      if (currentUser) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`
         }
-
-        const response = await fetch(`/api/trees/${treeId}/nodes`, {
-          headers
-        })
-        if (!response.ok) {
-          throw new Error('Failed to fetch nodes')
-        }
-        const data = await response.json()
-        console.log(`[TreePage] Fetched ${data.nodes.length} nodes`)
-        
-        // Log dependencies info
-        const nodesWithDeps = data.nodes.filter((n: ExperimentNode) => n.dependencies && n.dependencies.length > 0)
-        console.log(`[TreePage] Nodes with dependencies: ${nodesWithDeps.length}`)
-        if (nodesWithDeps.length > 0) {
-          nodesWithDeps.forEach((node: ExperimentNode) => {
-            console.log(`[TreePage] Node "${node.title}" has ${node.dependencies?.length || 0} dependency/dependencies:`, 
-              node.dependencies?.map((d: any) => `${d.dependency_type} -> ${d.to_node_name}`).join(', '))
-          })
-        } else {
-          console.warn(`[TreePage] ⚠️ No nodes with dependencies found!`)
-        }
-        
-        setExperimentNodes(data.nodes)
-        
-        // Node order is now handled by position field, no need for nodeOrder state
-        
-        // Select the first node if available
-        if (data.nodes.length > 0) {
-          setSelectedNodeId(data.nodes[0].id)
-        }
-      } catch (err) {
-        console.error('Error fetching nodes:', err)
-        setError('Failed to load experiment tree nodes')
-      } finally {
-        setLoading(false)
       }
-    }
 
+      console.log('[TreePage] fetchNodes: Fetching from API...')
+      const response = await fetch(`/api/trees/${treeId}/nodes`, {
+        headers
+      })
+      if (!response.ok) {
+        throw new Error('Failed to fetch nodes')
+      }
+      const data = await response.json()
+      console.log(`[TreePage] fetchNodes: Fetched ${data.nodes.length} nodes`)
+      
+      // Log dependencies info
+      const nodesWithDeps = data.nodes.filter((n: ExperimentNode) => n.dependencies && n.dependencies.length > 0)
+      console.log(`[TreePage] Nodes with dependencies: ${nodesWithDeps.length}`)
+      if (nodesWithDeps.length > 0) {
+        nodesWithDeps.forEach((node: ExperimentNode) => {
+          console.log(`[TreePage] Node "${node.title}" has ${node.dependencies?.length || 0} dependency/dependencies:`, 
+            node.dependencies?.map((d: any) => `${d.dependency_type} -> ${d.to_node_name}`).join(', '))
+        })
+      } else {
+        console.warn(`[TreePage] ⚠️ No nodes with dependencies found!`)
+      }
+      
+      console.log('[TreePage] fetchNodes: Updating experimentNodes state...')
+      setExperimentNodes(data.nodes)
+      console.log('[TreePage] fetchNodes: State updated, nodes count:', data.nodes.length)
+      
+      // Node order is now handled by position field, no need for nodeOrder state
+      
+      // Select the first node if available
+      if (data.nodes.length > 0) {
+        setSelectedNodeId(data.nodes[0].id)
+        console.log('[TreePage] fetchNodes: Selected first node:', data.nodes[0].id)
+      }
+    } catch (err) {
+      console.error('[TreePage] fetchNodes: Error fetching nodes:', err)
+      setError('Failed to load experiment tree nodes')
+    } finally {
+      setLoading(false)
+      console.log('[TreePage] fetchNodes: Completed')
+    }
+  }, [treeId, currentUser])
+
+  useEffect(() => {
     if (!userLoading) {
       fetchNodes()
     }
-  }, [treeId, currentUser, userLoading])
+  }, [userLoading, fetchNodes])
 
   // Auto-scroll during drag and drop
   useEffect(() => {
@@ -3250,11 +3261,16 @@ export default function SimpleExperimentTreePage() {
         onOpenChange={setShowAIChatSidebar}
         onTreeUpdated={async (updatedTreeContext) => {
           try {
-            // Refresh the page to show updated tree
-            // TODO: Extract fetchNodes/fetchBlocks to be reusable functions
-            window.location.reload()
+            // Refresh tree data in real-time without page reload
+            console.log('[TreePage] onTreeUpdated called, updatedTreeContext:', updatedTreeContext ? 'present' : 'null')
+            console.log('[TreePage] Refreshing tree after AI action...')
+            console.log('[TreePage] Calling fetchNodes...')
+            await fetchNodes()
+            console.log('[TreePage] fetchNodes completed, calling fetchBlocks...')
+            await fetchBlocks()
+            console.log('[TreePage] Tree refreshed successfully')
           } catch (error) {
-            console.error('Error refreshing tree after AI action:', error)
+            console.error('[TreePage] Error refreshing tree after AI action:', error)
           }
         }}
       />

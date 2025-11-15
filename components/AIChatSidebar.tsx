@@ -626,7 +626,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
       setIsSending(false)
       setTimeout(() => inputRef.current?.focus(), 100)
     }
-  }, [activeChatId, chats, treeId, activeChat, saveChats, updateChatTitle, isSending])
+  }, [activeChatId, chats, treeId, activeChat, saveChats, updateChatTitle, isSending, agentMode])
 
   // Reset chats and ref when user changes (logout/login or user switch)
   useEffect(() => {
@@ -856,6 +856,12 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
 
       if (response.ok) {
         const data = await response.json()
+        console.log('[AIChatSidebar] Action execution response:', {
+          resultsCount: data.results?.length,
+          successfulCount: data.results?.filter((r: any) => r.success).length,
+          hasUpdatedTreeContext: !!data.updated_tree_context,
+          hasOnTreeUpdated: !!onTreeUpdated
+        })
         
         // Add success message to chat
         const successMessage: ChatMessage = {
@@ -877,8 +883,18 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
         saveChats(updatedChats)
 
         // Notify parent component to refresh tree
-        if (onTreeUpdated && data.updated_tree_context) {
-          onTreeUpdated(data.updated_tree_context)
+        console.log('[AIChatSidebar] Calling onTreeUpdated callback...')
+        if (onTreeUpdated) {
+          if (data.updated_tree_context) {
+            console.log('[AIChatSidebar] Calling onTreeUpdated with updated_tree_context')
+            onTreeUpdated(data.updated_tree_context)
+          } else {
+            console.warn('[AIChatSidebar] No updated_tree_context in response, calling onTreeUpdated without context')
+            // Still call it to trigger refresh even if context is missing
+            onTreeUpdated(null as any)
+          }
+        } else {
+          console.warn('[AIChatSidebar] onTreeUpdated callback is not provided')
         }
 
         setActionPlan(null)

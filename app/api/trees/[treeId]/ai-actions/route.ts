@@ -169,9 +169,13 @@ export async function POST(
         userId
       )
 
+      console.log(`[AI_ACTIONS] Execution completed: ${executionResult.results.filter(r => r.success).length}/${executionResult.results.length} successful`)
+      console.log(`[AI_ACTIONS] Returning tree_context:`, executionResult.tree_context ? 'present' : 'null')
+
       return NextResponse.json({
         mode: 'execute',
-        ...executionResult
+        results: executionResult.results,
+        updated_tree_context: executionResult.tree_context // Map tree_context to updated_tree_context for frontend
       })
     }
   } catch (error) {
