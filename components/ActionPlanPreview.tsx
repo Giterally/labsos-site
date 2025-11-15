@@ -67,28 +67,94 @@ export default function ActionPlanPreview({
                     <Badge variant={getOperationColor(op.type) as any}>
                       {formatOperationType(op.type)}
                     </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {(op.confidence * 100).toFixed(0)}% confidence
-                    </span>
                   </div>
-                  {op.target.node_id && (
+                  
+                  {/* Target Name Display */}
+                  {(op.target.node_name || op.target.block_name) && (
+                    <div className="text-sm font-medium text-foreground">
+                      {op.target.node_name && (
+                        <span>
+                          Node: <span className="font-semibold">{op.target.node_name}</span>
+                          {op.target.block_name && (
+                            <span className="text-xs text-muted-foreground ml-1">
+                              (in {op.target.block_name})
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      {!op.target.node_name && op.target.block_name && (
+                        <span>
+                          Block: <span className="font-semibold">{op.target.block_name}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Move operation shows source and destination */}
+                  {op.type === 'move_node' && op.target.target_block_name && (
                     <div className="text-xs text-muted-foreground">
-                      Node ID: {op.target.node_id.substring(0, 8)}...
+                      Moving to: <span className="font-medium text-foreground">{op.target.target_block_name}</span>
+                      {op.changes.new_position && (
+                        <span> (position {op.changes.new_position})</span>
+                      )}
                     </div>
                   )}
-                  {op.target.block_id && (
-                    <div className="text-xs text-muted-foreground">
-                      Block ID: {op.target.block_id.substring(0, 8)}...
+                  
+                  {/* Before/After Comparison */}
+                  {op.before && Object.keys(op.changes).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {Object.keys(op.changes).map((key) => {
+                        const beforeValue = op.before?.[key]
+                        const afterValue = op.changes[key]
+                        
+                        // Skip if values are the same or if before value doesn't exist
+                        if (beforeValue === undefined || beforeValue === afterValue) {
+                          return null
+                        }
+                        
+                        return (
+                          <div key={key} className="text-xs border rounded p-2 bg-background">
+                            <div className="font-medium mb-1 capitalize">{key.replace(/_/g, ' ')}:</div>
+                            <div className="space-y-1">
+                              <div className="flex items-start gap-2">
+                                <span className="text-destructive font-medium min-w-[3rem]">Before:</span>
+                                <span className="text-muted-foreground line-through break-words">
+                                  {typeof beforeValue === 'string' && beforeValue.length > 100 
+                                    ? `${beforeValue.substring(0, 100)}...` 
+                                    : beforeValue || '(empty)'}
+                                </span>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <span className="text-green-600 dark:text-green-400 font-medium min-w-[3rem]">After:</span>
+                                <span className="text-foreground font-medium break-words">
+                                  {typeof afterValue === 'string' && afterValue.length > 100 
+                                    ? `${afterValue.substring(0, 100)}...` 
+                                    : afterValue || '(empty)'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
-                  {op.reasoning && (
-                    <div className="text-xs text-muted-foreground italic">
-                      {op.reasoning}
-                    </div>
-                  )}
-                  {Object.keys(op.changes).length > 0 && (
+                  
+                  {/* Fallback: Show changes list if no before state */}
+                  {!op.before && Object.keys(op.changes).length > 0 && (
                     <div className="text-xs text-muted-foreground mt-1">
-                      Changes: {Object.keys(op.changes).join(', ')}
+                      <div className="font-medium mb-1">Changes:</div>
+                      <div className="space-y-0.5">
+                        {Object.entries(op.changes).map(([key, value]) => (
+                          <div key={key} className="capitalize">
+                            <span className="font-medium">{key.replace(/_/g, ' ')}:</span>{' '}
+                            <span className="text-foreground">
+                              {typeof value === 'string' && value.length > 50 
+                                ? `${value.substring(0, 50)}...` 
+                                : String(value) || '(empty)'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
