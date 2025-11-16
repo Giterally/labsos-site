@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Sparkles, X, Plus, Trash2, Pencil, Check, ExternalLink, FileText, Video, Link as LinkIcon } from "lucide-react"
+import { Sparkles, X, Plus, Trash2, Pencil, Check, ExternalLink, FileText, Video, Link as LinkIcon, Copy, CheckCircle2 } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
 import { cn } from "@/lib/utils"
@@ -223,8 +224,9 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   const [isExecuting, setIsExecuting] = useState(false)
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState("")
+  const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const initialQueryHandledRef = useRef(false)
   const actionPlanLoadedRef = useRef(false)
@@ -351,6 +353,10 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
 
     setIsSending(true)
     setCurrentMessage("")
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
 
     // Add user message
     const userMessage: ChatMessage = {
@@ -747,13 +753,26 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
     }
   }, [activeChat?.messages, isSending])
 
-  // Handle Enter key
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  // Handle Enter key (send on Enter, new line on Shift+Enter)
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (currentMessage.trim() && !isSending) {
         sendMessage(currentMessage)
       }
+    }
+  }
+
+  // Auto-resize textarea
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setCurrentMessage(e.target.value)
+    // Auto-resize
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+      const scrollHeight = inputRef.current.scrollHeight
+      // Max height for ~5 lines (approximately 5 * line-height + padding)
+      const maxHeight = 5 * 24 + 16 // ~5 lines at 24px line-height + 16px padding
+      inputRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
     }
   }
 
@@ -1126,18 +1145,39 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                     <div
                       key={index}
                       className={cn(
-                        "flex",
+                        "flex group",
                         message.role === 'user' ? "justify-end" : "justify-start"
                       )}
                     >
                       <div
                         className={cn(
-                          "max-w-[80%] rounded-lg px-4 py-2",
+                          "max-w-[80%] rounded-lg px-4 py-2 relative",
                           message.role === 'user'
                             ? "bg-primary text-primary-foreground"
                             : "bg-muted text-foreground border border-border"
                         )}
                       >
+                        {/* Copy button - appears on hover, positioned at bottom corner closest to center */}
+                        <button
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(message.content)
+                            setCopiedMessageIndex(index)
+                            setTimeout(() => setCopiedMessageIndex(null), 2000)
+                          }}
+                          className={cn(
+                            "absolute p-1.5 rounded-full bg-background border border-border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-10",
+                            message.role === 'user' 
+                              ? "-bottom-2 -left-2" // User messages (right side): bottom-left corner
+                              : "-bottom-2 -right-2" // AI messages (left side): bottom-right corner
+                          )}
+                          aria-label="Copy message"
+                        >
+                          {copiedMessageIndex === index ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5 text-foreground" />
+                          )}
+                        </button>
                         {message.role === 'assistant' && (
                           <div className="flex items-center gap-2 mb-1">
                             <Sparkles size={12} className="text-primary" />
@@ -1286,34 +1326,36 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                     </div>
                   </div>
                 )}
+                
+                {/* Action Plan Preview - inside messages container so it scrolls with chat */}
+                {actionPlan && (
+                  <div className="p-4">
+                    <ActionPlanPreview
+                      plan={actionPlan}
+                      onConfirm={handleConfirmAction}
+                      onCancel={handleCancelAction}
+                      isExecuting={isExecuting}
+                    />
+                  </div>
+                )}
+                
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Action Plan Preview */}
-              {actionPlan && (
-                <div className="p-4 border-t">
-                  <ActionPlanPreview
-                    plan={actionPlan}
-                    onConfirm={handleConfirmAction}
-                    onCancel={handleCancelAction}
-                    isExecuting={isExecuting}
-                  />
-                </div>
-              )}
-
               {/* Input Area */}
               <div className="border-t p-4 flex-shrink-0">
-                <div className="flex gap-2 items-center">
-                  <Input
+                <div className="flex gap-2 items-end">
+                  <Textarea
                     ref={inputRef}
                     value={currentMessage}
-                    onChange={(e) => setCurrentMessage(e.target.value)}
+                    onChange={handleTextareaChange}
                     onKeyDown={handleKeyDown}
                     placeholder="Ask a question..."
                     disabled={isSending}
-                    className="flex-1"
+                    className="flex-1 min-h-[36px] max-h-[136px] resize-none overflow-y-auto"
+                    rows={1}
                   />
-                  <div className="flex items-center justify-center gap-2 h-9 px-3 rounded-md border border-input bg-background shadow-xs">
+                  <div className="flex items-center justify-center gap-2 h-9 px-3 rounded-md border border-input bg-background shadow-xs flex-shrink-0">
                     <Label htmlFor="agent-mode" className="text-xs text-muted-foreground whitespace-nowrap cursor-pointer">
                       Agent
                     </Label>
@@ -1326,6 +1368,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                   <Button
                     onClick={() => sendMessage(currentMessage)}
                     disabled={!currentMessage.trim() || isSending}
+                    className="flex-shrink-0"
                   >
                     Send
                   </Button>

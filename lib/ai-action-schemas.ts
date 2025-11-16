@@ -283,7 +283,7 @@ export const AI_ACTION_FUNCTIONS = [
 export function hasActionIntent(query: string): boolean {
   const actionKeywords = [
     'create', 'add', 'make', 'new',
-    'update', 'edit', 'change', 'modify', 'rename',
+    'update', 'edit', 'change', 'modify', 'rename', 'fix', 'improve', 'adjust', 'set',
     'delete', 'remove', 'drop',
     'move', 'reorder', 'reposition',
     'link', 'attachment', 'dependency'
@@ -291,5 +291,53 @@ export function hasActionIntent(query: string): boolean {
   
   const lowerQuery = query.toLowerCase()
   return actionKeywords.some(keyword => lowerQuery.includes(keyword))
+}
+
+/**
+ * Detect if a query is a bulk operation (affects all or many nodes)
+ * Bulk operations require full context to ensure 100% accuracy
+ */
+export function detectBulkOperation(query: string): boolean {
+  const lowerQuery = query.toLowerCase().trim()
+  
+  // Keywords that indicate bulk operations
+  const bulkKeywords = [
+    'all nodes',
+    'every node',
+    'entire tree',
+    'all blocks',
+    'each node',
+    'go through every',
+    'for all nodes',
+    'across all nodes',
+    'throughout the tree',
+    'all of the nodes',
+    'every single node',
+    'each and every node'
+  ]
+  
+  // Patterns that indicate bulk operations
+  const bulkPatterns = [
+    /for all\s+/i,
+    /across all\s+/i,
+    /throughout\s+the\s+tree/i,
+    /go through\s+every/i,
+    /process\s+all\s+nodes/i,
+    /update\s+all\s+nodes/i,
+    /change\s+all\s+nodes/i,
+    /modify\s+all\s+nodes/i
+  ]
+  
+  // Check for exact keyword matches
+  if (bulkKeywords.some(keyword => lowerQuery.includes(keyword))) {
+    return true
+  }
+  
+  // Check for pattern matches
+  if (bulkPatterns.some(pattern => pattern.test(query))) {
+    return true
+  }
+  
+  return false
 }
 

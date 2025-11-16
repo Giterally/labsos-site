@@ -1,9 +1,10 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Check, X, AlertCircle, Loader2 } from "lucide-react"
+import { Check, X, AlertCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react"
 import type { GeneratedActionPlan } from "@/lib/ai-action-handler"
 
 interface ActionPlanPreviewProps {
@@ -19,6 +20,7 @@ export default function ActionPlanPreview({
   onCancel,
   isExecuting = false
 }: ActionPlanPreviewProps) {
+  const [isExpanded, setIsExpanded] = useState(true)
   const getOperationIcon = (type: string) => {
     if (type.includes('create') || type.includes('add')) return '➕'
     if (type.includes('update') || type.includes('edit')) return '✏️'
@@ -39,23 +41,39 @@ export default function ActionPlanPreview({
 
   return (
     <Card className="border-2 border-primary/20">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <AlertCircle className="h-5 w-5 text-primary" />
-          Action Plan Preview
-        </CardTitle>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-primary" />
+            <CardTitle>Action Plan Preview</CardTitle>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="h-8 w-8 p-0"
+            aria-label={isExpanded ? "Collapse" : "Expand"}
+          >
+            {isExpanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
         <CardDescription>
           {plan.summary}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="text-sm text-muted-foreground">
-          {plan.estimated_impact}
-        </div>
+      {isExpanded && (
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground">
+            {plan.estimated_impact}
+          </div>
 
-        <div className="space-y-2">
-          <div className="text-sm font-medium">Operations ({plan.operations.length}):</div>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Operations ({plan.operations.length}):</div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
             {plan.operations.map((op, idx) => (
               <div
                 key={op.operation_id || idx}
@@ -160,38 +178,76 @@ export default function ActionPlanPreview({
                 </div>
               </div>
             ))}
+            </div>
           </div>
-        </div>
 
-        <div className="flex gap-2 pt-2">
-          <Button
-            onClick={onConfirm}
-            disabled={isExecuting}
-            className="flex-1"
-          >
-            {isExecuting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Executing...
-              </>
-            ) : (
-              <>
-                <Check className="mr-2 h-4 w-4" />
-                Confirm & Execute
-              </>
-            )}
-          </Button>
-          <Button
-            onClick={onCancel}
-            variant="outline"
-            disabled={isExecuting}
-            className="flex-1"
-          >
-            <X className="mr-2 h-4 w-4" />
-            Cancel
-          </Button>
-        </div>
-      </CardContent>
+          <div className="flex gap-2 pt-2">
+            <Button
+              onClick={onConfirm}
+              disabled={isExecuting}
+              className="flex-1"
+            >
+              {isExecuting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Executing...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Confirm & Execute
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={onCancel}
+              variant="outline"
+              disabled={isExecuting}
+              className="flex-1"
+            >
+              <X className="mr-2 h-4 w-4" />
+              Cancel
+            </Button>
+          </div>
+        </CardContent>
+      )}
+      {!isExpanded && (
+        <CardContent className="pt-0 pb-3">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              {plan.estimated_impact}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={onConfirm}
+                disabled={isExecuting}
+                size="sm"
+              >
+                {isExecuting ? (
+                  <>
+                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    Executing...
+                  </>
+                ) : (
+                  <>
+                    <Check className="mr-2 h-3 w-3" />
+                    Confirm
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={onCancel}
+                variant="outline"
+                disabled={isExecuting}
+                size="sm"
+              >
+                <X className="mr-2 h-3 w-3" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      )}
     </Card>
   )
 }

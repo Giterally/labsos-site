@@ -3,9 +3,9 @@ import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
 import { supabaseServer } from '@/lib/supabase-server'
 import { fetchTreeContext, fetchTreeContextWithSemanticSearch } from '@/lib/tree-context'
-import { generateActionPlan, GeneratedActionPlan } from '@/lib/ai-action-handler'
+import { generateActionPlanWithRouting, GeneratedActionPlan } from '@/lib/ai-action-handler'
 import { executeActionPlan } from '@/lib/ai-action-executor'
-import { hasActionIntent } from '@/lib/ai-action-schemas'
+import { hasActionIntent, detectBulkOperation } from '@/lib/ai-action-schemas'
 
 export async function POST(
   request: NextRequest,
@@ -93,21 +93,27 @@ export async function POST(
 
     if (mode === 'preview') {
       // Generate action plan
-      // Check tree size to decide retrieval method
+      // Check tree size and operation type to decide retrieval method
       const { count: nodeCount } = await supabaseServer
         .from('tree_nodes')
         .select('*', { count: 'exact', head: true })
         .eq('tree_id', treeId)
 
       const totalNodeCount = nodeCount || 0
-      const useSemanticSearch = totalNodeCount >= 20
+      const isBulkOperation = detectBulkOperation(query)
 
       let treeContext: any = null
 
-      if (useSemanticSearch) {
+      if (isBulkOperation) {
+        // Bulk operations: always use full context for 100% accuracy
+        console.log(`[AI_ACTIONS] Bulk operation detected, using full context (${totalNodeCount} nodes)`)
+        treeContext = await fetchTreeContext(client, treeId)
+      } else if (totalNodeCount >= 20) {
+        // Targeted operations: use semantic search for efficiency
+        console.log(`[AI_ACTIONS] Targeted operation, using semantic search (tree has ${totalNodeCount} nodes)`)
         try {
           const semanticResult = await fetchTreeContextWithSemanticSearch(client, treeId, query, {
-            maxNodes: 10,
+            maxNodes: 20, // Increased from 10 for better coverage
             similarityThreshold: 0.7,
             includeDependencies: true,
           })
@@ -117,6 +123,8 @@ export async function POST(
           treeContext = await fetchTreeContext(client, treeId)
         }
       } else {
+        // Small trees: always use full context
+        console.log(`[AI_ACTIONS] Small tree (${totalNodeCount} nodes), using full context`)
         treeContext = await fetchTreeContext(client, treeId)
       }
 
@@ -127,8 +135,8 @@ export async function POST(
         )
       }
 
-      // Generate action plan
-      const actionPlan = await generateActionPlan(
+      // Generate action plan (with automatic routing to chunked generation for large bulk operations)
+      const actionPlan = await generateActionPlanWithRouting(
         query,
         treeContext,
         conversationHistory || [],

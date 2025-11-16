@@ -5,7 +5,7 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { PermissionService } from './permission-service'
 import { ActionPlanOperation, GeneratedActionPlan } from './ai-action-handler'
-import { TreeContext, fetchTreeContext } from './tree-context'
+import { TreeContext, fetchTreeContext, searchNodesAndBlocks } from './tree-context'
 import { fetchNodeAndGenerateEmbedding } from './embedding-helpers'
 
 export interface ExecutionResult {
@@ -46,11 +46,55 @@ export async function executeActionPlan(
     }
   }
 
+  // Fetch full tree context for identifier resolution if needed
+  let fullTreeContext: TreeContext | null = null
+  const needsFullContext = plan.operations.some(op => 
+    (op.target.node_identifier && !op.target.node_id) || 
+    (op.target.block_identifier && !op.target.block_id)
+  )
+  
+  if (needsFullContext) {
+    console.log('[executeActionPlan] Some operations have identifiers but no IDs, fetching full context for resolution')
+    fullTreeContext = await fetchTreeContext(supabase, treeId)
+  }
+
   // Execute each operation
   for (const operation of plan.operations) {
     const operationId = operation.operation_id || `op_${Date.now()}_${Math.random()}`
     
     try {
+      // Resolve identifiers to IDs if needed
+      if (operation.target.node_identifier && !operation.target.node_id && fullTreeContext) {
+        console.log(`[executeActionPlan] Resolving node_identifier: "${operation.target.node_identifier}"`)
+        const searchResults = searchNodesAndBlocks(fullTreeContext, operation.target.node_identifier, { limit: 1 })
+        if (searchResults.nodes.length > 0) {
+          operation.target.node_id = searchResults.nodes[0].node_id
+          console.log(`[executeActionPlan] Resolved to node_id: ${operation.target.node_id}`)
+        } else {
+          throw new Error(`Could not resolve node_identifier: "${operation.target.node_identifier}"`)
+        }
+      }
+      
+      if (operation.target.block_identifier && !operation.target.block_id && fullTreeContext) {
+        console.log(`[executeActionPlan] Resolving block_identifier: "${operation.target.block_identifier}"`)
+        const searchResults = searchNodesAndBlocks(fullTreeContext, operation.target.block_identifier, { limit: 1 })
+        if (searchResults.blocks.length > 0) {
+          operation.target.block_id = searchResults.blocks[0].block_id
+          console.log(`[executeActionPlan] Resolved to block_id: ${operation.target.block_id}`)
+        } else {
+          throw new Error(`Could not resolve block_identifier: "${operation.target.block_identifier}"`)
+        }
+      }
+
+      console.log(`[executeActionPlan] Executing operation: ${operation.type}, node_id: ${operation.target.node_id || 'none'}, block_id: ${operation.target.block_id || 'none'}`)
+      if (operation.changes && Object.keys(operation.changes).length > 0) {
+        console.log(`[executeActionPlan] Operation changes:`, Object.keys(operation.changes).join(', '))
+        // Log content length if present (but not the full content to avoid log spam)
+        if (operation.changes.content) {
+          console.log(`[executeActionPlan] Content length: ${operation.changes.content.length} chars`)
+        }
+      }
+      
       let result: any = null
 
       switch (operation.type) {
@@ -103,6 +147,7 @@ export async function executeActionPlan(
           throw new Error(`Unknown operation type: ${operation.type}`)
       }
 
+      console.log(`[executeActionPlan] Operation ${operationId} (${operation.type}) completed successfully`)
       results.push({
         operation_id: operationId,
         success: true,
@@ -110,6 +155,8 @@ export async function executeActionPlan(
       })
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorStack = error instanceof Error ? error.stack : undefined
+      console.error(`[executeActionPlan] Operation ${operationId} (${operation.type}) failed:`, errorMessage, errorStack)
       errors.push(errorMessage)
       results.push({
         operation_id: operationId,
@@ -121,6 +168,18 @@ export async function executeActionPlan(
 
   // If any operations failed, we could rollback here (atomic transaction)
   // For now, we continue and report all results
+
+  // Log execution summary
+  const successCount = results.filter(r => r.success).length
+  const failureCount = results.filter(r => !r.success).length
+  console.log(`[executeActionPlan] Execution complete: ${successCount} successful, ${failureCount} failed out of ${results.length} total operations`)
+  
+  if (failureCount > 0) {
+    console.error(`[executeActionPlan] Failed operations:`, results.filter(r => !r.success).map(r => ({
+      id: r.operation_id,
+      error: r.error
+    })))
+  }
 
   // Fetch updated tree context
   const updatedTreeContext = await fetchTreeContext(supabase, treeId)
@@ -223,21 +282,39 @@ async function executeUpdateNode(
 
   // Update content if provided
   if (changes.content !== undefined) {
-    const { data: existingContent } = await supabase
+    const { data: existingContent, error: fetchError } = await supabase
       .from('node_content')
       .select('id')
       .eq('node_id', nodeId)
       .single()
 
+    // If fetchError is PGRST116, it means no row found (which is fine, we'll insert)
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error(`[executeUpdateNode] Failed to check existing content for node ${nodeId}:`, fetchError)
+      throw fetchError
+    }
+
     if (existingContent) {
-      await supabase
+      const { error: updateError } = await supabase
         .from('node_content')
         .update({ content: changes.content, updated_at: new Date().toISOString() })
         .eq('node_id', nodeId)
+      
+      if (updateError) {
+        console.error(`[executeUpdateNode] Failed to update content for node ${nodeId}:`, updateError)
+        throw updateError
+      }
+      console.log(`[executeUpdateNode] Updated content for node ${nodeId}`)
     } else {
-      await supabase
+      const { error: insertError } = await supabase
         .from('node_content')
         .insert({ node_id: nodeId, content: changes.content })
+      
+      if (insertError) {
+        console.error(`[executeUpdateNode] Failed to insert content for node ${nodeId}:`, insertError)
+        throw insertError
+      }
+      console.log(`[executeUpdateNode] Inserted content for node ${nodeId}`)
     }
 
     // Update embedding (non-blocking)
@@ -454,21 +531,42 @@ async function executeUpdateNodeContent(
     throw new Error('No write permission for this node')
   }
 
-  const { data: existingContent } = await supabase
+  if (!content) {
+    throw new Error('Content is required')
+  }
+
+  const { data: existingContent, error: fetchError } = await supabase
     .from('node_content')
     .select('id')
     .eq('node_id', nodeId)
     .single()
 
+  // If fetchError is PGRST116, it means no row found (which is fine, we'll insert)
+  if (fetchError && fetchError.code !== 'PGRST116') {
+    throw fetchError
+  }
+
   if (existingContent) {
-    await supabase
+    const { error: updateError } = await supabase
       .from('node_content')
       .update({ content, updated_at: new Date().toISOString() })
       .eq('node_id', nodeId)
+    
+    if (updateError) {
+      console.error(`[executeUpdateNodeContent] Failed to update content for node ${nodeId}:`, updateError)
+      throw updateError
+    }
+    console.log(`[executeUpdateNodeContent] Updated content for node ${nodeId}`)
   } else {
-    await supabase
+    const { error: insertError } = await supabase
       .from('node_content')
       .insert({ node_id: nodeId, content })
+    
+    if (insertError) {
+      console.error(`[executeUpdateNodeContent] Failed to insert content for node ${nodeId}:`, insertError)
+      throw insertError
+    }
+    console.log(`[executeUpdateNodeContent] Inserted content for node ${nodeId}`)
   }
 
   // Update embedding (non-blocking)

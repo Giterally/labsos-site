@@ -1788,9 +1788,9 @@ export default function SimpleExperimentTreePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Main Content */}
-      <div className="container mx-auto px-4 py-8 pt-20">
-        {/* Header with Back Button and Search */}
-        <div className="mb-6 flex items-center justify-between">
+      <div className="container mx-auto px-4 py-8 pt-4">
+        {/* Header with Back Button */}
+        <div className="mb-6">
           <div className="flex items-center space-x-2">
             {navContext ? (
               <Button
@@ -1813,63 +1813,6 @@ export default function SimpleExperimentTreePage() {
                 <span>Back to {projectInfo?.name || 'Project'}</span>
               </Button>
             )}
-          </div>
-          
-          <div className="flex items-center gap-2">
-            {/* Search Tool */}
-            <SearchTool 
-              treeId={treeId}
-              projectId={projectId}
-              onAIChatOpen={() => setShowAIChatSidebar(true)}
-              onNodeSelect={(nodeId, sectionId) => {
-                setSelectedNodeId(nodeId)
-                
-                // If there's a specific section, switch to that tab
-                if (sectionId) {
-                  // Map section IDs to tab values
-                  const sectionToTabMap: Record<string, string> = {
-                    'content': 'content',
-                    'attachments': 'attachments', 
-                    'links': 'links',
-                    'metadata': 'metadata'
-                  }
-                  
-                  const tabValue = sectionToTabMap[sectionId]
-                  if (tabValue) {
-                    // Find the tab trigger and click it
-                    setTimeout(() => {
-                      const tabTrigger = document.querySelector(`[data-state="inactive"][value="${tabValue}"]`) as HTMLElement
-                      if (tabTrigger) {
-                        tabTrigger.click()
-                      }
-                    }, 200)
-                  }
-                }
-                
-                // Scroll to the selected node if it's visible
-                setTimeout(() => {
-                  const element = document.getElementById(`node-${nodeId}`)
-                  if (element) {
-                    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                    
-                    // If there's a specific section, try to scroll to it
-                    if (sectionId) {
-                      setTimeout(() => {
-                        const sectionElement = document.getElementById(sectionId)
-                        if (sectionElement) {
-                          sectionElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                          // Highlight the section briefly
-                          sectionElement.classList.add('bg-yellow-100', 'transition-colors', 'duration-1000')
-                          setTimeout(() => {
-                            sectionElement.classList.remove('bg-yellow-100')
-                          }, 2000)
-                        }
-                      }, 500)
-                    }
-                  }
-                }, 100)
-              }}
-            />
           </div>
         </div>
 
@@ -1928,21 +1871,56 @@ export default function SimpleExperimentTreePage() {
                         {treeInfo.description}
                       </CardDescription>
                     )}
-                    <div className="flex items-center space-x-4">
-                      <Badge variant="outline" className={
-                        treeInfo.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                        treeInfo.status === 'completed' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                        treeInfo.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200' :
-                        'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
-                      }>
-                        {treeInfo.status}
-                      </Badge>
-                      <Badge variant="secondary">
-                        {allBlockTypes.length} Blocks
-                      </Badge>
-                      <Badge variant="secondary">
-                        {experimentNodes.length} Nodes
-                      </Badge>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <Badge variant="outline" className={
+                          treeInfo.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                          treeInfo.status === 'completed' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                          treeInfo.status === 'draft' ? 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200' :
+                          'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
+                        }>
+                          {treeInfo.status}
+                        </Badge>
+                        <Badge variant="secondary">
+                          {allBlockTypes.length} Blocks
+                        </Badge>
+                        <Badge variant="secondary">
+                          {experimentNodes.length} Nodes
+                        </Badge>
+                      </div>
+                      {/* Search Tool */}
+                      <div className="flex items-center gap-2">
+                        <SearchTool 
+                          treeId={treeId}
+                          projectId={projectId}
+                          onAIChatOpen={() => setShowAIChatSidebar(true)}
+                          onNodeSelect={(nodeId, sectionId) => {
+                            setSelectedNodeId(nodeId)
+                            
+                            // If there's a specific section, switch to that tab
+                            if (sectionId) {
+                              // Map section IDs to tab values
+                              const sectionToTabMap: Record<string, string> = {
+                                'content': 'content',
+                                'attachments': 'attachments', 
+                                'links': 'links',
+                                'metadata': 'metadata'
+                              }
+                              
+                              const tabValue = sectionToTabMap[sectionId]
+                              if (tabValue) {
+                                // Find the tab trigger and click it
+                                setTimeout(() => {
+                                  const tabTrigger = document.querySelector(`[data-state="inactive"][value="${tabValue}"]`) as HTMLElement
+                                  if (tabTrigger) {
+                                    tabTrigger.click()
+                                  }
+                                }, 100)
+                              }
+                            }
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
