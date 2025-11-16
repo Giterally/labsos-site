@@ -24,6 +24,41 @@ function getOpenAIClient(): OpenAI {
 
 const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini'
 
+/**
+ * Calculate max_tokens dynamically based on operation size
+ * Ensures sufficient tokens for completion while optimizing for cost
+ */
+function calculateMaxTokens(
+  nodeCount: number,
+  isBulkOperation: boolean,
+  isEmptyContent: boolean
+): number {
+  if (!isBulkOperation && !isEmptyContent) {
+    // Normal operations: use default
+    console.log(`[calculateMaxTokens] Normal operation - using default 16384 tokens`)
+    return 16384
+  }
+  
+  // Estimate tokens needed:
+  // - Each operation: ~300-500 tokens (function name + arguments JSON)
+  // - System prompt: ~500 tokens
+  // - User prompt: ~2000-5000 tokens (depends on tree size)
+  // - Assistant text: ~500-1000 tokens
+  // - Safety margin: 2x to prevent cutoff
+  
+  const tokensPerOperation = 500
+  const baseTokens = 5000
+  const estimatedTokens = baseTokens + (nodeCount * tokensPerOperation)
+  const withSafetyMargin = estimatedTokens * 2
+  
+  // Cap at model limit (GPT-4o-mini supports up to 128k, but use 64k to be safe)
+  const maxTokens = Math.min(withSafetyMargin, 64000)
+  
+  console.log(`[calculateMaxTokens] Nodes: ${nodeCount}, Estimated: ${estimatedTokens}, With margin: ${withSafetyMargin}, Final: ${maxTokens}`)
+  
+  return maxTokens
+}
+
 export interface ActionPlanOperation {
   type: string
   target: {
@@ -100,12 +135,154 @@ CRITICAL FOR CONTENT OPERATIONS: If the user asks to update nodes with empty con
   let emptyNodesList: Array<{ blockName: string; nodeName: string; position: number; nodeId: string }> = []
   
   // Detect bulk rename operations (user wants to rename all or many nodes)
-  const isBulkRenameQuery = query.toLowerCase().includes('fix the node names') || 
-                           query.toLowerCase().includes('rename all nodes') ||
-                           query.toLowerCase().includes('update all node names') ||
-                           (query.toLowerCase().includes('node names') && (query.toLowerCase().includes('all') || query.toLowerCase().includes('every')))
+  // FLEXIBLE DETECTION: Uses regex patterns to match variations like "fix the name nodes" vs "fix the node names"
+  function detectBulkRenameQuery(query: string): boolean {
+    const lowerQuery = query.toLowerCase()
+    
+    const renamePatterns = [
+      /fix\s+(?:the\s+)?(?:node\s+names?|name\s+nodes?|names?)/i,
+      /rename\s+(?:all\s+)?(?:the\s+)?nodes?/i,
+      /update\s+(?:all\s+)?(?:the\s+)?(?:node\s+names?|names?)/i,
+      /change\s+(?:all\s+)?(?:the\s+)?(?:node\s+names?|names?)/i,
+      /(all|every)\s+(?:the\s+)?nodes?.*names?/i,
+    ]
+    
+    const matched = renamePatterns.some(pattern => pattern.test(lowerQuery))
+    if (matched) {
+      console.log(`[detectBulkRenameQuery] ✅ Matched bulk rename pattern in query: "${query.substring(0, 100)}..."`)
+    }
+    return matched
+  }
+  
+  // Helper function to extract node names (used by both detection and extraction)
+  function extractNodeNamesFromQuery(query: string, conversationHistory: any[]): string[] {
+    const seenNames = new Set<string>()
+    const extractedNames: string[] = []
+    
+    // Include last 3 messages from history for better coverage
+    const recentHistory = conversationHistory.slice(-3).map(m => m.content).join('\n')
+    const allText = `${query}\n${recentHistory}`
+    
+    // Strategy 1: Match "Node: Name" format (most common)
+    const nodeRegex = /^\s*Node:\s*(.+?)\s*$/gim
+    let match
+    const rawMatches: string[] = []
+    
+    while ((match = nodeRegex.exec(allText)) !== null) {
+      const rawName = match[1]
+      rawMatches.push(rawName)
+    }
+    
+    // Clean and filter names from Strategy 1
+    for (const name of rawMatches) {
+      // Remove trailing "(in BlockName)" if present
+      let cleanName = name.replace(/\s*\(in\s+[^)]+\)\s*$/i, '').trim()
+      
+      // Less aggressive filtering - only filter obvious non-node text
+      const isValid = 
+        cleanName.length > 3 &&
+        !cleanName.match(/^(BLOCK\s+\d+|Block\s+\d+):/i) && // Only filter block headers like "BLOCK 1:"
+        !seenNames.has(cleanName)
+      
+      if (isValid) {
+        extractedNames.push(cleanName)
+        seenNames.add(cleanName)
+      }
+    }
+    
+    // Strategy 2: If Strategy 1 found few results, try line-by-line extraction
+    if (extractedNames.length < 10) {
+      const lines = allText.split('\n')
+      let inNodeSection = false
+      
+      for (const line of lines) {
+        const trimmed = line.trim()
+        
+        // Detect section start (BLOCK X:)
+        if (trimmed.match(/^BLOCK\s+\d+:/i)) {
+          inNodeSection = true
+          continue
+        }
+        
+        // In node section, any non-empty line that's not a block header is likely a node name
+        if (inNodeSection && trimmed.length > 3) {
+          // Skip block headers and already extracted names
+          if (!trimmed.match(/^BLOCK\s+\d+:/i) && !seenNames.has(trimmed)) {
+            // Remove "Node:" prefix if present
+            const cleanName = trimmed.replace(/^Node:\s*/i, '').trim()
+            if (cleanName.length > 3 && !seenNames.has(cleanName) && !cleanName.match(/^(BLOCK\s+\d+|Block\s+\d+):/i)) {
+              extractedNames.push(cleanName)
+              seenNames.add(cleanName)
+            }
+          }
+        }
+      }
+    }
+    
+    return extractedNames
+  }
+  
+  // Fallback detection: Check if user provided a list of node names (even without explicit keywords)
+  function detectBulkRenameFromContent(
+    query: string, 
+    conversationHistory: any[], 
+    totalNodeCount: number
+  ): { isBulkRename: boolean; extractedNames: string[] } {
+    const extractedNames = extractNodeNamesFromQuery(query, conversationHistory)
+    const coverageThreshold = 0.8 // 80% coverage
+    const minCoverage = totalNodeCount * coverageThreshold
+    
+    if (extractedNames.length >= minCoverage) {
+      console.log(`[detectBulkRenameFromContent] ✅ Found ${extractedNames.length} names (${((extractedNames.length / totalNodeCount) * 100).toFixed(0)}% coverage) - treating as bulk rename`)
+      return { isBulkRename: true, extractedNames }
+    }
+    
+    return { isBulkRename: false, extractedNames: [] }
+  }
   
   const totalNodeCount = treeContext.blocks.reduce((sum, block) => sum + block.nodes.length, 0)
+  
+  // Step 1: Try phrase-based detection
+  let isBulkRenameQuery = detectBulkRenameQuery(query)
+  let extractedNames: string[] = []
+  
+  // Step 2: Fallback to content-based detection if phrase detection failed
+  if (!isBulkRenameQuery && totalNodeCount > 0) {
+    const contentDetection = detectBulkRenameFromContent(query, conversationHistory, totalNodeCount)
+    if (contentDetection.isBulkRename) {
+      isBulkRenameQuery = true
+      extractedNames = contentDetection.extractedNames
+      console.log(`[generateActionPlan] Fallback detection: Content-based bulk rename detected with ${extractedNames.length} names`)
+    }
+  }
+  
+  // IMPROVED EXTRACTION: For bulk rename, try to extract names FIRST before calling AI
+  // If we have a complete list, skip AI entirely and generate operations directly
+  let shouldSkipAI = false
+  
+  if (isBulkRenameQuery) {
+    // Extract if not done yet (phrase detection succeeded but extraction wasn't done)
+    if (extractedNames.length === 0) {
+      extractedNames = extractNodeNamesFromQuery(query, conversationHistory)
+    }
+    // Names already extracted during detection phase, just log the results
+    console.log(`[generateActionPlan] Bulk rename detected - using extracted names`)
+    console.log(`[generateActionPlan] Extracted ${extractedNames.length} names from query/history`)
+    console.log(`[generateActionPlan] Total nodes in tree: ${totalNodeCount}`)
+    if (extractedNames.length > 0) {
+      console.log(`[generateActionPlan] First 5 extracted names:`, extractedNames.slice(0, 5))
+      console.log(`[generateActionPlan] Last 5 extracted names:`, extractedNames.slice(-5))
+    }
+    
+    // If we have a complete list, skip AI and generate operations directly
+    if (extractedNames.length >= totalNodeCount) {
+      console.log(`[generateActionPlan] ✅ Complete list detected (${extractedNames.length} names for ${totalNodeCount} nodes) - SKIPPING AI, generating operations directly`)
+      shouldSkipAI = true
+    } else {
+      console.log(`[generateActionPlan] ⚠️ Incomplete list (${extractedNames.length} < ${totalNodeCount}) - will use AI but try to fill gaps`)
+      console.log(`[generateActionPlan] Missing ${totalNodeCount - extractedNames.length} names`)
+    }
+  }
   
   if (isContentEmptyQuery) {
     for (const block of treeContext.blocks) {
@@ -154,11 +331,80 @@ ${isBulkRenameQuery ? `\n\n🚨🚨🚨 CRITICAL INSTRUCTIONS FOR BULK RENAME OP
     }
   ]
 
+  // Extract function calls from response
+  let operations: ActionPlanOperation[] = []
+  let assistantMessage = ''
+  
+  // If we have a complete list for bulk rename, skip AI and generate operations directly
+  if (shouldSkipAI && extractedNames.length >= totalNodeCount) {
+    console.log(`[generateActionPlan] Generating ${totalNodeCount} rename operations directly from extracted names`)
+    
+    // Generate operations for ALL nodes, matching names by block order and position
+    let nameIndex = 0
+    for (const block of treeContext.blocks) {
+      // Sort nodes by position within the block
+      const sortedNodes = [...block.nodes].sort((a, b) => a.position - b.position)
+      
+      for (const node of sortedNodes) {
+        if (nameIndex < extractedNames.length) {
+          const newName = extractedNames[nameIndex]
+          nameIndex++
+          
+          // Create the operation
+          const renameOperation: ActionPlanOperation = {
+            type: 'update_node',
+            target: {
+              node_id: node.id,
+              node_identifier: `${node.name} at position ${node.position} in ${block.name}`,
+              node_name: node.name,
+              block_name: block.name
+            },
+            changes: {
+              name: newName
+            },
+            confidence: 0.95, // Very high confidence when we have a complete list
+            reasoning: `Bulk rename: direct extraction from user-provided list`,
+            operation_id: `bulk_rename_${Date.now()}_${Math.random()}`
+          }
+          
+          // Get the "before" state
+          renameOperation.before = {
+            name: node.name,
+            description: node.description,
+            node_type: node.type,
+            position: node.position,
+            content: node.content,
+            status: node.status
+          }
+          
+          operations.push(renameOperation)
+          console.log(`[generateActionPlan] ✅ Generated rename: "${node.name}" -> "${newName}" (Block: ${block.name}, Pos: ${node.position})`)
+        }
+      }
+    }
+    
+    console.log(`[generateActionPlan] ✅ Generated ${operations.length} rename operations for all ${totalNodeCount} nodes (skipped AI)`)
+    
+    // Generate summary and return early
+    const summary = `Plan to rename all ${totalNodeCount} nodes`
+    const estimated_impact = `This will rename all ${totalNodeCount} node(s) in the experiment tree.`
+    
+    return {
+      operations,
+      summary,
+      estimated_impact,
+    }
+  }
+  
+  // Otherwise, proceed with AI generation
   // Call OpenAI with function calling
   // Force function calling if agent mode is enabled and query has action intent
   const toolChoice = agentMode && hasActionIntent(query) ? 'required' : 'auto'
   
-  console.log(`[generateActionPlan] Calling OpenAI with tool_choice: ${toolChoice}, agentMode: ${agentMode}, hasActionIntent: ${hasActionIntent(query)}`)
+  // Calculate dynamic token limit based on operation size
+  const maxTokens = calculateMaxTokens(totalNodeCount, isBulkOperation, isContentEmptyQuery)
+  
+  console.log(`[generateActionPlan] Calling OpenAI with tool_choice: ${toolChoice}, agentMode: ${agentMode}, hasActionIntent: ${hasActionIntent(query)}, max_tokens: ${maxTokens}`)
   
   const response = await openai.chat.completions.create({
     model: CHAT_MODEL,
@@ -173,12 +419,8 @@ ${isBulkRenameQuery ? `\n\n🚨🚨🚨 CRITICAL INSTRUCTIONS FOR BULK RENAME OP
     })),
     tool_choice: toolChoice,
     temperature: 0.3, // Lower temperature for more consistent plans
-    max_tokens: 16384, // Allow more function calls per response (enables 30-40 operations)
+    max_tokens: maxTokens, // Dynamic token limit based on operation size
   })
-
-  // Extract function calls from response
-  let operations: ActionPlanOperation[] = []
-  let assistantMessage = ''
 
   if (response.choices[0]?.message) {
     const message = response.choices[0].message
@@ -547,20 +789,23 @@ ${isBulkRenameQuery ? `\n\n🚨🚨🚨 CRITICAL INSTRUCTIONS FOR BULK RENAME OP
       
       console.log(`[generateActionPlan] ✅ Total operations after auto-generation: ${operations.length} (expected: ${emptyContentNodeCount})`)
     }
-  } else if (isBulkRenameQuery) {
-    // For bulk rename operations, check if all nodes are covered
+  } else if (isBulkRenameQuery && !shouldSkipAI) {
+    // CRITICAL: Ensure ALL nodes are processed for bulk rename
     const renameOperations = operations.filter(op => op.type === 'update_node' && op.changes.name)
     const processedNodeIds = new Set(renameOperations.map(op => op.target.node_id).filter(Boolean))
     
-    console.log(`[generateActionPlan] Bulk rename operation: ${renameOperations.length} operations generated, ${totalNodeCount} total nodes in tree`)
+    console.log(`[generateActionPlan] Bulk rename: AI generated ${renameOperations.length} operations, ${processedNodeIds.size} unique nodes`)
+    console.log(`[generateActionPlan] Processed ${processedNodeIds.size}/${totalNodeCount} nodes`)
     
     if (processedNodeIds.size < totalNodeCount) {
-      console.warn(`[generateActionPlan] ⚠️ WARNING: Only ${processedNodeIds.size} nodes have rename operations, but ${totalNodeCount} nodes exist in tree!`)
+      console.warn(`[generateActionPlan] ⚠️ INCOMPLETE: Need to generate ${totalNodeCount - processedNodeIds.size} more operations`)
       
-      // Find all nodes that don't have rename operations
+      // Get missing nodes
       const missingNodes: Array<{ nodeId: string; nodeName: string; blockName: string; position: number }> = []
       for (const block of treeContext.blocks) {
-        for (const node of block.nodes) {
+        // Sort nodes by position for consistent ordering
+        const sortedNodes = [...block.nodes].sort((a, b) => a.position - b.position)
+        for (const node of sortedNodes) {
           if (!processedNodeIds.has(node.id)) {
             missingNodes.push({
               nodeId: node.id,
@@ -572,129 +817,214 @@ ${isBulkRenameQuery ? `\n\n🚨🚨🚨 CRITICAL INSTRUCTIONS FOR BULK RENAME OP
         }
       }
       
-      console.warn(`[generateActionPlan] Missing rename operations for ${missingNodes.length} nodes:`, missingNodes.map(n => `"${n.nodeName}" in "${n.blockName}"`))
+      console.log(`[generateActionPlan] Missing ${missingNodes.length} nodes:`, missingNodes.map(n => `"${n.nodeName}" in "${n.blockName}" (pos ${n.position})`).slice(0, 5), missingNodes.length > 5 ? '...' : '')
       
-      // Try to extract new names from conversation history
-      // Look for patterns like "Node: NewName" or "BLOCK X: ... Node: NewName"
-      const allText = `${query}\n${conversationHistory.map(m => m.content).join('\n')}`
-      
-      // Try to parse a list of new names from the conversation history
-      // Look for patterns like "Node: [name]" or "BLOCK X:\nNode: [name]"
-      // Also handle formats like "Node: NewName" (standalone) or "Node: NewName\n" (with newline)
-      const nodeNamePattern = /(?:^|\n)(?:Node:\s*)([^\n:]+?)(?:\n|$|\(in |\(in Block)/gi
-      const extractedNames: string[] = []
-      let match
-      while ((match = nodeNamePattern.exec(allText)) !== null) {
-        const name = match[1].trim()
-        // Filter out names that are just block references or too short
-        if (name && name.length > 3 && !name.match(/^(in |\(in |Block|BLOCK)/i) && !name.endsWith('Block')) {
-          extractedNames.push(name)
-        }
-      }
-      
-      // Also try a more permissive pattern that matches any line starting with "Node:"
-      if (extractedNames.length < missingNodes.length) {
-        const permissivePattern = /Node:\s*([^\n]+)/gi
-        const permissiveNames: string[] = []
-        let permMatch
-        while ((permMatch = permissivePattern.exec(allText)) !== null) {
-          const name = permMatch[1].trim()
-          // Remove trailing "(in BlockName)" if present
-          const cleanName = name.replace(/\s*\(in\s+[^)]+\)\s*$/i, '').trim()
-          if (cleanName && cleanName.length > 3 && !cleanName.match(/^(in |\(in |Block|BLOCK)/i)) {
-            permissiveNames.push(cleanName)
-          }
-        }
-        // Merge, avoiding duplicates
-        for (const name of permissiveNames) {
-          if (!extractedNames.includes(name)) {
-            extractedNames.push(name)
-          }
-        }
-      }
-      
-      console.log(`[generateActionPlan] Extracted ${extractedNames.length} potential new names from conversation history`)
-      
-      // Try to match missing nodes to new names by position/block
-      // The extracted names should be in the same order as blocks appear in the tree
-      if (extractedNames.length >= missingNodes.length) {
-        console.log(`[generateActionPlan] 🔧 Auto-generating ${missingNodes.length} missing rename operations...`)
-        console.log(`[generateActionPlan] Extracted names (first 5):`, extractedNames.slice(0, 5))
+      // Strategy 1: Try to fill with extracted names (if available)
+      if (extractedNames.length > processedNodeIds.size) {
+        console.log(`[generateActionPlan] Strategy 1: Filling gaps with extracted names (have ${extractedNames.length} names, ${processedNodeIds.size} used)`)
         
-        // Group nodes by block in the same order as they appear in treeContext
-        const nodesByBlock = new Map<string, typeof missingNodes>()
-        for (const node of missingNodes) {
-          if (!nodesByBlock.has(node.blockName)) {
-            nodesByBlock.set(node.blockName, [])
-          }
-          nodesByBlock.get(node.blockName)!.push(node)
-        }
-        
-        // Match names by iterating through blocks in tree order
+        const unusedNames = extractedNames.slice(processedNodeIds.size)
         let nameIndex = 0
-        for (const block of treeContext.blocks) {
-          const nodesInBlock = nodesByBlock.get(block.name)
-          if (!nodesInBlock || nodesInBlock.length === 0) continue
-          
-          // Sort nodes by position within the block
-          const sortedNodes = [...nodesInBlock].sort((a, b) => a.position - b.position)
-          
-          console.log(`[generateActionPlan] Block "${block.name}": ${sortedNodes.length} missing nodes, starting at name index ${nameIndex}`)
-          
-          for (const node of sortedNodes) {
-            if (nameIndex < extractedNames.length) {
-              const newName = extractedNames[nameIndex]
-              nameIndex++
-              
-              // Create the operation
-              const autoOperation: ActionPlanOperation = {
-                type: 'update_node',
-                target: {
-                  node_id: node.nodeId,
-                  node_identifier: `${node.nodeName} at position ${node.position} in ${node.blockName}`,
-                  node_name: node.nodeName,
-                  block_name: node.blockName
-                },
-                changes: {
-                  name: newName
-                },
-                confidence: 0.8, // Medium confidence since we're matching by position
-                reasoning: `Auto-generated rename operation: matching by block and position`,
-                operation_id: `auto_rename_${Date.now()}_${Math.random()}`
-              }
-              
-              // Get the "before" state
-              for (const block of treeContext.blocks) {
-                const foundNode = block.nodes.find(n => n.id === node.nodeId)
-                if (foundNode) {
-                  autoOperation.before = {
-                    name: foundNode.name,
-                    description: foundNode.description,
-                    node_type: foundNode.type,
-                    position: foundNode.position,
-                    content: foundNode.content,
-                    status: foundNode.status
-                  }
-                  break
+        
+        for (const node of missingNodes) {
+          if (nameIndex < unusedNames.length) {
+            const newName = unusedNames[nameIndex]
+            nameIndex++
+            
+            const renameOperation: ActionPlanOperation = {
+              type: 'update_node',
+              target: {
+                node_id: node.nodeId,
+                node_identifier: `${node.nodeName} at position ${node.position} in ${node.blockName}`,
+                node_name: node.nodeName,
+                block_name: node.blockName
+              },
+              changes: {
+                name: newName
+              },
+              confidence: 0.85,
+              reasoning: `Bulk rename: filling gap from extracted names`,
+              operation_id: `bulk_rename_gap_${Date.now()}_${Math.random()}`
+            }
+            
+            // Get before state
+            for (const block of treeContext.blocks) {
+              const foundNode = block.nodes.find(n => n.id === node.nodeId)
+              if (foundNode) {
+                renameOperation.before = {
+                  name: foundNode.name,
+                  description: foundNode.description,
+                  node_type: foundNode.type,
+                  position: foundNode.position,
+                  content: foundNode.content,
+                  status: foundNode.status
                 }
+                break
               }
-              
-              operations.push(autoOperation)
-              console.log(`[generateActionPlan] ✅ Auto-generated rename: "${node.nodeName}" -> "${newName}" (Block: ${node.blockName}, Pos: ${node.position})`)
-            } else {
-              console.warn(`[generateActionPlan] ⚠️ Ran out of extracted names at index ${nameIndex}, but still have nodes to process`)
+            }
+            
+            operations.push(renameOperation)
+            processedNodeIds.add(node.nodeId)
+            console.log(`[generateActionPlan] ✅ Filled gap with extracted name: "${node.nodeName}" -> "${newName}"`)
+          }
+        }
+        
+        console.log(`[generateActionPlan] Strategy 1: Added ${nameIndex} operations from extracted names`)
+      }
+      
+      // Strategy 2: If still missing operations, make explicit AI completion call
+      const stillMissing = missingNodes.filter(node => !processedNodeIds.has(node.nodeId))
+      
+      if (stillMissing.length > 0) {
+        console.warn(`[generateActionPlan] CRITICAL: Still missing ${stillMissing.length} operations. Making explicit AI completion call.`)
+        
+        // Build explicit prompt for missing nodes
+        const missingNodesList = stillMissing
+          .map((n, i) => {
+            const block = treeContext.blocks.find(b => b.name === n.blockName)
+            return `${i + 1}. Node "${n.nodeName}" (ID: ${n.nodeId}, Block: "${n.blockName}", Position: ${n.position})`
+          })
+          .join('\n')
+        
+        const completionPrompt = `CRITICAL COMPLETION TASK:
+
+You previously generated ${processedNodeIds.size} update_node operations, but there are ${totalNodeCount} nodes total in the tree.
+
+You MUST generate update_node operations for these ${stillMissing.length} missing nodes:
+
+${missingNodesList}
+
+Original user request: ${query}
+
+${extractedNames.length > 0 ? `\nNote: The user provided a list of new names. Here are the remaining names (if any):\n${extractedNames.slice(processedNodeIds.size).slice(0, stillMissing.length).map((name, i) => `${i + 1}. ${name}`).join('\n')}` : ''}
+
+Generate EXACTLY ${stillMissing.length} update_node function calls, one for each node listed above.
+Use the exact node IDs provided. Do NOT skip any nodes. If you have new names from the user's list, match them to nodes in order.`
+
+        // Make completion call
+        const completionMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+          { role: 'system', content: systemPrompt },
+          ...conversationHistory.map(msg => ({
+            role: msg.role,
+            content: msg.content
+          })) as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+          {
+            role: 'user',
+            content: `Here is the current experiment tree structure:\n\n${formattedContext}\n\n${completionPrompt}`
+          }
+        ]
+        
+        try {
+          const openai = getOpenAIClient()
+          const completionMaxTokens = calculateMaxTokens(stillMissing.length, true, false)
+          
+          console.log(`[generateActionPlan] Making completion call with max_tokens: ${completionMaxTokens}`)
+          
+          const completionResponse = await openai.chat.completions.create({
+            model: CHAT_MODEL,
+            messages: completionMessages,
+            tools: AI_ACTION_FUNCTIONS.map(func => ({
+              type: 'function' as const,
+              function: {
+                name: func.name,
+                description: func.description,
+                parameters: func.parameters
+              }
+            })),
+            tool_choice: 'required',
+            max_tokens: completionMaxTokens,
+            temperature: 0.1 // Very low temperature for consistency
+          })
+          
+          const completionCalls = completionResponse.choices[0]?.message?.tool_calls || []
+          console.log(`[generateActionPlan] Completion call generated ${completionCalls.length} additional operations`)
+          
+          // Process completion operations
+          for (const toolCall of completionCalls) {
+            if (toolCall.type === 'function' && toolCall.function.name === 'update_node') {
+              try {
+                const args = JSON.parse(toolCall.function.arguments)
+                const targetNodeId = args.node_identifier ? 
+                  (() => {
+                    // Try to resolve identifier
+                    const searchResults = searchNodesAndBlocks(treeContext, args.node_identifier, { limit: 1 })
+                    return searchResults.nodes[0]?.node_id
+                  })() : 
+                  args.node_id
+                
+                if (targetNodeId && stillMissing.some(n => n.nodeId === targetNodeId)) {
+                  // Resolve to actual node_id if needed
+                  let finalNodeId = targetNodeId
+                  if (!finalNodeId) {
+                    const searchResults = searchNodesAndBlocks(treeContext, args.node_identifier || '', { limit: 1 })
+                    if (searchResults.nodes.length > 0) {
+                      finalNodeId = searchResults.nodes[0].node_id
+                    }
+                  }
+                  
+                  if (finalNodeId) {
+                    const missingNode = stillMissing.find(n => n.nodeId === finalNodeId)
+                    if (missingNode) {
+                      const completionOperation: ActionPlanOperation = {
+                        type: 'update_node',
+                        target: {
+                          node_id: finalNodeId,
+                          node_identifier: `${missingNode.nodeName} at position ${missingNode.position} in ${missingNode.blockName}`,
+                          node_name: missingNode.nodeName,
+                          block_name: missingNode.blockName
+                        },
+                        changes: args.changes || {},
+                        confidence: 0.8,
+                        reasoning: `Bulk rename: completion call for missing node`,
+                        operation_id: `bulk_rename_completion_${Date.now()}_${Math.random()}`
+                      }
+                      
+                      // Get before state
+                      for (const block of treeContext.blocks) {
+                        const foundNode = block.nodes.find(n => n.id === finalNodeId)
+                        if (foundNode) {
+                          completionOperation.before = {
+                            name: foundNode.name,
+                            description: foundNode.description,
+                            node_type: foundNode.type,
+                            position: foundNode.position,
+                            content: foundNode.content,
+                            status: foundNode.status
+                          }
+                          break
+                        }
+                      }
+                      
+                      operations.push(completionOperation)
+                      processedNodeIds.add(finalNodeId)
+                      console.log(`[generateActionPlan] ✅ Added completion operation for node_id ${finalNodeId} (${missingNode.nodeName})`)
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error(`[generateActionPlan] Error processing completion tool call:`, error)
+              }
             }
           }
+          
+          console.log(`[generateActionPlan] After completion call: ${processedNodeIds.size}/${totalNodeCount} nodes processed`)
+          
+        } catch (error) {
+          console.error(`[generateActionPlan] Completion call failed:`, error)
+          // Don't throw - return partial results with warning
         }
-        
-        console.log(`[generateActionPlan] ✅ Total operations after auto-generation: ${operations.length} (expected: ${totalNodeCount})`)
+      }
+      
+      // Final verification
+      const finalProcessedCount = new Set(operations.filter(op => op.type === 'update_node' && op.changes.name).map(op => op.target.node_id).filter(Boolean)).size
+      
+      if (finalProcessedCount < totalNodeCount) {
+        console.warn(`[generateActionPlan] WARNING: Only processed ${finalProcessedCount}/${totalNodeCount} nodes after all strategies`)
       } else {
-        console.warn(`[generateActionPlan] Cannot auto-generate rename operations: found ${extractedNames.length} new names but need ${missingNodes.length}. AI should have provided new names for all ${totalNodeCount} nodes.`)
-        console.warn(`[generateActionPlan] Extracted names:`, extractedNames)
-        console.warn(`[generateActionPlan] Missing nodes:`, missingNodes.map(n => `${n.nodeName} (${n.blockName}, pos ${n.position})`))
+        console.log(`[generateActionPlan] ✅ SUCCESS: All ${totalNodeCount} nodes processed after gap filling`)
       }
     } else {
-      console.log(`[generateActionPlan] ✅ All ${totalNodeCount} nodes have rename operations`)
+      console.log(`[generateActionPlan] ✅ SUCCESS: All ${totalNodeCount} nodes processed (no gap filling needed)`)
     }
   } else {
     // For non-content-empty queries, still deduplicate operations on the same node_id
@@ -720,20 +1050,43 @@ ${isBulkRenameQuery ? `\n\n🚨🚨🚨 CRITICAL INSTRUCTIONS FOR BULK RENAME OP
     console.log(`[generateActionPlan] After deduplication: ${operations.length} operations`)
   }
 
-  // Generate summary and impact estimate
-  const summary = operations.length > 0
+  // Generate summary and impact estimate with completion verification
+  let summary = operations.length > 0
     ? `Plan to ${operations.map(op => op.type.replace(/_/g, ' ')).join(', ')}`
     : 'No operations planned'
-
-  const estimated_impact = operations.length > 0
+  
+  let estimated_impact = operations.length > 0
     ? `This will affect ${operations.length} operation(s) in the experiment tree.`
     : 'No changes will be made.'
-
+  
+  // Add completion verification for bulk operations
+  if (isBulkRenameQuery) {
+    const finalRenameOps = operations.filter(op => op.type === 'update_node' && op.changes.name)
+    const finalProcessedCount = new Set(finalRenameOps.map(op => op.target.node_id).filter(Boolean)).size
+    
+    if (finalProcessedCount >= totalNodeCount) {
+      summary += `\n\n✅ All ${totalNodeCount} nodes processed successfully.`
+    } else {
+      summary += `\n\n⚠️ WARNING: Only ${finalProcessedCount} of ${totalNodeCount} nodes were processed. Some nodes may have been skipped.`
+      estimated_impact += ` ⚠️ Incomplete operation - ${totalNodeCount - finalProcessedCount} nodes were not processed.`
+    }
+  } else if (isContentEmptyQuery) {
+    const finalContentOps = operations.filter(op => op.type === 'update_node' && op.changes.content !== undefined)
+    const finalProcessedCount = new Set(finalContentOps.map(op => op.target.node_id).filter(Boolean)).size
+    
+    if (finalProcessedCount >= emptyContentNodeCount) {
+      summary += `\n\n✅ All ${emptyContentNodeCount} nodes with empty content processed successfully.`
+    } else {
+      summary += `\n\n⚠️ WARNING: Only ${finalProcessedCount} of ${emptyContentNodeCount} nodes with empty content were processed.`
+      estimated_impact += ` ⚠️ Incomplete operation - ${emptyContentNodeCount - finalProcessedCount} nodes were not processed.`
+    }
+  }
+  
   console.log(`[generateActionPlan] Generated ${operations.length} operations for query: "${query}"`)
   if (operations.length === 0) {
     console.warn(`[generateActionPlan] No operations generated. Assistant message: "${assistantMessage.substring(0, 200)}"`)
   }
-
+  
   return {
     operations,
     summary,
