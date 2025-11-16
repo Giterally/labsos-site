@@ -25,6 +25,7 @@ function getOpenAIClient(): OpenAI {
 const classificationCache = new Map<string, {
   requiresFullContext: boolean;
   isSimpleQuery: boolean;
+  isGreeting: boolean;
   timestamp: number;
 }>();
 
@@ -46,6 +47,12 @@ export const CONFIG = {
     maxNodes: 25,
     similarityThreshold: 0.7,
     estimatedCost: 0.006,
+  },
+
+  GREETING_QUERY: {
+    maxNodes: 5, // Minimal nodes for greetings - just enough for friendly response
+    similarityThreshold: 0.5, // Lower threshold since we don't need relevance
+    estimatedCost: 0.001,
   },
 
   FULL_CONTEXT: {
@@ -75,6 +82,7 @@ async function classifyQueryWithGPT(query: string): Promise<{
     return {
       requiresFullContext: cached.requiresFullContext,
       isSimpleQuery: cached.isSimpleQuery,
+      isGreeting: cached.isGreeting || false,
       confidence: 0.9, // Cached results are high confidence
       reasoning: 'Cached classification'
     };
@@ -109,6 +117,13 @@ IS SIMPLE QUERY (isSimpleQuery: true) if the query:
 - Uses phrases like: "what is", "explain", "define", "how to", "where is"
 - Does NOT mention "tree" or "nodes" in a tree-wide context
 
+IS GREETING QUERY (isGreeting: true) if the query:
+- Is a pure greeting with no actual question (e.g., "hello", "hi", "hey")
+- Contains only greeting words and possibly punctuation
+- Does NOT contain any question words or content after the greeting
+- Examples: "hello", "hi!", "hey there", "good morning"
+- NOT a greeting: "hello what's this tree about" (has actual question)
+
 IMPORTANT DISTINCTIONS:
 - "what's this tree about" → requiresFullContext: true (asking about the tree itself)
 - "what's qRT-PCR about" → isSimpleQuery: true (asking about a specific topic)
@@ -127,7 +142,8 @@ HANDLE VARIATIONS AND TYPOS:
 - Handle different word orders: "tree what is this" should still be understood
 
 EDGE CASES:
-- Greetings + query: "hello what's this tree about" → requiresFullContext: true
+- Pure greetings: "hello" → isGreeting: true (use minimal context, just friendly response)
+- Greetings + query: "hello what's this tree about" → requiresFullContext: true (has actual question)
 - Questions with typos: "whats this tre abot" → requiresFullContext: true (understand intent)
 - Ambiguous queries: If unsure, favor isSimpleQuery: true (semantic search is safer default)
 
@@ -135,6 +151,7 @@ Respond in JSON format:
 {
   "requiresFullContext": boolean,
   "isSimpleQuery": boolean,
+  "isGreeting": boolean,
   "confidence": number (0-1, where 1.0 is highest confidence),
   "reasoning": "brief explanation of your classification"
 }`;
@@ -170,14 +187,16 @@ Respond in JSON format:
     classificationCache.set(cacheKey, {
       requiresFullContext: result.requiresFullContext || false,
       isSimpleQuery: result.isSimpleQuery || false,
+      isGreeting: result.isGreeting || false,
       timestamp: Date.now()
     });
 
-    console.log(`[GPT Classification] Query: "${query.slice(0, 50)}..." → requiresFullContext: ${result.requiresFullContext}, isSimpleQuery: ${result.isSimpleQuery}, confidence: ${result.confidence || 0.8}`);
+    console.log(`[GPT Classification] Query: "${query.slice(0, 50)}..." → requiresFullContext: ${result.requiresFullContext}, isSimpleQuery: ${result.isSimpleQuery}, isGreeting: ${result.isGreeting || false}, confidence: ${result.confidence || 0.8}`);
 
     return {
       requiresFullContext: result.requiresFullContext || false,
       isSimpleQuery: result.isSimpleQuery || false,
+      isGreeting: result.isGreeting || false,
       confidence: result.confidence || 0.8,
       reasoning: result.reasoning || 'GPT classification'
     };
@@ -191,6 +210,52 @@ Respond in JSON format:
       reasoning: 'GPT classification failed, using fallback'
     };
   }
+}
+
+/**
+ * Detect if query is a pure greeting (no actual question)
+ * Greetings don't need semantic search - just a friendly response
+ */
+export function isGreetingQuery(query: string): boolean {
+  const lowerQuery = query.toLowerCase().trim();
+  
+  // Pure greetings (no question words or content)
+  const pureGreetings = [
+    'hello',
+    'hi',
+    'hey',
+    'greetings',
+    'good morning',
+    'good afternoon',
+    'good evening',
+    'howdy',
+    'sup',
+    'yo',
+  ];
+  
+  // Check if query is just a greeting (possibly with punctuation)
+  const normalizedQuery = lowerQuery.replace(/[.,!?;:]/g, '').trim();
+  
+  // Exact match for pure greetings
+  if (pureGreetings.includes(normalizedQuery)) {
+    return true;
+  }
+  
+  // Check if it's a greeting followed by just punctuation or whitespace
+  const greetingMatch = pureGreetings.find(greeting => 
+    normalizedQuery === greeting || normalizedQuery.startsWith(greeting + ' ')
+  );
+  
+  if (greetingMatch) {
+    // Check if there's actual content after the greeting
+    const afterGreeting = normalizedQuery.substring(greetingMatch.length).trim();
+    // If it's just the greeting or greeting + punctuation, it's a pure greeting
+    if (afterGreeting.length === 0 || afterGreeting.length < 3) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 /**
@@ -232,7 +297,7 @@ function requiresFullContextKeywords(query: string): boolean {
 // This is reset for each new query, so it only caches within a single classification call
 let lastClassification: {
   query: string;
-  result: { requiresFullContext: boolean; isSimpleQuery: boolean; confidence: number };
+  result: { requiresFullContext: boolean; isSimpleQuery: boolean; isGreeting: boolean; confidence: number };
 } | null = null;
 
 /**
@@ -249,6 +314,7 @@ function resetRequestCache(): void {
 async function classifyQuery(query: string): Promise<{
   requiresFullContext: boolean;
   isSimpleQuery: boolean;
+  isGreeting: boolean;
   confidence: number;
 }> {
   const normalizedQuery = query.toLowerCase().trim();
@@ -267,11 +333,13 @@ async function classifyQuery(query: string): Promise<{
   // Fast path: Check obvious keywords first (very fast, no API call)
   const fastFullContext = requiresFullContextKeywords(query);
   const fastSimple = isSimpleQueryKeywords(query);
+  const fastGreeting = isGreetingQuery(query);
 
-  if (fastFullContext || fastSimple) {
+  if (fastFullContext || fastSimple || fastGreeting) {
     const result = {
       requiresFullContext: fastFullContext,
-      isSimpleQuery: fastSimple && !fastFullContext, // Can't be both
+      isSimpleQuery: fastSimple && !fastFullContext && !fastGreeting, // Can't be both
+      isGreeting: fastGreeting && !fastFullContext, // Greetings are not full context
       confidence: 0.95 // High confidence for obvious patterns
     };
     lastClassification = { query: query.toLowerCase().trim(), result };
@@ -283,6 +351,7 @@ async function classifyQuery(query: string): Promise<{
     const result = {
       requiresFullContext: requiresFullContextFallback(query),
       isSimpleQuery: isSimpleQueryFallback(query),
+      isGreeting: isGreetingQuery(query),
       confidence: 0.8
     };
     lastClassification = { query: query.toLowerCase().trim(), result };
@@ -296,6 +365,7 @@ async function classifyQuery(query: string): Promise<{
     const result = {
       requiresFullContext: classification.requiresFullContext,
       isSimpleQuery: classification.isSimpleQuery,
+      isGreeting: classification.isGreeting || false,
       confidence: classification.confidence
     };
     
@@ -306,6 +376,7 @@ async function classifyQuery(query: string): Promise<{
     const result = {
       requiresFullContext: requiresFullContextFallback(query),
       isSimpleQuery: isSimpleQueryFallback(query),
+      isGreeting: isGreetingQuery(query),
       confidence: 0.7 // Lower confidence for fallback
     };
     lastClassification = { query: query.toLowerCase().trim(), result };

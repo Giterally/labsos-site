@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Sparkles, X, Plus, Trash2, Pencil, Check, ExternalLink, FileText, Video, Link as LinkIcon, Copy, CheckCircle2 } from "lucide-react"
+import { Sparkles, X, Plus, Trash2, Pencil, Check, ExternalLink, FileText, Video, Link as LinkIcon, Copy, CheckCircle2, RotateCcw, Square } from "lucide-react"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
 import { cn } from "@/lib/utils"
@@ -240,6 +240,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   const titleInputRef = useRef<HTMLInputElement>(null)
   const initialQueryHandledRef = useRef(false)
   const actionPlanLoadedRef = useRef(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
   
   // Storage key based on userId and treeId (per-user, per-tree)
   const storageKey = user ? `ai-chats-${user.id}-${treeId}` : null
@@ -368,6 +369,10 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   const sendMessage = useCallback(async (messageText: string) => {
     if (!messageText.trim() || !activeChatId || isSending) return
 
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController()
+    const signal = abortControllerRef.current.signal
+
     setIsSending(true)
     setCurrentMessage("")
     // Reset textarea height
@@ -455,6 +460,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                 conversationHistory,
                 agentMode: true,
               }),
+              signal,
             }
           )
           
@@ -576,6 +582,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
             query: messageText,
             messages: conversationHistory,
           }),
+          signal,
         }
       )
 
@@ -629,6 +636,23 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
         saveChats(finalChats)
       }
     } catch (error) {
+      // Check if error is due to abort
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('Request was aborted')
+        // Remove the user message that was just added since we're canceling
+        const finalChats = chats.map(chat => {
+          if (chat.id === activeChatId) {
+            return {
+              ...chat,
+              messages: chat.messages.filter((msg, idx) => idx < chat.messages.length - 1 || msg.role !== 'user'),
+              updatedAt: new Date()
+            }
+          }
+          return chat
+        })
+        saveChats(finalChats)
+        return
+      }
       console.error('Error sending message:', error)
       const errorMessageObj: ChatMessage = {
         role: 'assistant',
@@ -648,9 +672,19 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
       saveChats(finalChats)
     } finally {
       setIsSending(false)
+      abortControllerRef.current = null
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [activeChatId, chats, treeId, activeChat, saveChats, updateChatTitle, isSending, agentMode])
+
+  // Stop generation handler
+  const handleStopGeneration = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    setIsSending(false)
+  }, [])
 
   // Reset chats and ref when user changes (logout/login or user switch)
   useEffect(() => {
@@ -1159,43 +1193,81 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                     <p className="text-sm text-muted-foreground mt-1">Ask questions about this experiment tree</p>
                   </div>
                 ) : (
-                  activeChat.messages.map((message, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        "flex group",
-                        message.role === 'user' ? "justify-end" : "justify-start"
-                      )}
-                    >
+                  (() => {
+                    // Find the index of the last user message once
+                    let lastUserMessageIndex = -1
+                    if (activeChat) {
+                      for (let i = activeChat.messages.length - 1; i >= 0; i--) {
+                        if (activeChat.messages[i].role === 'user') {
+                          lastUserMessageIndex = i
+                          break
+                        }
+                      }
+                    }
+                    return activeChat.messages.map((message, index) => (
                       <div
+                        key={index}
                         className={cn(
-                          "max-w-[80%] rounded-lg px-4 py-2 relative",
-                          message.role === 'user'
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-foreground border border-border"
+                          "flex group",
+                          message.role === 'user' ? "justify-end" : "justify-start"
                         )}
                       >
-                        {/* Copy button - appears on hover, positioned at bottom corner closest to center */}
-                        <button
-                          onClick={async () => {
-                            await navigator.clipboard.writeText(message.content)
-                            setCopiedMessageIndex(index)
-                            setTimeout(() => setCopiedMessageIndex(null), 2000)
-                          }}
+                        <div
                           className={cn(
-                            "absolute p-1.5 rounded-full bg-background border border-border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-10",
-                            message.role === 'user' 
-                              ? "-bottom-2 -left-2" // User messages (right side): bottom-left corner
-                              : "-bottom-2 -right-2" // AI messages (left side): bottom-right corner
+                            "max-w-[80%] rounded-lg px-4 py-2 relative",
+                            message.role === 'user'
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-foreground border border-border"
                           )}
-                          aria-label="Copy message"
                         >
-                          {copiedMessageIndex === index ? (
-                            <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5 text-foreground" />
-                          )}
-                        </button>
+                          {/* Copy button - always visible, positioned inside the message box */}
+                          <button
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(message.content)
+                              setCopiedMessageIndex(index)
+                              setTimeout(() => setCopiedMessageIndex(null), 2000)
+                            }}
+                            className={cn(
+                              "absolute p-1 z-10",
+                              message.role === 'user' 
+                                ? "top-2 left-2" // User messages (right side): top-left inside
+                                : "top-2 right-2" // AI messages (left side): top-right inside
+                            )}
+                            aria-label="Copy message"
+                          >
+                            {copiedMessageIndex === index ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5 text-foreground" />
+                            )}
+                          </button>
+                          {/* Regenerate button - only for the last user message in the chat, aligns with second line or inline if both fit */}
+                          {message.role === 'user' && index === lastUserMessageIndex && (
+                          <button
+                            onClick={async () => {
+                              // Remove this message and all subsequent messages, then re-send
+                              const updatedChats = chats.map(chat => {
+                                if (chat.id === activeChatId) {
+                                  return {
+                                    ...chat,
+                                    messages: chat.messages.slice(0, index + 1),
+                                    updatedAt: new Date()
+                                  }
+                                }
+                                return chat
+                              })
+                              saveChats(updatedChats)
+                              // Wait a bit for state to update, then re-send the message
+                              setTimeout(() => {
+                                sendMessage(message.content)
+                              }, 100)
+                            }}
+                            className="absolute top-[calc(1.5rem+1.625*0.875rem-0.5rem)] left-2 p-1 z-20"
+                            aria-label="Regenerate response"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5 text-foreground" />
+                          </button>
+                        )}
                         {message.role === 'assistant' && (
                           <div className="flex items-center gap-2 mb-1">
                             <Sparkles size={12} className="text-primary" />
@@ -1360,11 +1432,15 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                             </div>
                           )
                         })() : (
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                          <p className={cn(
+                            "text-sm leading-relaxed whitespace-pre-wrap",
+                            message.role === 'user' && "pl-6 pt-6"
+                          )}>{message.content}</p>
                         )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    ))
+                  })()
                 )}
                 {isSending && (
                   <div className="flex justify-start">
@@ -1372,6 +1448,13 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                       <div className="flex items-center gap-2">
                         <div className="animate-spin rounded-full h-3 w-3 border-2 border-primary border-t-transparent"></div>
                         <span className="text-sm text-foreground">Thinking...</span>
+                        <button
+                          onClick={handleStopGeneration}
+                          className="ml-2 p-1 rounded hover:bg-muted-foreground/10 transition-colors"
+                          aria-label="Stop generation"
+                        >
+                          <Square className="h-3 w-3 text-foreground fill-current" />
+                        </button>
                       </div>
                     </div>
                   </div>

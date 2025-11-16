@@ -4,7 +4,7 @@ import { PermissionService } from '@/lib/permission-service';
 import { supabaseServer } from '@/lib/supabase-server';
 import { generateAnswer } from '@/lib/embeddings';
 import { fetchTreeContext, fetchTreeContextWithSemanticSearch } from '@/lib/tree-context';
-import { requiresFullContext, isSimpleQuery, CONFIG, estimateCost } from '@/lib/query-classification';
+import { requiresFullContext, isSimpleQuery, isGreetingQuery, CONFIG, estimateCost } from '@/lib/query-classification';
 
 // Support both GET (backward compatibility) and POST (chat mode)
 export async function GET(
@@ -136,7 +136,8 @@ async function handleAISearch(
     // Debug: Check classification results (now async)
     const needsFullContext = await requiresFullContext(query)
     const isSimple = await isSimpleQuery(query)
-    console.log(`[ai-search] Classification: requiresFullContext=${needsFullContext}, isSimpleQuery=${isSimple}`)
+    const isGreeting = await isGreetingQuery(query)
+    console.log(`[ai-search] Classification: requiresFullContext=${needsFullContext}, isSimpleQuery=${isSimple}, isGreeting=${isGreeting}`)
 
     // Strategy 1: Small trees - always use full context (cheap and accurate)
     if (totalNodeCount <= CONFIG.SMALL_TREE_THRESHOLD) {
@@ -150,7 +151,88 @@ async function handleAISearch(
       treeContext = await fetchTreeContext(client, treeId)
       contextStrategy = 'full_accuracy_critical'
     }
-    // Strategy 3: Simple queries - use semantic search (cost optimization)
+    // Strategy 3: Greeting queries - use minimal semantic search (just for friendly response)
+    else if (isGreeting) {
+      console.log(`[ai-search] Strategy: SEMANTIC SEARCH (greeting query - minimal context)`)
+      console.log(`[ai-search] Parameters: maxNodes=${CONFIG.GREETING_QUERY.maxNodes}, threshold=${CONFIG.GREETING_QUERY.similarityThreshold}`)
+      
+      try {
+        semanticResult = await fetchTreeContextWithSemanticSearch(client, treeId, query, {
+          maxNodes: CONFIG.GREETING_QUERY.maxNodes,
+          similarityThreshold: CONFIG.GREETING_QUERY.similarityThreshold,
+          includeDependencies: false, // Greetings don't need dependencies
+        })
+        
+        treeContext = semanticResult.context
+        
+        // Calculate actual node count from semantic search result
+        const semanticNodeCount = treeContext ? treeContext.blocks.reduce((sum: number, b: any) => sum + b.nodes.length, 0) : 0
+        console.log(`[ai-search] Semantic search returned ${semanticNodeCount} nodes (requested max: ${CONFIG.GREETING_QUERY.maxNodes})`)
+        
+        // DEFENSIVE FIX: If semantic search returned more nodes than expected, truncate aggressively
+        const expectedMaxNodes = CONFIG.GREETING_QUERY.maxNodes
+        if (treeContext && semanticNodeCount > expectedMaxNodes) {
+          console.warn(`[ai-search] ⚠️ DEFENSIVE FIX: Semantic search returned ${semanticNodeCount} nodes, truncating to ${expectedMaxNodes}`)
+          
+          // Truncate nodes to expected max
+          const allNodes = treeContext.blocks.flatMap((b: any) => b.nodes)
+          const truncatedNodes = allNodes.slice(0, expectedMaxNodes)
+          const truncatedNodeIds = new Set(truncatedNodes.map((n: any) => n.id))
+          
+          // Filter blocks to only include truncated nodes
+          treeContext.blocks = treeContext.blocks
+            .map((block: any) => ({
+              ...block,
+              nodes: block.nodes.filter((node: any) => truncatedNodeIds.has(node.id))
+            }))
+            .filter((block: any) => block.nodes.length > 0)
+          
+          const newCount = treeContext.blocks.reduce((sum: number, b: any) => sum + b.nodes.length, 0)
+          console.log(`[ai-search] ✅ Truncated to ${newCount} nodes`)
+        }
+        
+        // For greetings, even if we get 0 nodes, that's fine - we can still respond
+        if (!treeContext || semanticNodeCount === 0) {
+          console.log(`[ai-search] Greeting query with 0 nodes - using minimal context (tree info only)`)
+          // For greetings, we can use just tree metadata, no need for full context
+          const { data: treeData } = await client
+            .from('trees')
+            .select('id, name, description, status')
+            .eq('id', treeId)
+            .single()
+          
+          if (treeData) {
+            treeContext = {
+              tree: treeData,
+              blocks: []
+            }
+          }
+          contextStrategy = 'greeting_minimal'
+          usedSemanticSearch = false
+        } else {
+          usedSemanticSearch = true
+          contextStrategy = 'greeting'
+        }
+      } catch (error) {
+        // Fallback: For greetings, we can still respond without context
+        console.log(`[ai-search] Greeting query - semantic search failed, using minimal context:`, error)
+        const { data: treeData } = await client
+          .from('trees')
+          .select('id, name, description, status')
+          .eq('id', treeId)
+          .single()
+        
+        if (treeData) {
+          treeContext = {
+            tree: treeData,
+            blocks: []
+          }
+        }
+        contextStrategy = 'greeting_minimal_fallback'
+        usedSemanticSearch = false
+      }
+    }
+    // Strategy 4: Simple queries - use semantic search (cost optimization)
     else if (isSimple) {
       console.log(`[ai-search] Strategy: SEMANTIC SEARCH (simple query - cost optimization)`)
       console.log(`[ai-search] Parameters: maxNodes=${CONFIG.SIMPLE_QUERY.maxNodes}, threshold=${CONFIG.SIMPLE_QUERY.similarityThreshold}`)
