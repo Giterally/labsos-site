@@ -133,9 +133,9 @@ async function handleAISearch(
     let contextStrategy: string = 'full'
     let semanticResult: any = null
 
-    // Debug: Check classification results
-    const needsFullContext = requiresFullContext(query)
-    const isSimple = isSimpleQuery(query)
+    // Debug: Check classification results (now async)
+    const needsFullContext = await requiresFullContext(query)
+    const isSimple = await isSimpleQuery(query)
     console.log(`[ai-search] Classification: requiresFullContext=${needsFullContext}, isSimpleQuery=${isSimple}`)
 
     // Strategy 1: Small trees - always use full context (cheap and accurate)
@@ -302,10 +302,10 @@ async function handleAISearch(
       answer = `Unable to generate answer: ${answerError}. Please check your OpenAI API key and try again.`
     }
 
-    // Determine query classification
-    const queryClassification = requiresFullContext(query)
+    // Determine query classification (now async)
+    const queryClassification = (await requiresFullContext(query))
       ? 'accuracy_critical'
-      : isSimpleQuery(query)
+      : (await isSimpleQuery(query))
       ? 'simple'
       : 'ambiguous'
 

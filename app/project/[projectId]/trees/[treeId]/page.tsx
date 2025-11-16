@@ -3237,6 +3237,7 @@ export default function SimpleExperimentTreePage() {
         projectId={projectId}
         open={showAIChatSidebar}
         onOpenChange={setShowAIChatSidebar}
+        hasEditPermission={hasEditPermission}
         onTreeUpdated={async (updatedTreeContext) => {
           try {
             // Refresh tree data in real-time without page reload

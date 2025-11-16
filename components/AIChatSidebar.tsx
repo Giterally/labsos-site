@@ -51,6 +51,7 @@ interface AIChatSidebarProps {
   onOpenChange: (open: boolean) => void
   initialQuery?: string
   onTreeUpdated?: (updatedTreeContext: TreeContext) => void
+  hasEditPermission?: boolean // If false, agent button will be hidden
 }
 
 const MAX_CHATS = 3
@@ -221,7 +222,7 @@ function parseAIResponse(
   }
 }
 
-export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, initialQuery, onTreeUpdated }: AIChatSidebarProps) {
+export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, initialQuery, onTreeUpdated, hasEditPermission = true }: AIChatSidebarProps) {
   const { user, loading: userLoading } = useUser()
   const { setIsChatOpen } = useChatSidebar()
   const [chats, setChats] = useState<Chat[]>([])
@@ -265,6 +266,13 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
       }
     }
   }, [userLoading, sidebarWidthKey])
+
+  // Disable agent mode if user doesn't have edit permission
+  useEffect(() => {
+    if (!hasEditPermission && agentMode) {
+      setAgentMode(false)
+    }
+  }, [hasEditPermission, agentMode])
 
   // Save chats to localStorage (only if user is authenticated)
   const saveChats = useCallback((updatedChats: Chat[]) => {
@@ -1397,16 +1405,18 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                     className="flex-1 min-h-[36px] max-h-[136px] resize-none overflow-y-auto"
                     rows={1}
                   />
-                  <div className="flex items-center justify-center gap-2 h-9 px-3 rounded-md border border-input bg-background shadow-xs flex-shrink-0">
-                    <Label htmlFor="agent-mode" className="text-xs text-muted-foreground whitespace-nowrap cursor-pointer">
-                      Agent
-                    </Label>
-                    <Switch
-                      id="agent-mode"
-                      checked={agentMode}
-                      onCheckedChange={setAgentMode}
-                    />
-                  </div>
+                  {hasEditPermission && (
+                    <div className="flex items-center justify-center gap-2 h-9 px-3 rounded-md border border-input bg-background shadow-xs flex-shrink-0">
+                      <Label htmlFor="agent-mode" className="text-xs text-muted-foreground whitespace-nowrap cursor-pointer">
+                        Agent
+                      </Label>
+                      <Switch
+                        id="agent-mode"
+                        checked={agentMode}
+                        onCheckedChange={setAgentMode}
+                      />
+                    </div>
+                  )}
                   <Button
                     onClick={() => sendMessage(currentMessage)}
                     disabled={!currentMessage.trim() || isSending}
