@@ -16,21 +16,45 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const userRef = useRef<User | null>(null)
+  const sessionIdRef = useRef<string | null>(null) // Track session ID to prevent unnecessary updates
 
   // Keep ref in sync with state for health check
   useEffect(() => {
     userRef.current = user
   }, [user])
 
+  // Stabilized user update - only updates if user data actually changed
+  const updateUser = useCallback((newUser: User | null) => {
+    setUser(prev => {
+      // If both are null, no change
+      if (!prev && !newUser) return prev
+      
+      // If one is null and other isn't, definitely changed
+      if (!prev || !newUser) return newUser
+      
+      // Compare key fields to determine if user actually changed
+      const prevKey = `${prev.id}-${prev.email}`
+      const newKey = `${newUser.id}-${newUser.email}`
+      
+      // Only update if the key fields changed
+      if (prevKey !== newKey) {
+        return newUser
+      }
+      
+      // If keys match, keep the same reference to prevent unnecessary re-renders
+      return prev
+    })
+  }, [])
+
   const refreshUser = useCallback(async () => {
     try {
       const currentUser = await getCurrentUser(true) // Force refresh to get latest data
-      setUser(currentUser)
+      updateUser(currentUser)
     } catch (error) {
       console.error('Error refreshing user:', error)
-      setUser(null)
+      updateUser(null)
     }
-  }, [])
+  }, [updateUser])
 
   useEffect(() => {
     let isMounted = true
@@ -49,7 +73,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
           }
         }, 10000) // 10 second max loading time
 
-        await refreshUser()
+        const initialUser = await getCurrentUser(true)
+        updateUser(initialUser)
+        
+        // Get initial session ID
+        const { data: { session } } = await supabase.auth.getSession()
+        sessionIdRef.current = session?.access_token || null
 
         if (isMounted && loadingTimeout) {
           clearTimeout(loadingTimeout)
@@ -72,12 +101,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
     if (isMounted) {
       const {
         data: { subscription },
-      } = onAuthStateChange((authUser) => {
+      } = onAuthStateChange((authUser, sessionId) => {
         if (!isMounted) return
+
+        // Only update if session actually changed
+        if (sessionIdRef.current === sessionId && userRef.current?.id === authUser?.id) {
+          // Session and user haven't changed, skip update
+          return
+        }
+
+        sessionIdRef.current = sessionId
 
         if (authUser) {
           // User logged in elsewhere in the app
-          setUser(authUser)
+          updateUser(authUser)
           if (loadingTimeout) {
             clearTimeout(loadingTimeout)
           }
@@ -86,7 +123,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
 
         // User logged out
-        setUser(null)
+        updateUser(null)
+        sessionIdRef.current = null
         if (loadingTimeout) {
           clearTimeout(loadingTimeout)
         }
@@ -96,33 +134,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
       authSubscription = subscription
     }
 
-    // Add visibility change recovery
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        return
-      }
-
-      // Refresh auth when tab becomes visible after being hidden
-      const wasHidden = sessionStorage.getItem('tab_was_hidden') === 'true'
-      if (wasHidden && isMounted) {
-        sessionStorage.removeItem('tab_was_hidden')
-        setTimeout(() => {
-          if (isMounted) {
-            refreshUser().catch(console.error)
-          }
-        }, 500)
-      }
-    }
-
-    // Track when tab becomes hidden
-    const handleHidden = () => {
-      sessionStorage.setItem('tab_was_hidden', 'true')
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('blur', handleHidden)
-
     // Periodic health check (every 30 seconds)
+    // This handles session validation - no need for visibility change refresh
     healthCheckInterval = setInterval(() => {
       if (!document.hidden && isMounted) {
         // Silently check if auth is still valid
@@ -130,7 +143,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
           .then(({ data: { session } }) => {
             if (isMounted && !session && userRef.current) {
               console.warn('[AUTH] Health check: session lost, clearing user')
-              setUser(null)
+              updateUser(null)
+              sessionIdRef.current = null
+            } else if (isMounted && session?.access_token !== sessionIdRef.current) {
+              // Session changed, update the ref but don't trigger state update
+              // (onAuthStateChange will handle the actual state update)
+              sessionIdRef.current = session.access_token
             }
           })
           .catch(() => {
@@ -150,8 +168,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
       if (healthCheckInterval) {
         clearInterval(healthCheckInterval)
       }
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('blur', handleHidden)
     }
   }, [refreshUser])
 

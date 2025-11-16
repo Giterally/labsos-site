@@ -310,7 +310,7 @@ export default function SimpleProjectPage() {
     if (!userLoading) {
       fetchProjectInfo()
     }
-  }, [projectId, currentUser, userLoading])
+  }, [projectId, currentUser?.id, userLoading])
 
 
   // Fetch team members when component mounts
@@ -376,7 +376,7 @@ export default function SimpleProjectPage() {
     if (!userLoading) {
       fetchExperimentTrees()
     }
-  }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
+  }, [projectId, currentUser?.id, userLoading, accessDenied, accessChecked])
 
   // Fetch software for this project
   useEffect(() => {
@@ -413,7 +413,7 @@ export default function SimpleProjectPage() {
     if (!userLoading && accessChecked && !accessDenied) {
       fetchSoftware()
     }
-  }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
+  }, [projectId, currentUser?.id, userLoading, accessDenied, accessChecked])
 
   // Fetch datasets for this project
   useEffect(() => {
@@ -450,7 +450,7 @@ export default function SimpleProjectPage() {
     if (!userLoading && accessChecked && !accessDenied) {
       fetchDatasets()
     }
-  }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
+  }, [projectId, currentUser?.id, userLoading, accessDenied, accessChecked])
 
   // Fetch outputs for this project
   useEffect(() => {
@@ -487,7 +487,7 @@ export default function SimpleProjectPage() {
     if (!userLoading && accessChecked && !accessDenied) {
       fetchOutputs()
     }
-  }, [projectId, currentUser, userLoading, accessDenied, accessChecked])
+  }, [projectId, currentUser?.id, userLoading, accessDenied, accessChecked])
 
   // (Removed unguarded team refresh effect)
 

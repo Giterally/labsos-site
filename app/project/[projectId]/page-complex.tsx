@@ -113,7 +113,7 @@ export default function ProjectPage() {
 
   useEffect(() => {
     // Set up auth state listener
-    const { data: { subscription } } = onAuthStateChange((user) => {
+    const { data: { subscription } } = onAuthStateChange((user, sessionId) => {
       if (user) {
         setUser(user)
       } else {

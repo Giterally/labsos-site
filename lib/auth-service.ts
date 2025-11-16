@@ -216,15 +216,32 @@ export async function updateProfile(updates: {
   return data
 }
 // Listen to auth state changes
-export function onAuthStateChange(callback: (user: User | null) => void) {
+// Returns callback with user and sessionId to allow comparison
+export function onAuthStateChange(callback: (user: User | null, sessionId: string | null) => void) {
+  let lastSessionId: string | null = null
+  let lastUserId: string | null = null
+  
   return supabase.auth.onAuthStateChange(async (event, session) => {
+    const currentSessionId = session?.access_token || null
+    const currentUserId = session?.user?.id || null
+    
+    // Only process if session or user actually changed (not just tab focus events)
+    // This prevents unnecessary updates when tabs regain focus
+    if (currentSessionId === lastSessionId && currentUserId === lastUserId) {
+      // Session and user haven't changed - skip callback to prevent unnecessary updates
+      return
+    }
+    
+    lastSessionId = currentSessionId
+    lastUserId = currentUserId
+    
     if (session?.user) {
       // Use setTimeout to prevent blocking the callback
       // This prevents one hanging getCurrentUser from blocking all auth updates
       setTimeout(async () => {
         try {
           const user = await getCurrentUser()
-          callback(user)
+          callback(user, currentSessionId)
         } catch (error) {
           console.error('[AUTH] Error in onAuthStateChange callback:', error)
           // Fallback: use session data directly if getCurrentUser fails
@@ -237,11 +254,11 @@ export function onAuthStateChange(callback: (user: User | null) => void) {
             institution: session.user.user_metadata?.institution || null,
             department: session.user.user_metadata?.department || null,
             profile_picture_url: null
-          })
+          }, currentSessionId)
         }
       }, 0)
     } else {
-      callback(null)
+      callback(null, null)
     }
   })
 }

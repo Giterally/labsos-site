@@ -708,7 +708,7 @@ export default function SimpleExperimentTreePage() {
     } else {
       setPermissionsLoading(false)
     }
-  }, [projectId, currentUser])
+  }, [projectId, currentUser?.id])
 
   // Fetch project information
   useEffect(() => {
@@ -746,7 +746,7 @@ export default function SimpleExperimentTreePage() {
     if (projectId && !userLoading) {
       fetchProjectInfo()
     }
-  }, [projectId, currentUser, userLoading])
+  }, [projectId, currentUser?.id, userLoading])
 
   // Fetch tree information
   useEffect(() => {
@@ -781,7 +781,7 @@ export default function SimpleExperimentTreePage() {
     if (!userLoading) {
       fetchTreeInfo()
     }
-  }, [treeId, currentUser, userLoading])
+  }, [treeId, currentUser?.id, userLoading])
 
   // Check for navigation context from sessionStorage
   useEffect(() => {
@@ -841,7 +841,7 @@ export default function SimpleExperimentTreePage() {
     if (!userLoading) {
       fetchNestingContext()
     }
-  }, [treeId, currentUser, userLoading])
+  }, [treeId, currentUser?.id, userLoading])
 
   // Fetch blocks and ordering (extracted to useCallback for reuse)
   const fetchBlocks = useCallback(async () => {
@@ -880,7 +880,7 @@ export default function SimpleExperimentTreePage() {
     } catch (err) {
       console.error('[TreePage] fetchBlocks: Error fetching blocks:', err)
     }
-  }, [treeId, currentUser])
+  }, [treeId, currentUser?.id])
 
   useEffect(() => {
     if (!userLoading) {
@@ -943,7 +943,7 @@ export default function SimpleExperimentTreePage() {
       setLoading(false)
       console.log('[TreePage] fetchNodes: Completed')
     }
-  }, [treeId, currentUser])
+  }, [treeId, currentUser?.id])
 
   useEffect(() => {
     if (!userLoading) {
