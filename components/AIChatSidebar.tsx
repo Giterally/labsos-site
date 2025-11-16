@@ -25,6 +25,15 @@ interface ChatMessage {
   content: string
   timestamp: Date
   tree_context?: TreeContext
+  metadata?: {
+    used_semantic_search?: boolean
+    context_strategy?: string
+    total_nodes?: number
+    context_nodes?: number
+    query_classification?: string
+    estimated_cost?: number
+    timestamp?: string
+  }
 }
 
 interface Chat {
@@ -568,7 +577,8 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
           role: 'assistant',
           content: data.answer || 'No answer available.',
           timestamp: new Date(),
-          tree_context: data.tree_context // Store tree context for parsing
+          tree_context: data.tree_context, // Store tree context for parsing
+          metadata: data.metadata // Store metadata for UI display
         }
 
         const finalChats = updatedChats.map(chat => {
@@ -1230,6 +1240,38 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                                   {parsed.text}
                                 </ReactMarkdown>
                               </div>
+                              
+                              {/* Metadata notification for semantic search */}
+                              {message.metadata?.used_semantic_search && (
+                                <div className="text-xs text-muted-foreground mt-3 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 rounded-md border border-blue-200 dark:border-blue-800">
+                                  <div className="flex items-center gap-2">
+                                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span className="flex-1">
+                                      Analyzed {message.metadata.context_nodes} of {message.metadata.total_nodes} most relevant nodes.
+                                      {message.metadata.context_strategy === 'semantic' && message.metadata.context_nodes && message.metadata.total_nodes && message.metadata.context_nodes < message.metadata.total_nodes && (
+                                        <button 
+                                          onClick={() => {
+                                            // Find the original user query that generated this response
+                                            const originalQuery = activeChat?.messages.find((m, i) => i < index && m.role === 'user')?.content || ''
+                                            if (originalQuery) {
+                                              // Prepend "search all nodes" to force full context
+                                              // This will trigger requiresFullContext() detection
+                                              const fullContextQuery = `search all nodes: ${originalQuery}`
+                                              // Directly send the message
+                                              sendMessage(fullContextQuery)
+                                            }
+                                          }}
+                                          className="ml-2 underline hover:no-underline text-blue-700 dark:text-blue-300 font-medium"
+                                        >
+                                          Search all nodes
+                                        </button>
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                               
                               {/* Render embedded videos */}
                               {parsed.videoUrls.length > 0 && (

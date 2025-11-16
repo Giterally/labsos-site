@@ -991,6 +991,7 @@ export async function fetchTreeContextWithSemanticSearch(
 
     // Search for relevant nodes using vector similarity
     console.log(`[fetchTreeContextWithSemanticSearch] Searching nodes with threshold: ${similarityThreshold}, maxNodes: ${maxNodes}`);
+    console.log(`[fetchTreeContextWithSemanticSearch] Calling search_nodes_by_embedding with: match_threshold=${similarityThreshold}, match_count=${maxNodes}, tree_id_filter=${treeId}`);
     const { data: searchResults, error: searchError } = await supabase.rpc(
       'search_nodes_by_embedding',
       {
@@ -1000,6 +1001,17 @@ export async function fetchTreeContextWithSemanticSearch(
         tree_id_filter: treeId,
       }
     );
+    
+    if (searchResults) {
+      console.log(`[fetchTreeContextWithSemanticSearch] SQL function returned ${searchResults.length} results`);
+      if (searchResults.length > 0) {
+        console.log(`[fetchTreeContextWithSemanticSearch] First 3 results:`, searchResults.slice(0, 3).map((r: any) => ({
+          node_id: r.node_id,
+          node_name: r.node_name,
+          similarity: r.similarity
+        })));
+      }
+    }
 
     if (searchError) {
       console.error('[fetchTreeContextWithSemanticSearch] Search error:', searchError);
@@ -1016,11 +1028,29 @@ export async function fetchTreeContextWithSemanticSearch(
       return { context: fullContext, nodeIds: allNodeIds, retrievalMethod: 'full' };
     }
 
-    console.log(`[fetchTreeContextWithSemanticSearch] Found ${searchResults.length} relevant nodes`);
+    console.log(`[fetchTreeContextWithSemanticSearch] Found ${searchResults.length} relevant nodes (requested max: ${maxNodes})`);
 
-    // Extract node IDs from search results
-    const relevantNodeIds = searchResults.map((r: any) => r.node_id);
+    // Extract node IDs from search results, limiting to maxNodes as defensive measure
+    // (SQL LIMIT should handle this, but we enforce it here too)
+    // IMPORTANT: Sort by similarity DESC to ensure we keep the most relevant nodes
+    const sortedResults = [...searchResults].sort((a: any, b: any) => (b.similarity || 0) - (a.similarity || 0));
+    const limitedResults = sortedResults.slice(0, maxNodes);
+    if (searchResults.length > maxNodes) {
+      console.warn(`[fetchTreeContextWithSemanticSearch] ⚠️ Search returned ${searchResults.length} nodes, but maxNodes is ${maxNodes}. Limiting to ${maxNodes}.`);
+      console.warn(`[fetchTreeContextWithSemanticSearch] ⚠️ This indicates the SQL LIMIT clause may not be working correctly.`);
+    }
+    
+    const relevantNodeIds = limitedResults.map((r: any) => r.node_id);
     const nodeIdsSet = new Set(relevantNodeIds);
+    
+    // Create a map of node_id -> similarity score for sorting by relevance
+    const nodeSimilarityMap = new Map<string, number>();
+    limitedResults.forEach((r: any) => {
+      nodeSimilarityMap.set(r.node_id, r.similarity || 0);
+    });
+    
+    // Log the node IDs we're keeping for debugging
+    console.log(`[fetchTreeContextWithSemanticSearch] Keeping ${relevantNodeIds.length} nodes from semantic search:`, relevantNodeIds.slice(0, 5).join(', '), relevantNodeIds.length > 5 ? '...' : '');
 
     // If includeDependencies is true, fetch dependent nodes
     if (includeDependencies) {
@@ -1049,24 +1079,62 @@ export async function fetchTreeContextWithSemanticSearch(
     }
 
     // Filter blocks to only include blocks that have relevant nodes
+    // Sort nodes by relevance (highest similarity first) to preserve semantic search order
     const filteredBlocks = fullContext.blocks
       .map(block => ({
         ...block,
-        nodes: block.nodes.filter(node => allRelevantNodeIds.includes(node.id))
+        nodes: block.nodes
+          .filter(node => allRelevantNodeIds.includes(node.id))
+          .sort((a, b) => {
+            const aSim = nodeSimilarityMap.get(a.id) || 0;
+            const bSim = nodeSimilarityMap.get(b.id) || 0;
+            return bSim - aSim; // Descending order (highest similarity first)
+          })
       }))
       .filter(block => block.nodes.length > 0); // Remove empty blocks
+
+    // Defensive: Ensure we never return more than maxNodes
+    // This handles edge cases where dependencies or other logic might add too many nodes
+    // CRITICAL: Preserve the order from semantic search (most relevant first)
+    let finalNodeIds = allRelevantNodeIds;
+    let finalBlocks = filteredBlocks;
+    
+    if (allRelevantNodeIds.length > maxNodes) {
+      console.warn(`[fetchTreeContextWithSemanticSearch] ⚠️ After filtering, we have ${allRelevantNodeIds.length} nodes (maxNodes: ${maxNodes}). Truncating to ${maxNodes}.`);
+      
+      // Preserve order: keep the first maxNodes from the semantic search results
+      // (they're already sorted by relevance)
+      const topNodeIds = relevantNodeIds.slice(0, maxNodes);
+      finalNodeIds = topNodeIds;
+      
+      // Re-filter blocks with the truncated node list, preserving relevance order
+      finalBlocks = fullContext.blocks
+        .map(block => ({
+          ...block,
+          nodes: block.nodes
+            .filter(node => finalNodeIds.includes(node.id))
+            .sort((a, b) => {
+              const aSim = nodeSimilarityMap.get(a.id) || 0;
+              const bSim = nodeSimilarityMap.get(b.id) || 0;
+              return bSim - aSim; // Descending order (highest similarity first)
+            })
+        }))
+        .filter(block => block.nodes.length > 0);
+      
+      console.warn(`[fetchTreeContextWithSemanticSearch] ⚠️ Truncated to top ${maxNodes} nodes by relevance`);
+    }
 
     // Create filtered context
     const filteredContext: TreeContext = {
       ...fullContext,
-      blocks: filteredBlocks,
+      blocks: finalBlocks,
     };
 
-    console.log(`[fetchTreeContextWithSemanticSearch] Filtered context: ${filteredBlocks.length} blocks, ${allRelevantNodeIds.length} nodes`);
+    console.log(`[fetchTreeContextWithSemanticSearch] Final filtered context: ${finalBlocks.length} blocks, ${finalNodeIds.length} nodes`);
 
     return {
       context: filteredContext,
-      nodeIds: allRelevantNodeIds,
+      nodeIds: finalNodeIds,
       retrievalMethod: 'semantic'
     };
   } catch (error) {
