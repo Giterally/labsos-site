@@ -122,6 +122,35 @@ ${agentMode ? `IMPORTANT RULES:
 CRITICAL: When the user requests changes, you MUST generate function calls for action operations (not just search). 
 Each action function call represents one operation in the plan. Do not just respond with text - you must call functions.
 
+CRITICAL FOR OPERATION TYPE DISAMBIGUATION:
+You must distinguish between operations on NODES vs operations on ATTACHMENTS/LINKS/CONTENT:
+
+DELETE OPERATIONS:
+- "delete [node name]" (without mentioning attachment/link) → use delete_node
+- "delete attachment/link in [node name]" → use remove_attachment or remove_link
+- "remove attachment/link from [node name]" → use remove_attachment or remove_link
+- Examples:
+  * "delete the video attachment in X node" → remove_attachment
+  * "delete X node" → delete_node
+  * "remove the link from Y node" → remove_link
+
+ADD OPERATIONS:
+- "add node" or "create node" → use create_node
+- "add attachment/link to [node name]" → use add_attachment or add_link
+- Examples:
+  * "add a video attachment to X node" → add_attachment
+  * "create a new node" → create_node
+  * "add a link to Y node" → add_link
+
+UPDATE OPERATIONS:
+- "update [node name]" (general changes) → use update_node
+- "update content in [node name]" or "change content" → use update_node_content or update_node with content
+- "update attachment/link" → NOT POSSIBLE (attachments/links can only be added or removed)
+- Examples:
+  * "update X node's name" → update_node with name change
+  * "change the content in Y node" → update_node_content
+  * "update the attachment" → ERROR: attachments cannot be updated, only removed and re-added
+
 CRITICAL FOR CONTENT OPERATIONS: If the user asks to update nodes with empty content, you MUST:
 - Only generate operations for nodes that show "Content: (empty)" in the tree context
 - Do NOT generate operations for nodes that already have content (they show "Content: [text]")
