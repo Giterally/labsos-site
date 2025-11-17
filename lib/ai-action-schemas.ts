@@ -279,18 +279,64 @@ export const AI_ACTION_FUNCTIONS = [
 
 /**
  * Detect if a query contains action intent
+ * Distinguishes between questions (what, which, show, list) and actual action requests
  */
 export function hasActionIntent(query: string): boolean {
-  const actionKeywords = [
+  const lowerQuery = query.toLowerCase().trim()
+  
+  // Question words/phrases that indicate this is a question, not an action
+  const questionPatterns = [
+    /^what\s+/i,           // "what attachments"
+    /^which\s+/i,          // "which nodes"
+    /^where\s+/i,          // "where are"
+    /^how\s+(many|much)/i, // "how many"
+    /^show\s+(me\s+)?/i,   // "show me" or "show"
+    /^list\s+/i,           // "list all"
+    /^tell\s+me\s+/i,      // "tell me"
+    /^are\s+there/i,       // "are there"
+    /^do\s+we\s+have/i,    // "do we have"
+    /^can\s+you\s+show/i,  // "can you show"
+    /\?$/,                  // Ends with question mark
+  ]
+  
+  // Check if this is a question
+  const isQuestion = questionPatterns.some(pattern => pattern.test(lowerQuery))
+  
+  // Action keywords that require imperative context (verbs that indicate actions)
+  const imperativeActionKeywords = [
     'create', 'add', 'make', 'new',
     'update', 'edit', 'change', 'modify', 'rename', 'fix', 'improve', 'adjust', 'set',
     'delete', 'remove', 'drop',
     'move', 'reorder', 'reposition',
-    'link', 'attachment', 'dependency'
   ]
   
-  const lowerQuery = query.toLowerCase()
-  return actionKeywords.some(keyword => lowerQuery.includes(keyword))
+  // Keywords that can appear in both questions and actions (need context)
+  const contextualKeywords = ['link', 'attachment', 'dependency']
+  
+  // If it's a question, only treat as action if it has imperative verbs
+  if (isQuestion) {
+    // Questions with imperative verbs are still actions: "what should I create?"
+    const hasImperativeVerb = imperativeActionKeywords.some(keyword => lowerQuery.includes(keyword))
+    
+    // Questions about contextual keywords without imperative verbs are NOT actions
+    const hasOnlyContextualKeywords = contextualKeywords.some(keyword => lowerQuery.includes(keyword)) &&
+                                      !imperativeActionKeywords.some(keyword => lowerQuery.includes(keyword))
+    
+    if (hasOnlyContextualKeywords) {
+      return false // "what attachments" is a question, not an action
+    }
+    
+    // If question has imperative verb, it might be an action request
+    return hasImperativeVerb
+  }
+  
+  // Not a question - check all action keywords
+  const allActionKeywords = [
+    ...imperativeActionKeywords,
+    ...contextualKeywords
+  ]
+  
+  return allActionKeywords.some(keyword => lowerQuery.includes(keyword))
 }
 
 /**
