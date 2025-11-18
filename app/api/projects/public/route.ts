@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     }
 
     // Build the query for discoverable projects
-    // Show ALL projects regardless of visibility or user authentication
+    // Exclude stealth projects - they should never appear on discover page
     let query = supabaseServer
       .from('projects')
       .select(`
@@ -60,6 +60,7 @@ export async function GET(request: Request) {
           lab_name
         )
       `)
+      .neq('visibility', 'stealth')
       .order('created_at', { ascending: false })
 
     // Apply pagination

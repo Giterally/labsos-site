@@ -26,7 +26,7 @@ export default function CreateProjectForm({ onProjectCreated }: CreateProjectFor
     institution: "",
     department: "",
     status: "active" as "draft" | "active" | "completed" | "archived",
-    visibility: "private" as "public" | "private"
+    visibility: "private" as "public" | "private" | "stealth"
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -162,6 +162,7 @@ export default function CreateProjectForm({ onProjectCreated }: CreateProjectFor
                 <SelectContent>
                   <SelectItem value="public">Public</SelectItem>
                   <SelectItem value="private">Private</SelectItem>
+                  <SelectItem value="stealth">Stealth</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -82,6 +82,7 @@ export async function PATCH(
     if (body.tree_node_id !== undefined) updates.tree_node_id = body.tree_node_id;
     if (body.tags !== undefined) updates.tags = body.tags;
     if (body.position !== undefined) updates.position = body.position;
+    if (body.is_recurring_meeting !== undefined) updates.is_recurring_meeting = body.is_recurring_meeting;
 
     // Handle project assignments if provided
     if (body.project_ids !== undefined) {

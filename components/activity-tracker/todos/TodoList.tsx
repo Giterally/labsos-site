@@ -131,28 +131,6 @@ export default function TodoList({ initialProjectId, initialTreeNodeId }: TodoLi
     }
   };
 
-  const handleToggleComplete = async (todoId: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(`/api/todos/${todoId}/complete`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (response.ok) {
-        fetchTodos();
-      } else {
-        const data = await response.json();
-        console.error('Error toggling completion:', data.error);
-      }
-    } catch (error) {
-      console.error('Error toggling completion:', error);
-    }
-  };
 
   const handleDelete = async (todoId: string) => {
     if (!confirm('Are you sure you want to delete this task?')) {
@@ -222,7 +200,6 @@ export default function TodoList({ initialProjectId, initialTreeNodeId }: TodoLi
                 <TodoItem
                   key={todo.id}
                   todo={todo}
-                  onToggleComplete={handleToggleComplete}
                   onEdit={handleEditTodo}
                   onDelete={handleDelete}
                   onView={handleViewTodo}

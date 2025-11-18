@@ -277,6 +277,7 @@ export async function POST(request: Request) {
         list_id: body.list_id,
         title: body.title,
         description: body.description || null,
+        is_recurring_meeting: body.is_recurring_meeting || false,
         priority: body.priority || null,
         due_date: body.due_date || null,
         tree_node_id: body.tree_node_id || null,

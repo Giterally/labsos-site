@@ -18,10 +18,10 @@ export default function TodoFilters({ filters, onFiltersChange }: TodoFiltersPro
   };
 
   return (
-    <div className="bg-gray-50 p-4 rounded-lg space-y-4">
+    <div className="bg-muted/50 p-4 rounded-lg space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search tasks..."
             value={filters.search || ''}

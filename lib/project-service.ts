@@ -7,7 +7,7 @@ export interface Project {
   status: 'draft' | 'planning' | 'active' | 'review' | 'completed'
   institution?: string
   department?: string
-  visibility: 'public' | 'private'
+  visibility: 'public' | 'private' | 'stealth'
   created_by: string
   created_at: string
   updated_at: string
@@ -19,7 +19,7 @@ export interface CreateProjectData {
   status: 'draft' | 'planning' | 'active' | 'review' | 'completed'
   institution?: string
   department?: string
-  visibility: 'public' | 'private'
+  visibility: 'public' | 'private' | 'stealth'
 }
 
 export interface UpdateProjectData extends Partial<CreateProjectData> {

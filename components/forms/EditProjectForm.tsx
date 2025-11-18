@@ -19,7 +19,7 @@ interface EditProjectFormProps {
     institution: string | null
     department: string | null
     status: 'draft' | 'active' | 'completed' | 'archived'
-    visibility: 'public' | 'private'
+    visibility: 'public' | 'private' | 'stealth'
   }
   onProjectUpdated: (updatedProject: any) => void
   isOpen?: boolean
@@ -168,6 +168,7 @@ export default function EditProjectForm({ project, onProjectUpdated, isOpen, onC
                 <SelectContent>
                   <SelectItem value="public">Public</SelectItem>
                   <SelectItem value="private">Private</SelectItem>
+                  <SelectItem value="stealth">Stealth</SelectItem>
                 </SelectContent>
               </Select>
             </div>

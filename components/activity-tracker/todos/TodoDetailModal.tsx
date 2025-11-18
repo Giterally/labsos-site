@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import TodoStatusBadge from './TodoStatusBadge';
 import TodoPriorityBadge from './TodoPriorityBadge';
+import TodoMeetingUpdates from './TodoMeetingUpdates';
 import { Calendar, User, Folder, FileText, CheckCircle, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
@@ -183,6 +184,16 @@ export default function TodoDetailModal({ todo, open, onOpenChange }: TodoDetail
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Meeting Updates (for recurring meetings) */}
+          {todo.is_recurring_meeting && (
+            <div className="pt-4 border-t border-border">
+              <TodoMeetingUpdates 
+                todoId={todo.id} 
+                isRecurringMeeting={todo.is_recurring_meeting} 
+              />
             </div>
           )}
 

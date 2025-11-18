@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -52,6 +53,7 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
     due_date: todo?.due_date ? new Date(todo.due_date).toISOString().split('T')[0] : '',
     tree_node_id: todo?.tree_node_id || treeNodeId || '',
     tags: todo?.tags?.join(', ') || '',
+    is_recurring_meeting: todo?.is_recurring_meeting || false,
   });
 
   // Fetch projects and users
@@ -316,6 +318,7 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
         tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         project_ids: selectedProjectIds.length > 0 ? selectedProjectIds : undefined,
         assignee_ids: selectedUserIds.length > 0 ? selectedUserIds : undefined,
+        is_recurring_meeting: isSharedTask ? formData.is_recurring_meeting : false,
       };
 
       let response;
@@ -384,6 +387,21 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
           <DialogTitle>{formTitle}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Recurring Meeting Switch (only for shared tasks, at the top) */}
+          {isSharedTask && (
+            <div className="p-4 bg-blue-50 dark:bg-blue-950 border-2 border-blue-300 dark:border-blue-700 rounded-lg shadow-sm">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="is_recurring_meeting" className="text-base font-semibold text-blue-900 dark:text-blue-100 cursor-pointer">
+                  Is this a recurring meeting?
+                </Label>
+                <Switch
+                  id="is_recurring_meeting"
+                  checked={formData.is_recurring_meeting}
+                  onCheckedChange={(checked) => setFormData({ ...formData, is_recurring_meeting: checked })}
+                />
+              </div>
+            </div>
+          )}
           <div>
             <Label htmlFor="title">Title *</Label>
             <Input

@@ -74,10 +74,20 @@ export default function TasksPage() {
             </TabsList>
 
             <TabsContent value="tasks" className="mt-0">
+              <div className="mb-4">
+                <p className="text-sm text-muted-foreground">
+                  Track actionable items with personal tasks or share them with collaborators. Tasks help organize work, assign responsibilities, and coordinate research activities.
+                </p>
+              </div>
               <TodoList />
             </TabsContent>
 
             <TabsContent value="logs" className="mt-0">
+              <div className="mb-4">
+                <p className="text-sm text-muted-foreground">
+                  Document your daily progress, meeting notes, and research activities. Work logs create a timeline of your contributions to projects and help maintain research continuity.
+                </p>
+              </div>
               <WorkLogList />
             </TabsContent>
           </Tabs>

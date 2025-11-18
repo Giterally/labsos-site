@@ -1,7 +1,6 @@
 'use client';
 
 import { TodoWithRelations } from '@/types/activity-tracker';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import TodoStatusBadge from './TodoStatusBadge';
 import TodoPriorityBadge from './TodoPriorityBadge';
@@ -10,13 +9,12 @@ import { format } from 'date-fns';
 
 interface TodoItemProps {
   todo: TodoWithRelations;
-  onToggleComplete: (id: string) => void;
   onEdit: (todo: TodoWithRelations) => void;
   onDelete: (id: string) => void;
   onView?: (todo: TodoWithRelations) => void;
 }
 
-export default function TodoItem({ todo, onToggleComplete, onEdit, onDelete, onView }: TodoItemProps) {
+export default function TodoItem({ todo, onEdit, onDelete, onView }: TodoItemProps) {
   const isOverdue = todo.due_date && new Date(todo.due_date) < new Date() && todo.status !== 'completed';
   const isDueSoon = todo.due_date && 
     new Date(todo.due_date).getTime() - new Date().getTime() < 3 * 24 * 60 * 60 * 1000 &&
@@ -24,12 +22,6 @@ export default function TodoItem({ todo, onToggleComplete, onEdit, onDelete, onV
 
   return (
     <div className="flex items-start gap-3 p-4 bg-card border border-border rounded-lg">
-      <Checkbox
-        checked={todo.status === 'completed'}
-        onCheckedChange={() => onToggleComplete(todo.id)}
-        className="mt-1"
-        onClick={(e) => e.stopPropagation()}
-      />
       <div 
         className="flex-1 min-w-0 cursor-pointer hover:opacity-80 transition-opacity"
         onClick={() => onView?.(todo)}

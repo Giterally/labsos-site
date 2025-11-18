@@ -41,6 +41,7 @@ export async function GET(
 
 
     // Get project details for current projects
+    // Exclude stealth projects from profile display
     let currentProjects = []
     if (currentProjectMembers && currentProjectMembers.length > 0) {
       const projectIds = currentProjectMembers.map(member => member.project_id)
@@ -48,6 +49,7 @@ export async function GET(
         .from('projects')
         .select('id, name, description, created_at')
         .in('id', projectIds)
+        .neq('visibility', 'stealth')
 
       currentProjects = currentProjectMembers.map(member => {
         const project = projects?.find(p => p.id === member.project_id)
@@ -74,6 +76,7 @@ export async function GET(
       .not('left_at', 'is', null)
 
     // Get project details for past projects
+    // Exclude stealth projects from profile display
     let pastProjects = []
     if (pastProjectMembers && pastProjectMembers.length > 0) {
       const projectIds = pastProjectMembers.map(member => member.project_id)
@@ -81,6 +84,7 @@ export async function GET(
         .from('projects')
         .select('id, name, description, created_at')
         .in('id', projectIds)
+        .neq('visibility', 'stealth')
 
       pastProjects = pastProjectMembers.map(member => {
         const project = pastProjectDetails?.find(p => p.id === member.project_id)

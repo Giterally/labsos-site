@@ -29,6 +29,7 @@ export interface Todo {
   tree_node_id: string | null;
   tags: string[];
   position: number;
+  is_recurring_meeting: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -73,6 +74,20 @@ export interface TodoComment {
   created_at: string;
   updated_at: string;
   edited_at: string | null;
+}
+
+export interface TodoMeetingUpdate {
+  id: string;
+  todo_id: string;
+  content: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  created_by_profile?: {
+    id: string;
+    full_name: string | null;
+    avatar_url: string | null;
+  };
 }
 
 // Extended types with relations for UI
@@ -149,6 +164,7 @@ export interface CreateTodoRequest {
   tags?: string[];
   assignee_ids?: string[];
   project_ids?: string[]; // Projects to assign this todo to
+  is_recurring_meeting?: boolean;
 }
 
 export interface UpdateTodoRequest {
@@ -160,6 +176,7 @@ export interface UpdateTodoRequest {
   tree_node_id?: string;
   tags?: string[];
   position?: number;
+  is_recurring_meeting?: boolean;
 }
 
 export interface CreateWorkLogRequest {

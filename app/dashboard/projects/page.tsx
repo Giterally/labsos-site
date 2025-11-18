@@ -230,8 +230,8 @@ export default function ProjectsPage() {
                     <div className="flex items-center justify-between text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{project.status}</Badge>
-                        <Badge variant={project.visibility === 'public' ? 'default' : 'secondary'}>
-                          {project.visibility === 'public' ? 'Public' : 'Private'}
+                        <Badge variant={project.visibility === 'public' ? 'default' : project.visibility === 'stealth' ? 'outline' : 'secondary'}>
+                          {project.visibility === 'public' ? 'Public' : project.visibility === 'stealth' ? 'Stealth' : 'Private'}
                         </Badge>
                       </div>
                     </div>
