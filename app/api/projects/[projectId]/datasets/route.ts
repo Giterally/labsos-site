@@ -45,8 +45,8 @@ export async function GET(
     }
 
     let client: any = supabaseServer
-    if (proj.visibility === 'private') {
-      // Require auth for private projects
+    if (proj.visibility === 'private' || proj.visibility === 'stealth') {
+      // Require auth for private or stealth projects
       const authContext = await authenticateRequest(request)
       client = authContext.supabase
       const permissionService = new PermissionService(client, authContext.user.id)

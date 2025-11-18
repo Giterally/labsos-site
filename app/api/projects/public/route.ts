@@ -130,8 +130,9 @@ export async function GET(request: Request) {
     // Transform the data - include ALL projects with canAccess field
     const transformedProjects = (projects || []).map(project => {
       // Determine if user can access this project
+      // Note: stealth projects should never appear here due to .neq('visibility', 'stealth') filter above
       const canAccess = project.visibility === 'public' || 
-                       (project.visibility === 'private' && 
+                       ((project.visibility === 'private' || project.visibility === 'stealth') && 
                         (project.created_by === userId || userMemberships.has(project.id)))
       const profile = Array.isArray(project.profiles) ? project.profiles[0] : project.profiles
       const base = {
@@ -145,7 +146,7 @@ export async function GET(request: Request) {
         created_at: project.created_at,
         lead_researcher: profile?.full_name || 'Unknown',
         lab_name: profile?.lab_name || profile?.full_name || 'Unknown Lab',
-        member_count: project.visibility === 'private' ? 0 : (memberCountMap.get(project.id) || 0),
+        member_count: (project.visibility === 'private' || project.visibility === 'stealth') ? 0 : (memberCountMap.get(project.id) || 0),
         tree_count: treeCountMap.get(project.id) || 0,
         canAccess: canAccess,
         // Generate avatar initials from lab name or project name

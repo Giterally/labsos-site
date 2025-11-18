@@ -30,8 +30,8 @@ export async function GET(
     let isAuthenticated = false
 
     // For public projects, always use service client (bypasses RLS)
-    // For private projects, require authentication
-    if (project.visibility === 'private') {
+    // For private or stealth projects, require authentication
+    if (project.visibility === 'private' || project.visibility === 'stealth') {
       const auth = await authenticateRequest(request)
       client = auth.supabase
       const permissions = new PermissionService(auth.supabase, auth.user.id)

@@ -89,6 +89,7 @@ export class PermissionService {
     }
 
     // Check if public project (read-only)
+    // Note: stealth projects are treated the same as private - require membership
     if (project.visibility === 'public') {
       return {
         hasAccess: true,
@@ -104,6 +105,7 @@ export class PermissionService {
       }
     }
 
+    // Private or stealth projects require membership (already checked above)
     return this.noAccess()
   }
 

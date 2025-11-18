@@ -26,7 +26,7 @@ export async function GET(
       return NextResponse.json({ project })
     }
 
-    // If private, require auth and membership
+    // If private or stealth, require auth and membership (stealth projects are never discoverable)
     let authContext: AuthContext
     try {
       authContext = await authenticateRequest(request)
