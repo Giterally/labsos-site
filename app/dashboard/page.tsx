@@ -1,12 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
+import TodoList from "@/components/activity-tracker/todos/TodoList"
+import WorkLogList from "@/components/activity-tracker/work-logs/WorkLogList"
 // Removed legacy beaker icon and 'Knowledge Capture' branding per request
 
 interface UserProfile {
@@ -21,6 +23,24 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState<string>('tasks')
+
+  // Read tab from URL on mount
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'logs' || tab === 'tasks') {
+      setActiveTab(tab)
+    }
+  }, [searchParams])
+
+  // Update URL when tab changes
+  const handleTabChange = (value: string) => {
+    setActiveTab(value)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('tab', value)
+    router.push(`/dashboard?${params.toString()}`, { scroll: false })
+  }
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -157,26 +177,24 @@ export default function DashboardPage() {
 
         <Separator />
 
-        {/* Todos */}
+        {/* Activity Tracker */}
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-semibold">Todo Lists</h2>
-          </div>
           <div className="rounded-xl border bg-muted/40 p-4 md:p-6">
-            <Tabs defaultValue="personal" className="w-full">
-              <TabsList>
-                <TabsTrigger value="personal">Personal</TabsTrigger>
-                <TabsTrigger value="shared">Shared</TabsTrigger>
-              </TabsList>
-              <TabsContent value="personal">
-                <Card className="bg-background/60">
-                  <CardContent className="py-8 text-center text-muted-foreground">Personal todos — Coming soon</CardContent>
-                </Card>
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-semibold">Activity Tracker</h2>
+                <TabsList>
+                  <TabsTrigger value="tasks">Tasks</TabsTrigger>
+                  <TabsTrigger value="logs">Work Logs</TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent value="tasks" className="mt-0">
+                <TodoList />
               </TabsContent>
-              <TabsContent value="shared">
-                <Card className="bg-background/60">
-                  <CardContent className="py-8 text-center text-muted-foreground">Shared team todos — Coming soon</CardContent>
-                </Card>
+
+              <TabsContent value="logs" className="mt-0">
+                <WorkLogList />
               </TabsContent>
             </Tabs>
           </div>

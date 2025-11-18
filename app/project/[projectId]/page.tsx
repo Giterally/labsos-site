@@ -24,6 +24,7 @@ import { useUser } from "@/lib/user-context"
 import ManageTeamForm from "@/components/forms/ManageTeamForm"
 import AddTeamMemberForm from "@/components/forms/AddTeamMemberForm"
 import EditProjectForm from "@/components/forms/EditProjectForm"
+import WorkLogList from "@/components/activity-tracker/work-logs/WorkLogList"
 
 interface ExperimentTree {
   id: string
@@ -98,6 +99,13 @@ interface ProjectInfo {
   updated_at: string
   visibility?: string
 }
+
+// Validate if a string is a valid UUID
+const isValidUUID = (str: string | undefined): boolean => {
+  if (!str) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+};
 
 export default function SimpleProjectPage() {
   const router = useRouter()
@@ -1247,11 +1255,16 @@ export default function SimpleProjectPage() {
           {/* Right Column - Tabs */}
           <div className="lg:col-span-3">
             <Tabs defaultValue="trees" className="space-y-6">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className={`grid w-full ${isProjectMember ? 'grid-cols-5' : 'grid-cols-4'}`}>
                 <TabsTrigger value="trees">Experiment Trees</TabsTrigger>
                 <TabsTrigger value="software">Software & Tools</TabsTrigger>
                 <TabsTrigger value="datasets">Datasets</TabsTrigger>
                 <TabsTrigger value="outputs">Outputs</TabsTrigger>
+                {isProjectMember && (
+                  <TabsTrigger value="work-logs" className="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 data-[state=active]:bg-slate-100 dark:data-[state=active]:bg-slate-800 data-[state=active]:text-slate-900 dark:data-[state=active]:text-slate-100">
+                    Work Logs
+                  </TabsTrigger>
+                )}
               </TabsList>
 
               <TabsContent value="trees" className="space-y-6">
@@ -1680,6 +1693,26 @@ export default function SimpleProjectPage() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              {isProjectMember && (
+                <TabsContent value="work-logs" className="space-y-6">
+                  {projectInfo?.id && isValidUUID(projectInfo.id) ? (
+                    <WorkLogList projectId={projectInfo.id} />
+                  ) : projectInfo ? (
+                    <Card>
+                    <CardContent className="py-8 text-center text-muted-foreground">
+                      <p>Loading project information...</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card>
+                    <CardContent className="py-8 text-center text-muted-foreground">
+                      <p>Project not found or access denied.</p>
+                    </CardContent>
+                  </Card>
+                )}
+                </TabsContent>
+              )}
             </Tabs>
           </div>
         </div>

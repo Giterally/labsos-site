@@ -526,24 +526,24 @@ export default function KnowledgeCaptureLanding() {
                         </div>
                       </div>
                     )}
-                    <iframe
+                <iframe
                       src="https://player.vimeo.com/video/1135788759?badge=0&autopause=0&player_id=0&app_id=58479"
-                      className="absolute top-0 left-0 w-full h-full rounded-2xl"
-                      style={{
-                        border: 'none',
+                  className="absolute top-0 left-0 w-full h-full rounded-2xl"
+                  style={{
+                    border: 'none',
                         backgroundColor: 'transparent',
                         opacity: videoLoading ? 0 : 1,
                         transition: 'opacity 0.3s ease-in-out'
-                      }}
-                      frameBorder="0"
+                  }}
+                  frameBorder="0"
                       allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
                       referrerPolicy="strict-origin-when-cross-origin"
-                      allowFullScreen
+                  allowFullScreen
                       onLoad={() => {
                         setVideoLoading(false)
                         setVideoError(false)
                       }}
-                    />
+                />
                   </>
                 )}
               </div>

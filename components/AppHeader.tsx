@@ -21,7 +21,7 @@ import {
   FolderIcon,
   BeakerIcon,
 } from "@heroicons/react/24/outline"
-import { Sun, Moon } from "lucide-react"
+import { Sun, Moon, CheckSquare } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 import { signOut } from "@/lib/auth-service"
@@ -139,6 +139,15 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
               >
                 <HomeIcon className="h-4 w-4" />
                 <span>Dashboard</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push("/dashboard/tasks")}
+                className="flex items-center space-x-1 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 [&_svg]:hover:!text-foreground"
+              >
+                <CheckSquare className="h-4 w-4" />
+                <span>Tasks & Work Logs</span>
               </Button>
               <Button
                 variant="ghost"
