@@ -219,6 +219,8 @@ export default function KnowledgeCaptureLanding() {
   const [openFAQ, setOpenFAQ] = useState<number | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [showContactDialog, setShowContactDialog] = useState(false)
+  const [videoLoading, setVideoLoading] = useState(true)
+  const [videoError, setVideoError] = useState(false)
   const [contactForm, setContactForm] = useState({
     name: '',
     email: '',
@@ -244,6 +246,22 @@ export default function KnowledgeCaptureLanding() {
       router.replace(`/reset-password?code=${code}`)
     }
   }, [router])
+
+  // Timeout to detect if video fails to load (Vimeo may show Cloudflare challenge)
+  // The iframe onLoad fires even when Vimeo shows a security challenge page,
+  // so we use a timeout to detect when the video isn't actually playing
+  useEffect(() => {
+    if (videoLoading) {
+      const timeout = setTimeout(() => {
+        // If still loading after 10 seconds, assume it failed
+        // This catches cases where Vimeo shows a Cloudflare challenge page
+        setVideoLoading(false)
+        setVideoError(true)
+      }, 10000)
+
+      return () => clearTimeout(timeout)
+    }
+  }, [videoLoading])
 
   const toggleFAQ = useCallback((index: number) => {
     setOpenFAQ(prev => prev === index ? null : index)
@@ -479,17 +497,55 @@ export default function KnowledgeCaptureLanding() {
                   overflow: 'hidden'
                 }}
               >
-                <iframe
-                  src="https://player.vimeo.com/video/1135788759?title=0&byline=0&portrait=0"
-                  className="absolute top-0 left-0 w-full h-full rounded-2xl"
-                  style={{
-                    border: 'none',
-                    backgroundColor: 'transparent'
-                  }}
-                  frameBorder="0"
-                  allow="autoplay; fullscreen; picture-in-picture"
-                  allowFullScreen
-                />
+                {videoError ? (
+                  <div className="absolute top-0 left-0 w-full h-full rounded-2xl bg-muted flex items-center justify-center">
+                    <div className="text-center p-8">
+                      <VideoCameraIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground mb-2">Video unavailable</p>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        The video may have embedding restrictions or security settings preventing playback.
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        Check Vimeo video settings: Privacy → Where can this be embedded? → Set to "Anywhere" or add your domain.
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => window.open('https://vimeo.com/1135788759', '_blank')}
+                      >
+                        Watch on Vimeo
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {videoLoading && (
+                      <div className="absolute top-0 left-0 w-full h-full rounded-2xl bg-muted/80 flex items-center justify-center z-10">
+                        <div className="text-center">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                          <p className="text-sm text-muted-foreground">Loading video...</p>
+                        </div>
+                      </div>
+                    )}
+                    <iframe
+                      src="https://player.vimeo.com/video/1135788759?badge=0&autopause=0&player_id=0&app_id=58479"
+                      className="absolute top-0 left-0 w-full h-full rounded-2xl"
+                      style={{
+                        border: 'none',
+                        backgroundColor: 'transparent',
+                        opacity: videoLoading ? 0 : 1,
+                        transition: 'opacity 0.3s ease-in-out'
+                      }}
+                      frameBorder="0"
+                      allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allowFullScreen
+                      onLoad={() => {
+                        setVideoLoading(false)
+                        setVideoError(false)
+                      }}
+                    />
+                  </>
+                )}
               </div>
             </div>
           </div>
