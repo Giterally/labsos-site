@@ -1,197 +1,46 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
-import { PermissionService } from '@/lib/permission-service'
-import { supabaseServer } from '@/lib/supabase-server'
-import { fetchTreeContext, fetchTreeContextWithSemanticSearch } from '@/lib/tree-context'
-import { generateActionPlanWithRouting, GeneratedActionPlan } from '@/lib/ai-action-handler'
-import { executeActionPlan } from '@/lib/ai-action-executor'
-import { hasActionIntent, detectBulkOperation } from '@/lib/ai-action-schemas'
+import { NextRequest, NextResponse } from 'next/server';
+import { FEATURE_FLAGS } from '@/lib/config';
 
+/**
+ * AI Actions Endpoint - Agentic Chat Features
+ * 
+ * This endpoint is disabled by default. Set ENABLE_AGENTIC_CHAT=true to re-enable.
+ * See deprecated/agentic-chat/README.md for re-enablement instructions.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ treeId: string }> }
 ) {
-  try {
-    const { treeId } = await params
-    const body = await request.json()
-    const { mode, query, plan, conversationHistory, agentMode = true } = body
+  const { treeId } = await params;
+  
+  // Check feature flag
+  if (!FEATURE_FLAGS.ENABLE_AGENTIC_CHAT) {
+    // Log for analytics (privacy-safe - don't log full query)
+    console.log('Agentic chat attempt blocked:', {
+      timestamp: new Date().toISOString(),
+      treeId: treeId,
+    });
     
-    console.log(`[AI_ACTIONS] Received request: mode=${mode}, query="${query?.substring(0, 50)}...", agentMode=${agentMode}`)
-
-    if (!mode || (mode !== 'preview' && mode !== 'execute')) {
-      return NextResponse.json(
-        { error: 'Mode must be "preview" or "execute"' },
-        { status: 400 }
-      )
-    }
-
-    if (mode === 'preview' && !query) {
-      return NextResponse.json(
-        { error: 'Query is required for preview mode' },
-        { status: 400 }
-      )
-    }
-
-    if (mode === 'execute' && !plan) {
-      return NextResponse.json(
-        { error: 'Plan is required for execute mode' },
-        { status: 400 }
-      )
-    }
-
-    // Resolve parent project visibility using server client
-    const { data: treeMeta, error: treeMetaErr } = await supabaseServer
-      .from('experiment_trees')
-      .select('id, project_id')
-      .eq('id', treeId)
-      .single()
-
-    if (treeMetaErr || !treeMeta) {
-      return NextResponse.json({ error: 'Experiment tree not found' }, { status: 404 })
-    }
-
-    const { data: proj, error: projErr } = await supabaseServer
-      .from('projects')
-      .select('visibility')
-      .eq('id', treeMeta.project_id)
-      .single()
-
-    if (projErr || !proj) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-    }
-
-    // Determine which client to use based on project visibility
-    let client: any = supabaseServer
-    let userId: string | null = null
-
-    if (proj.visibility === 'private') {
-      // For private projects, authenticate and check permissions
-      let authContext
-      try {
-        authContext = await authenticateRequest(request)
-      } catch (error) {
-        if (error instanceof AuthError) {
-          return NextResponse.json(
-            { error: error.message },
-            { status: error.statusCode }
-          )
-        }
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        )
-      }
-
-      const permissions = new PermissionService(authContext.supabase, authContext.user.id)
-      const access = await permissions.checkTreeAccess(treeId)
-      if (!access.canRead) {
-        return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-      }
-      client = authContext.supabase
-      userId = authContext.user.id
-    }
-
-    if (mode === 'preview') {
-      // Generate action plan
-      // Check tree size and operation type to decide retrieval method
-      const { count: nodeCount } = await supabaseServer
-        .from('tree_nodes')
-        .select('*', { count: 'exact', head: true })
-        .eq('tree_id', treeId)
-
-      const totalNodeCount = nodeCount || 0
-      const isBulkOperation = detectBulkOperation(query)
-
-      let treeContext: any = null
-
-      if (isBulkOperation) {
-        // Bulk operations: always use full context for 100% accuracy
-        console.log(`[AI_ACTIONS] Bulk operation detected, using full context (${totalNodeCount} nodes)`)
-        treeContext = await fetchTreeContext(client, treeId)
-      } else if (totalNodeCount >= 20) {
-        // Targeted operations: use semantic search for efficiency
-        console.log(`[AI_ACTIONS] Targeted operation, using semantic search (tree has ${totalNodeCount} nodes)`)
-        try {
-          const semanticResult = await fetchTreeContextWithSemanticSearch(client, treeId, query, {
-            maxNodes: 20, // Increased from 10 for better coverage
-            similarityThreshold: 0.7,
-            includeDependencies: true,
-          })
-          treeContext = semanticResult.context
-        } catch (error) {
-          console.error('[AI_ACTIONS] Semantic search failed, falling back to full context:', error)
-          treeContext = await fetchTreeContext(client, treeId)
-        }
-      } else {
-        // Small trees: always use full context
-        console.log(`[AI_ACTIONS] Small tree (${totalNodeCount} nodes), using full context`)
-        treeContext = await fetchTreeContext(client, treeId)
-      }
-
-      if (!treeContext) {
-        return NextResponse.json(
-          { error: 'Tree not found or access denied' },
-          { status: 404 }
-        )
-      }
-
-      // Generate action plan (with automatic routing to chunked generation for large bulk operations)
-      const actionPlan = await generateActionPlanWithRouting(
-        query,
-        treeContext,
-        conversationHistory || [],
-        agentMode
-      )
-
-      return NextResponse.json({
-        mode: 'preview',
-        plan: actionPlan
-      })
-    } else {
-      // Execute action plan
-      if (!userId) {
-        // Need authentication for execution
-        let authContext
-        try {
-          authContext = await authenticateRequest(request)
-        } catch (error) {
-          if (error instanceof AuthError) {
-            return NextResponse.json(
-              { error: error.message },
-              { status: error.statusCode }
-            )
-          }
-          return NextResponse.json(
-            { error: 'Unauthorized' },
-            { status: 401 }
-          )
-        }
-        client = authContext.supabase
-        userId = authContext.user.id
-      }
-
-      const executionResult = await executeActionPlan(
-        plan as GeneratedActionPlan,
-        treeId,
-        client,
-        userId
-      )
-
-      console.log(`[AI_ACTIONS] Execution completed: ${executionResult.results.filter(r => r.success).length}/${executionResult.results.length} successful`)
-      console.log(`[AI_ACTIONS] Returning tree_context:`, executionResult.tree_context ? 'present' : 'null')
-
-      return NextResponse.json({
-        mode: 'execute',
-        results: executionResult.results,
-        updated_tree_context: executionResult.tree_context // Map tree_context to updated_tree_context for frontend
-      })
-    }
-  } catch (error) {
-    console.error('AI actions error:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+      {
+        error: 'Feature Unavailable',
+        message: 'Agentic chat features have been removed. This endpoint is no longer available. Please use the tree editor interface to make modifications.',
+        code: 'AGENTIC_CHAT_DISABLED',
+      },
+      { status: 410 } // 410 Gone - resource permanently removed
+    );
   }
+  
+  // If flag is enabled, original logic would be restored from deprecated files
+  // For now, return error since we're keeping this disabled
+  // To re-enable: restore files from deprecated/agentic-chat/ and uncomment logic below
+  
+  return NextResponse.json(
+    {
+      error: 'Feature Not Implemented',
+      message: 'Agentic chat is enabled but implementation needs to be restored from deprecated files. See deprecated/agentic-chat/README.md for instructions.',
+      code: 'AGENTIC_CHAT_NOT_RESTORED',
+    },
+    { status: 501 } // Not Implemented
+  );
 }
-

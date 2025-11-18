@@ -16,9 +16,7 @@ import type { TreeContext } from "@/lib/tree-context"
 import { useChatSidebar } from "@/lib/chat-sidebar-context"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { hasActionIntent } from "@/lib/ai-action-schemas"
-import ActionPlanPreview from "@/components/ActionPlanPreview"
-import type { GeneratedActionPlan } from "@/lib/ai-action-handler"
+// Agentic features removed - see REMOVED_FEATURES.md
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -112,7 +110,13 @@ function parseAIResponse(
         const normalizedUrl = normalizeVideoUrl(attachment.file_url)
         allAttachmentUrls.add(normalizedUrl) // Add ALL attachment URLs immediately
         if (!attachmentMap.has(normalizedUrl)) {
-          attachmentMap.set(normalizedUrl, attachment)
+          // Ensure file_url is string (not null) for type safety
+          attachmentMap.set(normalizedUrl, {
+            name: attachment.name,
+            file_url: attachment.file_url, // Already checked for null above
+            file_type: attachment.file_type,
+            description: attachment.description
+          })
         }
       })
     })
@@ -229,9 +233,6 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [currentMessage, setCurrentMessage] = useState("")
   const [isSending, setIsSending] = useState(false)
-  const [agentMode, setAgentMode] = useState(false) // Agent mode toggle
-  const [actionPlan, setActionPlan] = useState<GeneratedActionPlan | null>(null)
-  const [isExecuting, setIsExecuting] = useState(false)
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState("")
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null)
@@ -239,7 +240,6 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
   const initialQueryHandledRef = useRef(false)
-  const actionPlanLoadedRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   
   // Storage key based on userId and treeId (per-user, per-tree)
@@ -268,12 +268,19 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
     }
   }, [userLoading, sidebarWidthKey])
 
-  // Disable agent mode if user doesn't have edit permission
+  // One-time cleanup of agentic localStorage data
   useEffect(() => {
-    if (!hasEditPermission && agentMode) {
-      setAgentMode(false)
+    const cleanupKey = 'agentic_cleanup_done_v1'
+    if (typeof window !== 'undefined' && !localStorage.getItem(cleanupKey)) {
+      // Remove any action plan related keys
+      const keysToRemove = Object.keys(localStorage).filter(key => 
+        key.includes('action_plan') || key.includes('agent_mode')
+      )
+      keysToRemove.forEach(key => localStorage.removeItem(key))
+      localStorage.setItem(cleanupKey, 'true')
+      console.log('Cleaned up agentic localStorage data')
     }
-  }, [hasEditPermission, agentMode])
+  }, [])
 
   // Save chats to localStorage (only if user is authenticated)
   const saveChats = useCallback((updatedChats: Chat[]) => {
@@ -416,160 +423,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
         content: msg.content
       })) || []
 
-      // Check if query contains action intent
-      const hasIntent = hasActionIntent(messageText)
-      console.log(`[AIChatSidebar] Query: "${messageText}", hasActionIntent: ${hasIntent}, agentMode: ${agentMode}`)
-      if (hasIntent) {
-        if (!agentMode) {
-          // Agent mode is off, inform user
-          const assistantMessage: ChatMessage = {
-            role: 'assistant',
-            content: 'Agent mode is currently disabled. Please enable "Agent Mode" in the sidebar to allow me to modify the experiment tree.',
-            timestamp: new Date()
-          }
-          const finalChats = updatedChats.map(chat => {
-            if (chat.id === activeChatId) {
-              return {
-                ...chat,
-                messages: [...chat.messages, assistantMessage],
-                updatedAt: new Date()
-              }
-            }
-            return chat
-          })
-          saveChats(finalChats)
-          setIsSending(false)
-          setTimeout(() => inputRef.current?.focus(), 100)
-          return
-        }
-
-        // Agent mode is on, route to action endpoint for preview
-        console.log(`[AIChatSidebar] Calling ai-actions endpoint with query: "${messageText}"`)
-        try {
-          const actionResponse = await fetch(
-            `/api/trees/${treeId}/ai-actions`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                mode: 'preview',
-                query: messageText,
-                conversationHistory,
-                agentMode: true,
-              }),
-              signal,
-            }
-          )
-          
-          console.log(`[AIChatSidebar] Action response status: ${actionResponse.status}, ok: ${actionResponse.ok}`)
-
-          if (actionResponse.ok) {
-            const actionData = await actionResponse.json()
-            console.log('[AIChatSidebar] Action plan response:', actionData)
-            if (actionData.plan && actionData.plan.operations && actionData.plan.operations.length > 0) {
-              // Show action plan preview
-              setActionPlan(actionData.plan)
-              // Persist action plan to localStorage
-              if (storageKey && typeof window !== 'undefined') {
-                const planKey = `${storageKey}-action-plan`
-                try {
-                  localStorage.setItem(planKey, JSON.stringify(actionData.plan))
-                  console.log('[AIChatSidebar] Saved action plan to localStorage:', planKey, actionData.plan)
-                  // Verify it was saved
-                  const verify = localStorage.getItem(planKey)
-                  if (!verify) {
-                    console.error('[AIChatSidebar] Failed to save action plan to localStorage!')
-                  }
-                } catch (error) {
-                  console.error('[AIChatSidebar] Error saving action plan to localStorage:', error)
-                }
-              }
-              setIsSending(false)
-              setTimeout(() => inputRef.current?.focus(), 100)
-              return
-            } else {
-              // No operations generated - show error message instead of falling through
-              console.warn('[AIChatSidebar] No operations in action plan:', actionData)
-              const errorMessage: ChatMessage = {
-                role: 'assistant',
-                content: 'I was unable to generate an action plan for your request. Please try rephrasing your request or provide more specific details about what you want to change.',
-                timestamp: new Date()
-              }
-              const finalChats = updatedChats.map(chat => {
-                if (chat.id === activeChatId) {
-                  return {
-                    ...chat,
-                    messages: [...chat.messages, errorMessage],
-                    updatedAt: new Date()
-                  }
-                }
-                return chat
-              })
-              saveChats(finalChats)
-              setIsSending(false)
-              setTimeout(() => inputRef.current?.focus(), 100)
-              return
-            }
-          } else {
-            // Action endpoint failed - show error instead of falling through
-            const errorText = await actionResponse.text()
-            let errorMessage = 'Failed to generate action plan. Please try again.'
-            try {
-              const errorData = JSON.parse(errorText)
-              errorMessage = `Failed to generate action plan: ${errorData.error || 'Unknown error'}`
-            } catch {
-              // Use default
-            }
-            console.error('[AIChatSidebar] Action preview failed:', errorText)
-            const errorMessageObj: ChatMessage = {
-              role: 'assistant',
-              content: errorMessage,
-              timestamp: new Date()
-            }
-            const finalChats = updatedChats.map(chat => {
-              if (chat.id === activeChatId) {
-                return {
-                  ...chat,
-                  messages: [...chat.messages, errorMessageObj],
-                  updatedAt: new Date()
-                }
-              }
-              return chat
-            })
-            saveChats(finalChats)
-            setIsSending(false)
-            setTimeout(() => inputRef.current?.focus(), 100)
-            return
-          }
-        } catch (error) {
-          console.error('[AIChatSidebar] Error calling action endpoint:', error)
-          // Show error instead of falling through
-          const errorMessage: ChatMessage = {
-            role: 'assistant',
-            content: 'An error occurred while generating the action plan. Please try again.',
-            timestamp: new Date()
-          }
-          const finalChats = updatedChats.map(chat => {
-            if (chat.id === activeChatId) {
-              return {
-                ...chat,
-                messages: [...chat.messages, errorMessage],
-                updatedAt: new Date()
-              }
-            }
-            return chat
-          })
-          saveChats(finalChats)
-          setIsSending(false)
-          setTimeout(() => inputRef.current?.focus(), 100)
-          return
-        }
-      }
-
-      // Regular search endpoint (no action intent or action preview failed)
+      // Always route to ai-search endpoint (agentic features removed)
       const response = await fetch(
         `/api/trees/${treeId}/ai-search`,
         {
@@ -608,6 +462,30 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
         })
         saveChats(finalChats)
       } else {
+        // Handle 410 Gone (agentic chat disabled) gracefully
+        if (response.status === 410) {
+          const errorData = await response.json().catch(() => ({}))
+          const errorMessage: ChatMessage = {
+            role: 'assistant',
+            content: errorData.message || 'This feature is no longer available. Please use the tree editor to make modifications.',
+            timestamp: new Date()
+          }
+          const finalChats = updatedChats.map(chat => {
+            if (chat.id === activeChatId) {
+              return {
+                ...chat,
+                messages: [...chat.messages, errorMessage],
+                updatedAt: new Date()
+              }
+            }
+            return chat
+          })
+          saveChats(finalChats)
+          setIsSending(false)
+          setTimeout(() => inputRef.current?.focus(), 100)
+          return
+        }
+        
         const errorText = await response.text()
         let errorMessage = 'An error occurred. Please try again.'
         try {
@@ -675,7 +553,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
       abortControllerRef.current = null
       setTimeout(() => inputRef.current?.focus(), 100)
     }
-  }, [activeChatId, chats, treeId, activeChat, saveChats, updateChatTitle, isSending, agentMode])
+  }, [activeChatId, chats, treeId, activeChat, saveChats, updateChatTitle, isSending])
 
   // Stop generation handler
   const handleStopGeneration = useCallback(() => {
@@ -869,162 +747,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
     setIsChatOpen(open)
   }, [open, setIsChatOpen])
 
-  // Load persisted action plan on mount (only once when component loads)
-  useEffect(() => {
-    if (!userLoading && storageKey && typeof window !== 'undefined' && !actionPlanLoadedRef.current) {
-      const planKey = `${storageKey}-action-plan`
-      const savedPlan = localStorage.getItem(planKey)
-      console.log('[AIChatSidebar] Checking for saved action plan:', planKey, savedPlan ? 'found' : 'not found')
-      if (savedPlan) {
-        try {
-          const parsedPlan = JSON.parse(savedPlan)
-          // Only restore if it's a valid plan with operations
-          if (parsedPlan && parsedPlan.operations && parsedPlan.operations.length > 0) {
-            console.log('[AIChatSidebar] Restoring saved action plan from:', planKey)
-            setActionPlan(parsedPlan)
-            actionPlanLoadedRef.current = true
-          } else {
-            // Invalid plan, remove it
-            console.log('[AIChatSidebar] Invalid saved plan, removing:', planKey)
-            localStorage.removeItem(planKey)
-          }
-        } catch (error) {
-          console.error('Error loading saved action plan:', error)
-          localStorage.removeItem(planKey)
-        }
-      } else {
-        actionPlanLoadedRef.current = true // Mark as checked even if no plan found
-      }
-    }
-  }, [userLoading, storageKey])
-
-  // Handle action plan confirmation
-  const handleConfirmAction = useCallback(async () => {
-    if (!actionPlan || !user) return
-
-    setIsExecuting(true)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        throw new Error('No session found')
-      }
-
-      const response = await fetch(
-        `/api/trees/${treeId}/ai-actions`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            mode: 'execute',
-            plan: actionPlan,
-            agentMode: true,
-          }),
-        }
-      )
-
-      if (response.ok) {
-        const data = await response.json()
-        console.log('[AIChatSidebar] Action execution response:', {
-          resultsCount: data.results?.length,
-          successfulCount: data.results?.filter((r: any) => r.success).length,
-          hasUpdatedTreeContext: !!data.updated_tree_context,
-          hasOnTreeUpdated: !!onTreeUpdated
-        })
-        
-        // Add success message to chat
-        const successMessage: ChatMessage = {
-          role: 'assistant',
-          content: `✅ Action plan executed successfully! ${data.results.filter((r: any) => r.success).length} of ${data.results.length} operations completed.`,
-          timestamp: new Date()
-        }
-
-        const updatedChats = chats.map(chat => {
-          if (chat.id === activeChatId) {
-            return {
-              ...chat,
-              messages: [...chat.messages, successMessage],
-              updatedAt: new Date()
-            }
-          }
-          return chat
-        })
-        saveChats(updatedChats)
-
-        // Notify parent component to refresh tree
-        console.log('[AIChatSidebar] Calling onTreeUpdated callback...')
-        if (onTreeUpdated) {
-          if (data.updated_tree_context) {
-            console.log('[AIChatSidebar] Calling onTreeUpdated with updated_tree_context')
-            onTreeUpdated(data.updated_tree_context)
-          } else {
-            console.warn('[AIChatSidebar] No updated_tree_context in response, calling onTreeUpdated without context')
-            // Still call it to trigger refresh even if context is missing
-            onTreeUpdated(null as any)
-          }
-        } else {
-          console.warn('[AIChatSidebar] onTreeUpdated callback is not provided')
-        }
-
-        setActionPlan(null)
-        // Clear persisted action plan
-        if (storageKey && typeof window !== 'undefined') {
-          localStorage.removeItem(`${storageKey}-action-plan`)
-        }
-      } else {
-        const errorData = await response.json()
-        const errorMessage: ChatMessage = {
-          role: 'assistant',
-          content: `❌ Failed to execute action plan: ${errorData.error || 'Unknown error'}`,
-          timestamp: new Date()
-        }
-
-        const updatedChats = chats.map(chat => {
-          if (chat.id === activeChatId) {
-            return {
-              ...chat,
-              messages: [...chat.messages, errorMessage],
-              updatedAt: new Date()
-            }
-          }
-          return chat
-        })
-        saveChats(updatedChats)
-      }
-    } catch (error) {
-      console.error('Error executing action plan:', error)
-      const errorMessage: ChatMessage = {
-        role: 'assistant',
-        content: '❌ An error occurred while executing the action plan. Please try again.',
-        timestamp: new Date()
-      }
-
-      const updatedChats = chats.map(chat => {
-        if (chat.id === activeChatId) {
-          return {
-            ...chat,
-            messages: [...chat.messages, errorMessage],
-            updatedAt: new Date()
-          }
-        }
-        return chat
-      })
-      saveChats(updatedChats)
-    } finally {
-      setIsExecuting(false)
-    }
-  }, [actionPlan, user, treeId, activeChatId, chats, saveChats, onTreeUpdated])
-
-  // Handle action plan cancellation
-  const handleCancelAction = useCallback(() => {
-    setActionPlan(null)
-    // Clear persisted action plan
-    if (storageKey && typeof window !== 'undefined') {
-      localStorage.removeItem(`${storageKey}-action-plan`)
-    }
-  }, [storageKey])
+  // Action plan functions removed - agentic features disabled
 
   if (!open) return null
 
@@ -1460,17 +1183,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                   </div>
                 )}
                 
-                {/* Action Plan Preview - inside messages container so it scrolls with chat */}
-                {actionPlan && (
-                  <div className="p-4">
-                    <ActionPlanPreview
-                      plan={actionPlan}
-                      onConfirm={handleConfirmAction}
-                      onCancel={handleCancelAction}
-                      isExecuting={isExecuting}
-                    />
-                  </div>
-                )}
+                {/* Action plan preview removed - agentic features disabled */}
                 
                 <div ref={messagesEndRef} />
               </div>
@@ -1488,18 +1201,7 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
                     className="flex-1 min-h-[36px] max-h-[136px] resize-none overflow-y-auto"
                     rows={1}
                   />
-                  {hasEditPermission && (
-                    <div className="flex items-center justify-center gap-2 h-9 px-3 rounded-md border border-input bg-background shadow-xs flex-shrink-0">
-                      <Label htmlFor="agent-mode" className="text-xs text-muted-foreground whitespace-nowrap cursor-pointer">
-                        Agent
-                      </Label>
-                      <Switch
-                        id="agent-mode"
-                        checked={agentMode}
-                        onCheckedChange={setAgentMode}
-                      />
-                    </div>
-                  )}
+                  {/* Agent mode toggle removed - agentic features disabled */}
                   <Button
                     onClick={() => sendMessage(currentMessage)}
                     disabled={!currentMessage.trim() || isSending}

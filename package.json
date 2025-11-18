@@ -8,7 +8,8 @@
     "lint": "next lint",
     "start": "next start",
     "generate-embeddings": "tsx scripts/generate-embeddings.ts",
-    "process-queue": "tsx scripts/process-embedding-queue.ts"
+    "process-queue": "tsx scripts/process-embedding-queue.ts",
+    "cleanup-agentic-data": "tsx scripts/cleanup-agentic-data.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.65.0",
