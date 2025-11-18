@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import TodoStatusBadge from './TodoStatusBadge';
 import TodoPriorityBadge from './TodoPriorityBadge';
 import TodoMeetingUpdates from './TodoMeetingUpdates';
-import { Calendar, User, Folder, FileText, CheckCircle, ExternalLink } from 'lucide-react';
+import { Calendar, User, Folder, FileText, CheckCircle, ExternalLink, Repeat } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
@@ -39,7 +39,15 @@ export default function TodoDetailModal({ todo, open, onOpenChange }: TodoDetail
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-2xl">{todo.title}</DialogTitle>
+          <DialogTitle className="text-2xl flex items-center gap-2 flex-wrap">
+            {todo.title}
+            {todo.is_recurring_meeting && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-md text-xs font-medium">
+                <Repeat className="h-3 w-3" />
+                <span>Recurring Meeting</span>
+              </div>
+            )}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6">
