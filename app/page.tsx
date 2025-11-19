@@ -34,6 +34,7 @@ import Link from "next/link"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useUser } from "@/lib/user-context"
 import { KnowledgeNodesBackground } from "@/components/KnowledgeNodesBackground"
+import { ConnectorLines } from "@/components/ConnectorLines"
 import Image from "next/image"
 import { Sun, Moon, Sparkles } from "lucide-react"
 import { useTheme } from "next-themes"
@@ -149,28 +150,30 @@ const FeatureCard = memo(({
   }
   index: number
 }) => {
-  const isAIFeature = feature.title === "AI Upload" || feature.title === "AI Chat"
+  const isAIFeature = feature.title === "AI-Powered Research Assistant"
   
   return (
     <Card className="p-6">
       <CardContent className="space-y-4">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-start space-x-4">
           {isAIFeature ? (
-            <div className="relative">
+            <div className="relative flex-shrink-0">
               <div className="text-purple-500 dark:text-purple-400 relative z-10">
                 {feature.icon}
               </div>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="h-8 w-8 rounded-full bg-purple-500/40 dark:bg-purple-400/40 blur-lg animate-pulse" />
+                <div className="h-16 w-16 rounded-full bg-purple-500/40 dark:bg-purple-400/40 blur-lg animate-pulse" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="h-6 w-6 rounded-full bg-purple-500/30 dark:bg-purple-400/30 blur-sm animate-pulse" style={{ animationDelay: '0.5s' }} />
+                  <div className="h-12 w-12 rounded-full bg-purple-500/30 dark:bg-purple-400/30 blur-sm animate-pulse" style={{ animationDelay: '0.5s' }} />
                 </div>
               </div>
             </div>
           ) : (
-            feature.icon
+            <div className="flex-shrink-0">
+              {feature.icon}
+            </div>
           )}
-          <h3 className="text-xl font-semibold text-foreground">{feature.title}</h3>
+          <h3 className="text-xl font-semibold text-foreground leading-tight">{feature.title}</h3>
         </div>
         <p className="text-muted-foreground">{feature.description}</p>
         <ul className="space-y-1">
@@ -231,6 +234,7 @@ export default function KnowledgeCaptureLanding() {
     message: ''
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const connectorContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -274,28 +278,22 @@ export default function KnowledgeCaptureLanding() {
   // Memoize features data
   const features = useMemo(() => [
     {
-      icon: <FolderIcon className="h-8 w-8 text-primary" />,
-      title: "Ordered Experiment Trees",
-      description: "Organise research as sequential workflows with nodes, attachments, and embedded videos.",
-      features: ["Visual experiment flow", "Nested sub-procedures", "Drag and drop reordering"]
+      icon: <FolderIcon className="h-16 w-16 text-primary" />,
+      title: "Experimental Workflows & Integration",
+      description: "Capture experimental protocols as sequential workflows with dependencies, while connecting your existing GitHub repos, cloud storage, and datasets to maintain full context of your research.",
+      features: ["Visual protocol dependencies", "GitHub & cloud storage connections", "Data lineage tracking"]
     },
     {
-      icon: <DocumentTextIcon className="h-8 w-8" />,
-      title: "AI Upload",
-      description: "Upload PDFs, Excel, text, markdown, video (MP4, AVI, MOV), and audio (MP3, WAV) files to automatically build experiment trees using AI.",
-      features: ["PDF, Excel, text, markdown", "Video & audio support", "AI-powered extraction"]
+      icon: <Sparkles className="h-16 w-16 text-purple-500 dark:text-purple-400" />,
+      title: "AI-Powered Research Assistant",
+      description: "Upload protocols, data files, and documentation to automatically structure experiment trees. Query your research using natural language to get insights and analysis across your complete experimental context.",
+      features: ["AI file processing & extraction", "Natural language queries", "Context-aware analysis"]
     },
     {
-      icon: <CodeBracketIcon className="h-8 w-8 text-primary" />,
-      title: "Code & Data Integration",
-      description: "Link GitHub repos, connect datasets, and maintain data lineage throughout experiments.",
-      features: ["GitHub integration", "Data versioning", "Analysis pipelines"]
-    },
-    {
-      icon: <Sparkles className="h-8 w-8" />,
-      title: "AI Chat",
-      description: "Query experiment trees using natural language. Get analysis and suggestions through conversational AI.",
-      features: ["Natural language queries", "AI-powered analysis", "Continuous chat with context"]
+      icon: <UserGroupIcon className="h-16 w-16 text-primary" />,
+      title: "Team Collaboration & Task Management",
+      description: "Personal and shared tasks, continuous meeting notes, and work logs that preserve team knowledge and maintain context across project handovers and personnel changes.",
+      features: ["Personal & shared tasks", "Continuous meeting notes", "Work logs & todo lists"]
     }
   ], [])
 
@@ -482,7 +480,7 @@ export default function KnowledgeCaptureLanding() {
                   <AnimatedWord words={["Capture", "Organise", "Manage"]} /> Your Research Knowledge With Olvaro
                 </h1>
                 <p className="text-xl text-muted-foreground leading-relaxed p-6 rounded-lg backdrop-blur-sm bg-background/80 border border-border/50">
-                  Transform scattered research into organized knowledge trees. Make your work reproducible and preserve team knowledge.
+                  A centralised hub to ensure continuity of techniques with AI powered knowledge trees, featuring tasks (personal and shared), continuous meeting notes, and work logs
                 </p>
               </div>
               <div className="flex space-x-4">
@@ -693,60 +691,32 @@ export default function KnowledgeCaptureLanding() {
               </Card>
             </div>
 
-            {/* Elegant flowing lines from blocks to Olvaro - converging at center */}
-            <div className="relative w-full hidden md:block" style={{ height: '60px', marginTop: '0.5rem', marginBottom: '0' }}>
-              <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible' }}>
-                {/* Line from left block (Cloud Storage) - curves inward to center */}
-                <path
-                  d="M 16.666 0 Q 30 50, 50 100"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth="1"
-                  fill="none"
-                  strokeOpacity="0.5"
-                  className="transition-opacity hover:stroke-opacity-70"
-                  strokeLinecap="round"
-                />
-                {/* Line from middle block (Note-Taking) - straight down to center */}
-                <path
-                  d="M 50 0 L 50 100"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth="1"
-                  fill="none"
-                  strokeOpacity="0.5"
-                  className="transition-opacity hover:stroke-opacity-70"
-                  strokeLinecap="round"
-                />
-                {/* Line from right block (AI Assistants) - curves inward to center */}
-                <path
-                  d="M 83.333 0 Q 70 50, 50 100"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth="1"
-                  fill="none"
-                  strokeOpacity="0.5"
-                  className="transition-opacity hover:stroke-opacity-70"
-                  strokeLinecap="round"
-                />
-              </svg>
+            {/* Connector lines from blocks to Olvaro - using canvas like interactive map */}
+            <div 
+              ref={connectorContainerRef}
+              className="relative w-full hidden md:block pointer-events-auto" 
+              style={{ height: '60px', marginTop: '0.5rem', marginBottom: '0' }}
+            >
+              <ConnectorLines containerRef={connectorContainerRef} />
             </div>
           </div>
 
           {/* Olvaro Block */}
           <div className="relative z-10 mt-0">
             <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center space-x-3 mb-4">
+              <div className="flex justify-center mb-4">
                 <Image
                   src="/olvaro-logo.png"
                   alt="Olvaro Logo"
-                  width={40}
-                  height={40}
-                  className="h-10 w-10"
+                  width={120}
+                  height={120}
+                  className="h-32 w-32"
                 />
-                <h3 className="text-3xl font-bold text-foreground">Olvaro</h3>
               </div>
               <p className="text-lg text-muted-foreground">Transform your research workflow into organized, searchable knowledge</p>
             </div>
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
               {features.map((feature, index) => (
                 <FeatureCard key={index} feature={feature} index={index} />
               ))}
