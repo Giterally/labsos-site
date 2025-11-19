@@ -147,6 +147,7 @@ const FeatureCard = memo(({
     title: string
     description: string
     features: string[]
+    image?: string
   }
   index: number
 }) => {
@@ -183,6 +184,20 @@ const FeatureCard = memo(({
             </li>
           ))}
         </ul>
+        {feature.image && (
+          <div className="mt-4 -mx-6 -mb-6">
+            <div className="relative w-full border border-white dark:border-gray-800" style={{ aspectRatio: 'auto' }}>
+              <Image
+                src={feature.image}
+                alt={feature.title}
+                width={800}
+                height={600}
+                className="w-full h-auto object-contain"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              />
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -284,7 +299,8 @@ export default function KnowledgeCaptureLanding() {
         "Capture protocols as sequential workflows with visual dependencies",
         "Connect GitHub, cloud storage, and datasets without replacing your existing tools",
         "Track data lineage and versioning for complete reproducibility"
-      ]
+      ],
+      image: "/sc_tree.jpeg"
     },
     {
       icon: <Sparkles className="h-16 w-16 text-purple-500 dark:text-purple-400" />,
@@ -294,7 +310,8 @@ export default function KnowledgeCaptureLanding() {
         "Upload files to automatically structure experiment trees using AI",
         "Query research using natural language for insights across your experimental context",
         "Get context-aware analysis that understands relationships between protocols, data, and results"
-      ]
+      ],
+      image: "/sc_chat.jpeg"
     },
     {
       icon: <UserGroupIcon className="h-16 w-16 text-primary" />,
@@ -304,7 +321,8 @@ export default function KnowledgeCaptureLanding() {
         "Manage personal and shared tasks connected to your workflows",
         "Maintain meeting notes that preserve team knowledge in context",
         "Track work logs and todo lists across handovers and personnel changes"
-      ]
+      ],
+      image: "/sc_task.jpeg"
     }
   ], [])
 
