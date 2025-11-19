@@ -59,14 +59,14 @@ export function ConnectorLines({ containerRef, className = "" }: ConnectorLinesP
       timeRef.current += 16 // ~60fps
 
       // Define connection points
-      // Left block (16.666% of width), top (0% of height)
-      // Middle block (50% of width), top (0% of height)
-      // Right block (83.333% of width), top (0% of height)
+      // Left block: Cloud Storage (16.666% of width), top (0% of height)
+      // Middle block: AI Assistants (50% of width), top (0% of height)
+      // Right block: Note-Taking Tools (83.333% of width), top (0% of height)
       // All converge to center (50% of width), bottom (100% of height)
       const connections = [
-        { from: { x: width * 0.1666, y: 0 }, to: { x: width * 0.5, y: height }, color: connectionColors[2] }, // Blue
-        { from: { x: width * 0.5, y: 0 }, to: { x: width * 0.5, y: height }, color: connectionColors[1] }, // Light green
-        { from: { x: width * 0.8333, y: 0 }, to: { x: width * 0.5, y: height }, color: connectionColors[0] }, // Dark green
+        { from: { x: width * 0.1666, y: 0 }, to: { x: width * 0.5, y: height }, color: connectionColors[2] }, // Blue - Cloud Storage
+        { from: { x: width * 0.5, y: 0 }, to: { x: width * 0.5, y: height }, color: connectionColors[1] }, // Light green - AI Assistants
+        { from: { x: width * 0.8333, y: 0 }, to: { x: width * 0.5, y: height }, color: connectionColors[0] }, // Dark green - Note-Taking Tools
       ]
 
       ctx.lineWidth = 10

@@ -175,11 +175,10 @@ const FeatureCard = memo(({
           )}
           <h3 className="text-xl font-semibold text-foreground leading-tight">{feature.title}</h3>
         </div>
-        <p className="text-muted-foreground">{feature.description}</p>
-        <ul className="space-y-1">
+        <ul className="space-y-3">
           {feature.features.map((item, featureIndex) => (
-            <li key={featureIndex} className="text-sm text-muted-foreground flex items-center space-x-2">
-              <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+            <li key={featureIndex} className="text-sm text-foreground flex items-start space-x-2">
+              <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5 flex-shrink-0"></div>
               <span>{item}</span>
             </li>
           ))}
@@ -280,20 +279,32 @@ export default function KnowledgeCaptureLanding() {
     {
       icon: <FolderIcon className="h-16 w-16 text-primary" />,
       title: "Experimental Workflows & Integration",
-      description: "Capture experimental protocols as sequential workflows with dependencies, while connecting your existing GitHub repos, cloud storage, and datasets to maintain full context of your research.",
-      features: ["Visual protocol dependencies", "GitHub & cloud storage connections", "Data lineage tracking"]
+      description: "",
+      features: [
+        "Capture protocols as sequential workflows with visual dependencies",
+        "Connect GitHub, cloud storage, and datasets without replacing your existing tools",
+        "Track data lineage and versioning for complete reproducibility"
+      ]
     },
     {
       icon: <Sparkles className="h-16 w-16 text-purple-500 dark:text-purple-400" />,
       title: "AI-Powered Research Assistant",
-      description: "Upload protocols, data files, and documentation to automatically structure experiment trees. Query your research using natural language to get insights and analysis across your complete experimental context.",
-      features: ["AI file processing & extraction", "Natural language queries", "Context-aware analysis"]
+      description: "",
+      features: [
+        "Upload files to automatically structure experiment trees using AI",
+        "Query research using natural language for insights across your experimental context",
+        "Get context-aware analysis that understands relationships between protocols, data, and results"
+      ]
     },
     {
       icon: <UserGroupIcon className="h-16 w-16 text-primary" />,
       title: "Team Collaboration & Task Management",
-      description: "Personal and shared tasks, continuous meeting notes, and work logs that preserve team knowledge and maintain context across project handovers and personnel changes.",
-      features: ["Personal & shared tasks", "Continuous meeting notes", "Work logs & todo lists"]
+      description: "",
+      features: [
+        "Manage personal and shared tasks connected to your workflows",
+        "Maintain meeting notes that preserve team knowledge in context",
+        "Track work logs and todo lists across handovers and personnel changes"
+      ]
     }
   ], [])
 
@@ -650,26 +661,6 @@ export default function KnowledgeCaptureLanding() {
                 </CardContent>
               </Card>
 
-              {/* Note-Taking Tools Block */}
-              <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
-                <CardContent className="space-y-4 flex-1">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
-                      <DocumentDuplicateIcon className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-foreground">Note-Taking Tools</h3>
-                      <p className="text-xs text-muted-foreground">Notion, Obsidian, and similar</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3 flex-1">
-                    <p className="text-sm text-foreground leading-relaxed">
-                      Documentation disconnected from code repositories, datasets, and computational infrastructure.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* AI Assistants Block */}
               <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
                 <CardContent className="space-y-4 flex-1">
@@ -685,6 +676,26 @@ export default function KnowledgeCaptureLanding() {
                   <div className="space-y-3 flex-1">
                     <p className="text-sm text-foreground leading-relaxed">
                       AI that reads single files in isolation, lacking visibility into experimental workflows and dependencies.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Note-Taking Tools Block */}
+              <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
+                <CardContent className="space-y-4 flex-1">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
+                      <DocumentDuplicateIcon className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground">Note-Taking Tools</h3>
+                      <p className="text-xs text-muted-foreground">Notion, Slack, Whatsapp</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 flex-1">
+                    <p className="text-sm text-foreground leading-relaxed">
+                      Documentation disconnected from code repositories, datasets, and computational infrastructure.
                     </p>
                   </div>
                 </CardContent>
