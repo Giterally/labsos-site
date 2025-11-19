@@ -155,7 +155,7 @@ const FeatureCard = memo(({
   
   return (
     <Card className="p-6 h-full flex flex-col">
-      <CardContent className="flex flex-col flex-1 space-y-4">
+      <CardContent className="flex flex-col flex-1">
         <div className="flex items-start space-x-4">
           {isAIFeature ? (
             <div className="relative flex-shrink-0">
@@ -176,9 +176,9 @@ const FeatureCard = memo(({
           )}
           <h3 className="text-xl font-semibold text-foreground leading-tight">{feature.title}</h3>
         </div>
-        <ul className="space-y-3">
+        <ul className="space-y-4 !mt-10 !mb-10">
           {feature.features.map((item, featureIndex) => (
-            <li key={featureIndex} className="text-sm text-foreground flex items-start space-x-2">
+            <li key={featureIndex} className="text-base text-foreground flex items-start space-x-2">
               <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5 flex-shrink-0"></div>
               <span>{item}</span>
             </li>
@@ -669,7 +669,7 @@ export default function KnowledgeCaptureLanding() {
                     </div>
                   </div>
                   <div className="space-y-3 flex-1">
-                    <p className="text-sm text-foreground leading-relaxed">
+                    <p className="text-base text-foreground leading-relaxed">
                       Sophisticated directories that store files but reveal no experimental dependencies or workflow relationships.
                     </p>
                   </div>
@@ -689,7 +689,7 @@ export default function KnowledgeCaptureLanding() {
                     </div>
                   </div>
                   <div className="space-y-3 flex-1">
-                    <p className="text-sm text-foreground leading-relaxed">
+                    <p className="text-base text-foreground leading-relaxed">
                       AI that reads single files in isolation, lacking visibility into experimental workflows and dependencies.
                     </p>
                   </div>
@@ -709,7 +709,7 @@ export default function KnowledgeCaptureLanding() {
                     </div>
                   </div>
                   <div className="space-y-3 flex-1">
-                    <p className="text-sm text-foreground leading-relaxed">
+                    <p className="text-base text-foreground leading-relaxed">
                       Documentation disconnected from code repositories, datasets, and computational infrastructure.
                     </p>
                   </div>
@@ -721,14 +721,14 @@ export default function KnowledgeCaptureLanding() {
             <div 
               ref={connectorContainerRef}
               className="relative w-full hidden md:block pointer-events-auto" 
-              style={{ height: '60px', marginTop: '0.5rem', marginBottom: '0' }}
+              style={{ height: 'calc(4rem + 60px)', marginTop: '0.5rem', marginBottom: '0' }}
             >
               <ConnectorLines containerRef={connectorContainerRef} />
             </div>
           </div>
 
           {/* Olvaro Block */}
-          <div className="relative z-10 mt-0">
+          <div className="relative z-10" style={{ marginTop: 'calc(-4rem)' }}>
             <div className="text-center mb-8">
               <div className="flex justify-center mb-4">
                 <Image

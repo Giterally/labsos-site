@@ -1282,10 +1282,10 @@ export default function SimpleProjectPage() {
                           <Button
                             variant="outline"
                             onClick={() => router.push(`/dashboard/projects/${projectId}/import`)}
-                            className="flex items-center space-x-2 hover:!text-foreground"
+                            className="flex items-center space-x-2 hover:!text-foreground border-purple-500 dark:border-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.4)] dark:shadow-[0_0_8px_rgba(192,132,252,0.4)]"
                           >
                             <UploadIcon className="h-4 w-4" />
-                            <span>Import Data</span>
+                            <span>Import Work to Build a First Draft</span>
                           </Button>
                           <Button
                             onClick={() => setShowCreateForm(true)}
