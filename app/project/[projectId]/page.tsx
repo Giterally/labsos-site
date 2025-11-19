@@ -98,6 +98,8 @@ interface ProjectInfo {
   created_at: string
   updated_at: string
   visibility?: string
+  institution?: string | null
+  department?: string | null
 }
 
 // Validate if a string is a valid UUID
@@ -1157,14 +1159,18 @@ export default function SimpleProjectPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Institution:</span>
-                    <span className="text-sm text-muted-foreground">University of Science</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Department:</span>
-                    <span className="text-sm text-muted-foreground">Bioinformatics</span>
-                  </div>
+                  {projectInfo?.institution && (
+                    <div className="flex justify-between">
+                      <span className="text-sm font-medium">Institution:</span>
+                      <span className="text-sm text-muted-foreground">{projectInfo.institution}</span>
+                    </div>
+                  )}
+                  {projectInfo?.department && (
+                    <div className="flex justify-between">
+                      <span className="text-sm font-medium">Department:</span>
+                      <span className="text-sm text-muted-foreground">{projectInfo.department}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-sm font-medium">Status:</span>
                     <Badge className={

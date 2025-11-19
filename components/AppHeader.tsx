@@ -143,20 +143,20 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => router.push("/dashboard/tasks")}
-                className="flex items-center space-x-1 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 [&_svg]:hover:!text-foreground"
-              >
-                <CheckSquare className="h-4 w-4" />
-                <span>Tasks & Work Logs</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
                 onClick={() => router.push("/dashboard/projects")}
                 className="flex items-center space-x-1 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 [&_svg]:hover:!text-foreground"
               >
                 <FolderIcon className="h-4 w-4" />
                 <span>Projects</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push("/dashboard/tasks")}
+                className="flex items-center space-x-1 hover:!bg-muted hover:!text-foreground focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0 [&_svg]:hover:!text-foreground"
+              >
+                <CheckSquare className="h-4 w-4" />
+                <span>Tasks & Work Logs</span>
               </Button>
               {/* Theme Toggle */}
               {mounted && (

@@ -12,6 +12,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { UserPlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 interface TodoFormProps {
   todo?: TodoWithRelations | null;
@@ -32,18 +36,29 @@ interface User {
   email: string | null;
 }
 
+interface SearchUser {
+  id: string;
+  name: string;
+  email: string;
+  lab_name: string;
+  initials: string;
+}
+
 export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClose }: TodoFormProps) {
   const [loading, setLoading] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
-  const [loadingUsers, setLoadingUsers] = useState(false);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(
     todo?.project_assignments?.map(pa => pa.project_id) || []
   );
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(
     todo?.assignees?.map(a => a.user_id) || []
   );
+  const [selectedUsers, setSelectedUsers] = useState<SearchUser[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [userSearchOpen, setUserSearchOpen] = useState(false);
   
   const [formData, setFormData] = useState({
     title: todo?.title || '',
@@ -56,11 +71,26 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
     is_recurring_meeting: todo?.is_recurring_meeting || false,
   });
 
-  // Fetch projects and users
+  // Fetch projects
   useEffect(() => {
     fetchProjects();
-    fetchUsers();
   }, []);
+
+  // Load selected users data when selectedUserIds change
+  useEffect(() => {
+    if (selectedUserIds.length > 0 && todo?.assignees) {
+      const users = todo.assignees.map(a => ({
+        id: a.user_id,
+        name: a.user_profile?.full_name || 'Unknown',
+        email: '',
+        lab_name: '',
+        initials: (a.user_profile?.full_name || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase(),
+      }));
+      setSelectedUsers(users);
+    } else if (selectedUserIds.length === 0) {
+      setSelectedUsers([]);
+    }
+  }, [todo, selectedUserIds]);
 
   const fetchProjects = async () => {
     setLoadingProjects(true);
@@ -92,62 +122,67 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
     }
   };
 
-  const fetchUsers = async () => {
-    setLoadingUsers(true);
+  // Search users function
+  const searchUsers = async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
     try {
+      setSearchLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Get all users from projects the user is a member of
-      const projectsResponse = await fetch('/api/projects', {
+      // Search all users (no projectId filter)
+      const response = await fetch(`/api/users/search?search=${encodeURIComponent(query)}&limit=20`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
         },
       });
 
-      if (!projectsResponse.ok) return;
-
-      const projectsData = await projectsResponse.json();
-      const userProjects = projectsData.projects || [];
-      
-      // Collect all unique users from all projects
-      const userIds = new Set<string>();
-      for (const project of userProjects) {
-        const teamResponse = await fetch(`/api/projects/${project.id}/team`, {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        });
-        
-        if (teamResponse.ok) {
-          const teamData = await teamResponse.json();
-          (teamData.members || []).forEach((member: any) => {
-            if (member.user_id) userIds.add(member.user_id);
-          });
-        }
+      if (!response.ok) {
+        throw new Error('Failed to search users');
       }
 
-      // Fetch profile data for all users
-      if (userIds.size > 0) {
-        const { data: { session: session2 } } = await supabase.auth.getSession();
-        if (!session2) return;
-
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', Array.from(userIds));
-
-        setAllUsers((profiles || []).map((p: any) => ({
-          id: p.id,
-          full_name: p.full_name,
-          email: p.email,
-        })));
-      }
+      const data = await response.json();
+      // Filter out already selected users
+      const filtered = (data.users || []).filter((user: SearchUser) => !selectedUserIds.includes(user.id));
+      setSearchResults(filtered);
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error('Error searching users:', error);
+      setSearchResults([]);
     } finally {
-      setLoadingUsers(false);
+      setSearchLoading(false);
     }
+  };
+
+  // Debounced search
+  const debouncedSearch = (() => {
+    let timeoutId: NodeJS.Timeout;
+    return (query: string) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => searchUsers(query), 300);
+    };
+  })();
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    debouncedSearch(value);
+  };
+
+  const handleAddUser = (user: SearchUser) => {
+    if (!selectedUserIds.includes(user.id)) {
+      setSelectedUserIds([...selectedUserIds, user.id]);
+      setSelectedUsers([...selectedUsers, user]);
+      setSearchTerm('');
+      setSearchResults([]);
+    }
+  };
+
+  const handleRemoveUser = (userId: string) => {
+    setSelectedUserIds(selectedUserIds.filter(id => id !== userId));
+    setSelectedUsers(selectedUsers.filter(u => u.id !== userId));
   };
 
   // Get or create a default list for new todos
@@ -259,47 +294,71 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
               listId = createData.list.id;
             }
           }
-        } else if (isSharedTab && projects.length > 0) {
-          // Creating from Shared Tasks tab but no project selected yet
-          // Use the first available project's shared list (user can change later)
-          const firstProject = projects[0];
-          const params = new URLSearchParams();
-          params.set('listType', 'shared');
-          params.set('projectId', firstProject.id);
+        } else if (isSharedTab) {
+          // Creating from Shared Tasks tab - MUST use a shared list
+          // Wait for projects to load if still loading
+          if (loadingProjects) {
+            // Wait a bit for projects to load
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Re-fetch projects if still loading
+            if (projects.length === 0) {
+              await fetchProjects();
+            }
+          }
+          
+          if (projects.length > 0) {
+            // Use the first available project's shared list (user can change later)
+            const firstProject = projects[0];
+            const params = new URLSearchParams();
+            params.set('listType', 'shared');
+            params.set('projectId', firstProject.id);
 
-          const response = await fetch(`/api/todos/lists?${params.toString()}`, {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          });
-          const data = await response.json();
-
-          if (response.ok && data.lists && data.lists.length > 0) {
-            listId = data.lists[0].id;
-          } else {
-            // Create a shared list for the first project
-            const createResponse = await fetch('/api/todos/lists', {
-              method: 'POST',
+            const response = await fetch(`/api/todos/lists?${params.toString()}`, {
               headers: {
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session.access_token}`,
               },
-              body: JSON.stringify({
-                title: 'Shared Tasks',
-                list_type: 'shared',
-                project_id: firstProject.id,
-              }),
             });
-            const createData = await createResponse.json();
-            if (createResponse.ok && createData.list) {
-              listId = createData.list.id;
+            const data = await response.json();
+
+            if (response.ok && data.lists && data.lists.length > 0) {
+              listId = data.lists[0].id;
+            } else {
+              // Create a shared list for the first project
+              const createResponse = await fetch('/api/todos/lists', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({
+                  title: 'Shared Tasks',
+                  list_type: 'shared',
+                  project_id: firstProject.id,
+                }),
+              });
+              const createData = await createResponse.json();
+              if (createResponse.ok && createData.list) {
+                listId = createData.list.id;
+              }
             }
+          } else {
+            // No projects available - show error
+            alert('You need to be a member of at least one project to create shared tasks. Please create or join a project first.');
+            setLoading(false);
+            return;
           }
         }
         
-        // If no list yet, create/use a personal list
-        if (!listId) {
+        // If no list yet AND not creating from Shared Tasks tab, create/use a personal list
+        if (!listId && !isSharedTab) {
           listId = await getOrCreateDefaultList();
+        }
+        
+        // If still no list and we're in Shared Tasks tab, this is an error
+        if (!listId && isSharedTab) {
+          alert('Error: Could not create a shared task list. Please ensure you are a member of at least one project.');
+          setLoading(false);
+          return;
         }
         
         if (!listId) {
@@ -527,39 +586,113 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
             <p className="text-xs text-muted-foreground mb-2">
               Assign specific users (in addition to any project assignments)
             </p>
-            <div className="border-2 border-border rounded-lg overflow-hidden">
-              <ScrollArea className="h-32">
-                <div className="p-3 space-y-2">
-                  {loadingUsers ? (
-                    <p className="text-sm text-muted-foreground">Loading users...</p>
-                  ) : allUsers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No users available</p>
-                  ) : (
-                    allUsers.map((user) => (
-                      <div key={user.id} className="flex items-center space-x-2 py-1">
-                        <Checkbox
-                          id={`user-${user.id}`}
-                          checked={selectedUserIds.includes(user.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedUserIds([...selectedUserIds, user.id]);
-                            } else {
-                              setSelectedUserIds(selectedUserIds.filter(id => id !== user.id));
-                            }
-                          }}
-                        />
-                        <Label
-                          htmlFor={`user-${user.id}`}
-                          className="text-sm font-normal cursor-pointer flex-1"
-                        >
-                          {user.full_name || user.email || 'Unknown'}
-                        </Label>
+            
+            {/* Selected Users */}
+            {selectedUsers.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {selectedUsers.map((user) => (
+                  <Badge key={user.id} variant="secondary" className="flex items-center gap-1 px-2 py-1">
+                    <Avatar className="h-4 w-4">
+                      <AvatarFallback className="text-xs">
+                        {user.initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-xs">{user.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveUser(user.id)}
+                      className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                    >
+                      <XMarkIcon className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {/* Search and Add Users */}
+            <Popover open={userSearchOpen} onOpenChange={setUserSearchOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start"
+                >
+                  <UserPlusIcon className="h-4 w-4 mr-2" />
+                  <span>Search and add users...</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-96 p-4" align="start">
+                <div className="space-y-4">
+                  {/* Search Input */}
+                  <div className="relative">
+                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name, email, or lab..."
+                      value={searchTerm}
+                      onChange={(e) => handleSearchChange(e.target.value)}
+                      className="pl-10 h-10"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Search Results */}
+                  <div className="max-h-80 overflow-y-auto">
+                    {searchLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                        <span className="ml-2 text-sm text-muted-foreground">Searching...</span>
                       </div>
-                    ))
-                  )}
+                    ) : searchResults.length === 0 ? (
+                      <div className="text-center py-6">
+                        <div className="text-sm text-muted-foreground">
+                          {searchTerm ? "No users found" : "Start typing to search for users"}
+                        </div>
+                        {searchTerm && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Try different keywords or check spelling
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground px-1">
+                          {searchResults.length} user{searchResults.length !== 1 ? 's' : ''} found
+                        </div>
+                        {searchResults.map((user) => (
+                          <div
+                            key={user.id}
+                            onClick={() => {
+                              handleAddUser(user);
+                              setUserSearchOpen(false);
+                            }}
+                            className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
+                          >
+                            <Avatar className="h-10 w-10">
+                              <AvatarFallback className="text-sm font-medium">
+                                {user.initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">{user.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {user.email}
+                              </div>
+                              {user.lab_name && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {user.lab_name}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </ScrollArea>
-            </div>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <DialogFooter>
