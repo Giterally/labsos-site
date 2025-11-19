@@ -34,7 +34,15 @@ interface ExperimentNode {
   step_number: number
   order_index: number
   content: string
-  metadata: any
+  metadata: {
+    created?: string
+    updated?: string
+    type?: string
+    position?: number
+    created_by_profile?: { id: string; full_name: string | null; avatar_url: string | null }
+    updated_by_profile?: { id: string; full_name: string | null; avatar_url: string | null }
+    [key: string]: any
+  }
   children: ExperimentNode[]
   attachments: Array<{
     id: string
@@ -341,10 +349,18 @@ export default function NodeContent({ node, onNodeUpdate }: NodeContentProps) {
 
         {/* Metadata */}
         <div className="flex items-center space-x-4 mt-4 text-sm text-muted-foreground">
-          <div className="flex items-center space-x-1">
-            <UserIcon className="h-4 w-4" />
-            <span>Created by User</span>
-          </div>
+          {node.metadata?.created_by_profile && (
+            <div className="flex items-center space-x-1">
+              <UserIcon className="h-4 w-4" />
+              <span>Created by {node.metadata.created_by_profile.full_name || 'Unknown'}</span>
+            </div>
+          )}
+          {node.metadata?.updated_by_profile && (
+            <div className="flex items-center space-x-1">
+              <PencilIcon className="h-4 w-4" />
+              <span>Edited by {node.metadata.updated_by_profile.full_name || 'Unknown'}</span>
+            </div>
+          )}
           <div className="flex items-center space-x-1">
             <ClockIcon className="h-4 w-4" />
             <span>Updated {new Date(node.updated_at).toLocaleDateString()}</span>

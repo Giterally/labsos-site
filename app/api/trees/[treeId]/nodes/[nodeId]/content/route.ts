@@ -128,6 +128,7 @@ export async function PUT(
     // Update the node with the new content
     const updateData: any = {
       updated_at: new Date().toISOString(),
+      updated_by: user.id
     }
 
     // Update description with the content text

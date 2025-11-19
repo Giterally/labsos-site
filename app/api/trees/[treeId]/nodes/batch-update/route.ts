@@ -62,7 +62,8 @@ export async function PUT(
         .from('tree_nodes')
         .update({ 
           position,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          updated_by: user.id
         })
         .eq('id', nodeId)
         .eq('tree_id', treeId)

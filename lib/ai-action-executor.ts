@@ -260,7 +260,10 @@ async function executeUpdateNode(
   }
 
   const { changes } = operation
-  const updateData: any = { updated_at: new Date().toISOString() }
+  const updateData: any = { 
+    updated_at: new Date().toISOString(),
+    updated_by: permissionService.userId
+  }
 
   if (changes.name !== undefined) updateData.name = changes.name.trim()
   if (changes.description !== undefined) updateData.description = changes.description?.trim() || null

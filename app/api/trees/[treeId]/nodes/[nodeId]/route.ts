@@ -47,6 +47,8 @@ export async function GET(
       .from('tree_nodes')
       .select(`
         *,
+        created_by_profile:profiles!tree_nodes_created_by_fkey(id, full_name, avatar_url),
+        updated_by_profile:profiles!tree_nodes_updated_by_fkey(id, full_name, avatar_url),
         node_content (
           id,
           content,
@@ -98,7 +100,9 @@ export async function GET(
         created: node.created_at,
         updated: node.updated_at,
         type: node.node_type,
-        position: node.position
+        position: node.position,
+        created_by_profile: node.created_by_profile,
+        updated_by_profile: node.updated_by_profile
       }
     }
 
@@ -226,7 +230,8 @@ export async function PUT(
 
     // Build update data
     const updateData: any = {
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      updated_by: user.id
     }
     
     if (name !== undefined) updateData.name = name

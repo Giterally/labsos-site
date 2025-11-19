@@ -396,11 +396,11 @@ function DashboardContent() {
                   ))
                 )}
               </div>
-            </div>
+          </div>
 
             {/* Right: Recent Tasks & Work Logs */}
             <div>
-              <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-semibold">Recent Activity</h2>
                 <Button 
                   variant="ghost" 
@@ -411,14 +411,14 @@ function DashboardContent() {
                   View All
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-              </div>
+          </div>
               <div className="space-y-4">
                 {loadingActivities ? (
                   <Card>
                     <CardContent className="p-6 text-center text-muted-foreground">
                       Loading activities...
                     </CardContent>
-                  </Card>
+              </Card>
                 ) : recentActivities.length === 0 ? (
                   <Card>
                     <CardContent className="p-6 text-center text-muted-foreground">
@@ -433,7 +433,7 @@ function DashboardContent() {
                         Create Your First Task
                       </Button>
                     </CardContent>
-                  </Card>
+              </Card>
                 ) : (
                   recentActivities.map((activity) => (
                     <Card 
@@ -478,7 +478,7 @@ function DashboardContent() {
                           </div>
                         </div>
                       </CardContent>
-                    </Card>
+              </Card>
                   ))
                 )}
               </div>
