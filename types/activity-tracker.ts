@@ -93,6 +93,8 @@ export interface TodoMeetingUpdate {
 // Extended types with relations for UI
 export interface TodoWithRelations extends Todo {
   todo_list?: TodoList;
+  meeting_updates_count?: number;
+  last_meeting_update_date?: string | null;
   assignees?: Array<{
     user_id: string;
     user_profile: {

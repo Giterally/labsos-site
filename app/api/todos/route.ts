@@ -219,6 +219,60 @@ export async function GET(request: Request) {
       });
     }
 
+    // For recurring meetings, fetch meeting updates count and last update date
+    // Include both filteredTodos and any project-assigned todos that might have been added
+    const allTodos = [...filteredTodos];
+    const recurringMeetingTodos = allTodos.filter(todo => todo.is_recurring_meeting);
+    if (recurringMeetingTodos.length > 0) {
+      const recurringTodoIds = recurringMeetingTodos.map(todo => todo.id);
+      
+      // Get meeting updates count and last update date for each recurring meeting
+      const { data: meetingUpdates } = await supabase
+        .from('todo_meeting_updates')
+        .select('todo_id, created_at')
+        .in('todo_id', recurringTodoIds)
+        .order('created_at', { ascending: false });
+
+      if (meetingUpdates) {
+        // Group by todo_id and calculate count and last update date
+        const updatesByTodo = new Map<string, { count: number; lastUpdate: string }>();
+        
+        meetingUpdates.forEach(update => {
+          const existing = updatesByTodo.get(update.todo_id);
+          if (!existing) {
+            // First occurrence for this todo (most recent since sorted desc)
+            updatesByTodo.set(update.todo_id, {
+              count: 1,
+              lastUpdate: update.created_at
+            });
+          } else {
+            // Increment count, lastUpdate already set from first (most recent) entry
+            existing.count++;
+          }
+        });
+
+        // Add the counts and dates to the todos
+        allTodos.forEach(todo => {
+          if (todo.is_recurring_meeting) {
+            const updates = updatesByTodo.get(todo.id);
+            if (updates) {
+              todo.meeting_updates_count = updates.count;
+              todo.last_meeting_update_date = updates.lastUpdate;
+            } else {
+              todo.meeting_updates_count = 0;
+              todo.last_meeting_update_date = null;
+            }
+          }
+        });
+      } else {
+        // No updates found, set to 0
+        recurringMeetingTodos.forEach(todo => {
+          todo.meeting_updates_count = 0;
+          todo.last_meeting_update_date = null;
+        });
+      }
+    }
+
     return NextResponse.json({ todos: filteredTodos });
   } catch (error: any) {
     if (error instanceof AuthError) {

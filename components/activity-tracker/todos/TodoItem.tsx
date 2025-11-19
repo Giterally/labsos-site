@@ -40,6 +40,9 @@ export default function TodoItem({ todo, onEdit, onDelete, onView }: TodoItemPro
               <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-md text-xs font-medium">
                 <Repeat className="h-3 w-3" />
                 <span>Recurring</span>
+                {todo.meeting_updates_count !== undefined && todo.meeting_updates_count > 0 && (
+                  <span className="ml-1">({todo.meeting_updates_count})</span>
+                )}
               </div>
             )}
             {todo.priority && <TodoPriorityBadge priority={todo.priority} />}
@@ -47,6 +50,12 @@ export default function TodoItem({ todo, onEdit, onDelete, onView }: TodoItemPro
           </div>
         </div>
         <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
+          {todo.is_recurring_meeting && todo.last_meeting_update_date && (
+            <div className="flex items-center gap-1 text-blue-600">
+              <Calendar className="h-4 w-4" />
+              <span>Last: {format(new Date(todo.last_meeting_update_date), 'MMM d, yyyy')}</span>
+            </div>
+          )}
           {todo.due_date && (
             <div className={`flex items-center gap-1 ${isOverdue ? 'text-red-600 font-medium' : isDueSoon ? 'text-yellow-600 font-medium' : ''}`}>
               <Calendar className="h-4 w-4" />
