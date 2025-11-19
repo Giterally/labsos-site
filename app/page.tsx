@@ -728,7 +728,7 @@ export default function KnowledgeCaptureLanding() {
           </div>
 
           {/* Olvaro Block */}
-          <div className="relative z-10" style={{ marginTop: 'calc(-4rem)' }}>
+          <div id="features" className="relative z-10" style={{ marginTop: 'calc(-4rem)' }}>
             <div className="text-center mb-8">
               <div className="flex justify-center mb-4">
                 <Image
