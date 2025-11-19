@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { authenticateRequest, AuthError } from '@/lib/auth-middleware'
+import { authenticateRequest, AuthError, AuthContext } from '@/lib/auth-middleware'
 import { PermissionService } from '@/lib/permission-service'
 import { supabaseServer } from '@/lib/supabase-server'
 import { fetchNodeAndGenerateEmbedding } from '@/lib/embedding-helpers'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { treeId: string } }
+  { params }: { params: Promise<{ treeId: string }> }
 ) {
   try {
     const { treeId } = await params
+    console.log('[GET /api/trees/[treeId]/nodes] Starting request for treeId:', treeId)
 
     // Resolve parent project visibility using server client
     const { data: treeMeta, error: treeMetaErr } = await supabaseServer
@@ -19,8 +20,11 @@ export async function GET(
       .single()
 
     if (treeMetaErr || !treeMeta) {
+      console.error('[GET /api/trees/[treeId]/nodes] Tree not found:', treeMetaErr)
       return NextResponse.json({ error: 'Experiment tree not found' }, { status: 404 })
     }
+
+    console.log('[GET /api/trees/[treeId]/nodes] Found tree, project_id:', treeMeta.project_id)
 
     const { data: proj, error: projErr } = await supabaseServer
       .from('projects')
@@ -29,12 +33,16 @@ export async function GET(
       .single()
 
     if (projErr || !proj) {
+      console.error('[GET /api/trees/[treeId]/nodes] Project not found:', projErr)
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
+    console.log('[GET /api/trees/[treeId]/nodes] Project visibility:', proj.visibility)
+
     let client: any = supabaseServer
+    let auth: AuthContext | null = null
     if (proj.visibility === 'private') {
-      const auth = await authenticateRequest(request)
+      auth = await authenticateRequest(request)
       const permissions = new PermissionService(auth.supabase, auth.user.id)
       const access = await permissions.checkTreeAccess(treeId)
       if (!access.canRead) {
@@ -44,6 +52,7 @@ export async function GET(
     }
 
     // Get nodes for the tree with their content, attachments, and links
+    console.log('[GET /api/trees/[treeId]/nodes] Fetching nodes with client type:', client === supabaseServer ? 'server' : 'authenticated')
     const { data: nodes, error: nodesError } = await client
       .from('tree_nodes')
       .select(`
@@ -79,14 +88,59 @@ export async function GET(
       .order('position', { ascending: true })
 
     if (nodesError) {
-      console.error('Error fetching nodes:', nodesError)
-      return NextResponse.json({ error: 'Failed to fetch nodes' }, { status: 500 })
+      console.error('[GET /api/trees/[treeId]/nodes] Error fetching nodes:', nodesError)
+      console.error('[GET /api/trees/[treeId]/nodes] Error details:', {
+        message: nodesError.message,
+        details: nodesError.details,
+        hint: nodesError.hint,
+        code: nodesError.code
+      })
+      return NextResponse.json({ 
+        error: 'Failed to fetch nodes',
+        details: nodesError.message 
+      }, { status: 500 })
+    }
+
+    console.log('[GET /api/trees/[treeId]/nodes] Successfully fetched', nodes?.length || 0, 'nodes')
+
+    // Fetch profile data for created_by and updated_by user IDs
+    const userIds = new Set<string>()
+    nodes.forEach(node => {
+      if (node.created_by) userIds.add(node.created_by)
+      if (node.updated_by) userIds.add(node.updated_by)
+    })
+
+    let profilesMap = new Map<string, { id: string; full_name: string | null; avatar_url: string | null }>()
+    if (userIds.size > 0) {
+      try {
+        const { data: profiles, error: profilesError } = await client
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .in('id', Array.from(userIds))
+        
+        if (!profilesError && profiles) {
+          profiles.forEach(profile => {
+            if (profile && profile.id) {
+              profilesMap.set(profile.id, {
+                id: profile.id,
+                full_name: profile.full_name || null,
+                avatar_url: profile.avatar_url || null
+              })
+            }
+          })
+          console.log(`[GET /api/trees/[treeId]/nodes] Fetched ${profilesMap.size} profiles for ${userIds.size} user IDs`)
+        } else if (profilesError) {
+          console.warn('[GET /api/trees/[treeId]/nodes] Error fetching profiles:', profilesError)
+        }
+      } catch (profileErr) {
+        console.warn('[GET /api/trees/[treeId]/nodes] Exception fetching profiles:', profileErr)
+        // Continue without profiles - not critical for the main functionality
+      }
     }
 
     // Check access permissions for referenced trees if user is authenticated
     let userPermissions: any = null
-    if (proj.visibility === 'private' && client !== supabaseServer) {
-      const auth = await authenticateRequest(request)
+    if (auth) {
       userPermissions = new PermissionService(auth.supabase, auth.user.id)
     }
 
@@ -309,7 +363,9 @@ export async function GET(
           created: node.created_at,
           updated: node.updated_at,
           type: node.node_type, // Keep original node_type in metadata
-          position: node.position
+          position: node.position,
+          created_by_profile: node.created_by ? profilesMap.get(node.created_by) || null : null,
+          updated_by_profile: node.updated_by ? profilesMap.get(node.updated_by) || null : null
         }
       }
     })
@@ -320,13 +376,21 @@ export async function GET(
       return NextResponse.json({ error: error.message }, { status: error.statusCode })
     }
     console.error('Error in GET /api/trees/[treeId]/nodes:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : typeof error
+    })
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : String(error)
+    }, { status: 500 })
   }
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { treeId: string } }
+  { params }: { params: Promise<{ treeId: string }> }
 ) {
   try {
     const { treeId } = await params

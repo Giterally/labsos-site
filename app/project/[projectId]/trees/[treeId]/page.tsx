@@ -66,6 +66,8 @@ interface ExperimentNode {
     updated: string
     type: string
     position: number
+    created_by_profile?: { id: string; full_name: string | null; avatar_url: string | null }
+    updated_by_profile?: { id: string; full_name: string | null; avatar_url: string | null }
   }
 }
 
@@ -908,7 +910,22 @@ export default function SimpleExperimentTreePage() {
         headers
       })
       if (!response.ok) {
-        throw new Error('Failed to fetch nodes')
+        let errorMessage = 'Failed to fetch nodes'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorData.message || errorMessage
+          console.error('[TreePage] fetchNodes: API error response:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorData
+          })
+        } catch (e) {
+          console.error('[TreePage] fetchNodes: Failed to parse error response:', {
+            status: response.status,
+            statusText: response.statusText
+          })
+        }
+        throw new Error(errorMessage)
       }
       const data = await response.json()
       console.log(`[TreePage] fetchNodes: Fetched ${data.nodes.length} nodes`)
@@ -2734,10 +2751,22 @@ export default function SimpleExperimentTreePage() {
                                     <span className="text-muted-foreground">Created:</span>
                                     <span>{new Date(selectedNode.metadata.created).toLocaleDateString()}</span>
                                   </div>
+                                  {selectedNode.metadata.created_by_profile && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Created by:</span>
+                                      <span>{selectedNode.metadata.created_by_profile.full_name || 'Unknown'}</span>
+                                    </div>
+                                  )}
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Updated:</span>
                                     <span>{new Date(selectedNode.metadata.updated).toLocaleDateString()}</span>
                                   </div>
+                                  {selectedNode.metadata.updated_by_profile && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Updated by:</span>
+                                      <span>{selectedNode.metadata.updated_by_profile.full_name || 'Unknown'}</span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
