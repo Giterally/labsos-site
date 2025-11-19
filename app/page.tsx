@@ -154,8 +154,8 @@ const FeatureCard = memo(({
   const isAIFeature = feature.title === "AI-Powered Research Assistant"
   
   return (
-    <Card className="p-6">
-      <CardContent className="space-y-4">
+    <Card className="p-6 h-full flex flex-col">
+      <CardContent className="flex flex-col flex-1 space-y-4">
         <div className="flex items-start space-x-4">
           {isAIFeature ? (
             <div className="relative flex-shrink-0">
@@ -185,7 +185,7 @@ const FeatureCard = memo(({
           ))}
         </ul>
         {feature.image && (
-          <div className="mt-4 -mx-6 -mb-6">
+          <div className="mt-auto -mx-6 -mb-6">
             <div className="relative w-full border border-white dark:border-gray-800" style={{ aspectRatio: 'auto' }}>
               <Image
                 src={feature.image}
@@ -296,9 +296,8 @@ export default function KnowledgeCaptureLanding() {
       title: "Experimental Workflows & Integration",
       description: "",
       features: [
-        "Capture protocols as sequential workflows with visual dependencies",
-        "Connect GitHub, cloud storage, and datasets without replacing your existing tools",
-        "Track data lineage and versioning for complete reproducibility"
+        "Capture protocols as sequential workflows with visual dependencies and track data lineage for reproducibility",
+        "Connect GitHub, cloud storage, and datasets without replacing your existing tools"
       ],
       image: "/sc_tree.jpeg"
     },
@@ -307,9 +306,8 @@ export default function KnowledgeCaptureLanding() {
       title: "AI-Powered Research Assistant",
       description: "",
       features: [
-        "Upload files to automatically structure experiment trees using AI",
-        "Query research using natural language for insights across your experimental context",
-        "Get context-aware analysis that understands relationships between protocols, data, and results"
+        "Upload files to automatically structure experiment trees using AI and get context-aware analysis",
+        "Query research using natural language for insights across your experimental context"
       ],
       image: "/sc_chat.jpeg"
     },
@@ -318,8 +316,7 @@ export default function KnowledgeCaptureLanding() {
       title: "Team Collaboration & Task Management",
       description: "",
       features: [
-        "Manage personal and shared tasks connected to your workflows",
-        "Maintain meeting notes that preserve team knowledge in context",
+        "Manage personal and shared tasks connected to workflows and maintain meeting notes that preserve team knowledge",
         "Track work logs and todo lists across handovers and personnel changes"
       ],
       image: "/sc_task.jpeg"
@@ -599,10 +596,10 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Capture</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-foreground font-medium">Experiments and data scattered across Dropbox, Sharepoint, and forgotten folders</p>
+                    <p className="text-base text-foreground font-medium">Experiments and data scattered across Dropbox, Sharepoint, and forgotten folders</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-foreground font-medium">Olvaro centralizes all experiments and data into organized knowledge trees</p>
+                    <p className="text-base text-foreground font-medium">Olvaro centralizes all experiments and data into organized knowledge trees</p>
                   </div>
                 </div>
               </CardContent>
@@ -619,10 +616,10 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Organise</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-foreground font-medium">Documentation missing or not presented in context, making research irreproducible</p>
+                    <p className="text-base text-foreground font-medium">Documentation missing or not presented in context, making research irreproducible</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-foreground font-medium">Olvaro links everything contextually, making your research fully reproducible</p>
+                    <p className="text-base text-foreground font-medium">Olvaro links everything contextually, making your research fully reproducible</p>
                   </div>
                 </div>
               </CardContent>
@@ -639,10 +636,10 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Manage</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-foreground font-medium">Tacit knowledge walks out when team members leave, causing work duplication</p>
+                    <p className="text-base text-foreground font-medium">Tacit knowledge walks out when team members leave, causing work duplication</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-foreground font-medium">Olvaro preserves team knowledge and streamlines handovers</p>
+                    <p className="text-base text-foreground font-medium">Olvaro preserves team knowledge and streamlines handovers</p>
                   </div>
                 </div>
               </CardContent>
@@ -742,7 +739,7 @@ export default function KnowledgeCaptureLanding() {
                   className="h-32 w-32"
                 />
               </div>
-              <p className="text-lg text-muted-foreground">Transform your research workflow into organized, searchable knowledge</p>
+              <p className="text-lg text-muted-foreground">Transform your research workflow into organised, searchable knowledge</p>
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
