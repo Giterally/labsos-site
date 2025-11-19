@@ -98,13 +98,74 @@ export const ProposedNodeSchema = z.object({
 });
 
 /**
+ * Extracts the first complete sentence from text
+ * Always returns a complete sentence that ends with punctuation
+ */
+function extractFirstSentence(text: string, maxLength: number = 500): string {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  
+  // Better sentence splitter using lookbehind (handles periods in URLs/decimals better)
+  // Matches whitespace that follows sentence-ending punctuation
+  const sentenceRegex = /(?<=[.!?])\s+/;
+  const sentences = trimmed.split(sentenceRegex).filter(s => s.trim().length > 0);
+  
+  if (sentences.length === 0) {
+    // No sentence boundaries found - truncate at word boundary and add punctuation
+    if (trimmed.length <= maxLength) {
+      return trimmed.endsWith('.') || trimmed.endsWith('!') || trimmed.endsWith('?') 
+        ? trimmed 
+        : trimmed + '.';
+    }
+    const truncated = trimmed.substring(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(' ');
+    const result = lastSpace > maxLength * 0.8 
+      ? truncated.substring(0, lastSpace).trim()
+      : truncated.trim();
+    return result.endsWith('.') || result.endsWith('!') || result.endsWith('?') 
+      ? result 
+      : result + '.';
+  }
+  
+  // Use first complete sentence
+  let firstSentence = sentences[0].trim();
+  
+  // If first sentence is too long, truncate at natural break point
+  if (firstSentence.length > maxLength) {
+    // Try to find a comma, semicolon, or colon before maxLength
+    const breakPoints = [
+      firstSentence.lastIndexOf(',', maxLength),
+      firstSentence.lastIndexOf(';', maxLength),
+      firstSentence.lastIndexOf(':', maxLength),
+    ].filter(pos => pos > maxLength * 0.5);
+    
+    if (breakPoints.length > 0) {
+      const breakPoint = Math.max(...breakPoints);
+      firstSentence = firstSentence.substring(0, breakPoint).trim();
+    } else {
+      // Fallback: truncate at word boundary
+      const truncated = firstSentence.substring(0, maxLength);
+      const lastSpace = truncated.lastIndexOf(' ');
+      firstSentence = lastSpace > maxLength * 0.8 
+        ? truncated.substring(0, lastSpace).trim()
+        : truncated.trim();
+    }
+  }
+  
+  // Ensure it ends with punctuation
+  return firstSentence.endsWith('.') || firstSentence.endsWith('!') || firstSentence.endsWith('?') 
+    ? firstSentence 
+    : firstSentence + '.';
+}
+
+/**
  * Attempts to fix common validation errors in AI output
  */
 export function fixCommonIssues(nodeData: any): any {
   return {
     ...nodeData,
     title: (nodeData.title || 'Untitled').slice(0, 200),
-    short_summary: (nodeData.short_summary || '').slice(0, 500),
+    short_summary: extractFirstSentence(nodeData.short_summary || '', 500),
     content: {
       text: nodeData.content?.text || '',
       structured_steps: nodeData.content?.structured_steps || [],

@@ -276,73 +276,102 @@ function analyzeExtractionGaps(
 }
 
 /**
- * Generates a 1-line summary of node content for the description field
- * Falls back to smart truncation if content is very short
+ * Ensures text ends with proper punctuation
+ */
+function ensureEndsWithPunctuation(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  
+  // Check if it ends with punctuation
+  if (/[.!?]$/.test(trimmed)) {
+    return trimmed;
+  }
+  
+  // Add period if missing
+  return trimmed + '.';
+}
+
+/**
+ * Truncates text at a word boundary, ensuring it doesn't cut mid-word
+ */
+function truncateAtWordBoundary(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  
+  const truncated = text.substring(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+  
+  // Only use word boundary if it's not too early (at least 80% of max length)
+  if (lastSpace > maxLength * 0.8) {
+    return truncated.substring(0, lastSpace).trim();
+  }
+  
+  return truncated.trim();
+}
+
+/**
+ * Truncates text at a natural break point (comma, semicolon, colon) or word boundary
+ */
+function truncateAtNaturalBreak(text: string, maxLength: number): string {
+  // Try to find a comma, semicolon, or colon before maxLength
+  const breakPoints = [
+    text.lastIndexOf(',', maxLength),
+    text.lastIndexOf(';', maxLength),
+    text.lastIndexOf(':', maxLength),
+  ].filter(pos => pos > maxLength * 0.5); // Only use if it's in the latter half
+  
+  if (breakPoints.length > 0) {
+    const breakPoint = Math.max(...breakPoints);
+    return text.substring(0, breakPoint).trim();
+  }
+  
+  // Fallback: truncate at word boundary
+  return truncateAtWordBoundary(text, maxLength);
+}
+
+/**
+ * Extracts the first complete sentence from text
+ * Always returns a complete sentence that ends with punctuation
+ */
+function extractFirstSentence(text: string, maxLength: number = 500): string {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  
+  // Better sentence splitter using lookbehind (handles periods in URLs/decimals better)
+  // Matches whitespace that follows sentence-ending punctuation
+  const sentenceRegex = /(?<=[.!?])\s+/;
+  const sentences = trimmed.split(sentenceRegex).filter(s => s.trim().length > 0);
+  
+  if (sentences.length === 0) {
+    // No sentence boundaries found - truncate at natural break and add punctuation
+    const truncated = truncateAtNaturalBreak(trimmed, maxLength);
+    return ensureEndsWithPunctuation(truncated);
+  }
+  
+  // Use first complete sentence
+  let firstSentence = sentences[0].trim();
+  
+  // If first sentence is too long, truncate at natural break point
+  if (firstSentence.length > maxLength) {
+    firstSentence = truncateAtNaturalBreak(firstSentence, maxLength);
+  }
+  
+  return ensureEndsWithPunctuation(firstSentence);
+}
+
+/**
+ * Generates a concise summary of node content for the description field
+ * Always returns a complete sentence that ends with proper punctuation
  */
 function generateNodeSummary(content: string, title: string): string {
   const trimmedContent = content.trim();
   
-  // If content is already short (< 150 chars), use it as-is
+  // If content is already short (< 150 chars), use it as-is and ensure punctuation
   if (trimmedContent.length < 150) {
-    return trimmedContent;
+    return ensureEndsWithPunctuation(trimmedContent);
   }
   
-  // Split into sentences
-  const sentences = trimmedContent.split(/[.!?]+/).filter(s => s.trim().length > 0);
-  
-  if (sentences.length === 0) {
-    // Fallback: just truncate
-    return trimmedContent.substring(0, 120).trim();
-  }
-  
-  // Strategy 1: Use first sentence if it's a good summary (80-120 chars)
-  const firstSentence = sentences[0].trim();
-  if (firstSentence.length >= 80 && firstSentence.length <= 120) {
-    return firstSentence;
-  }
-  
-  // Strategy 2: Combine first two sentences if combined length is reasonable
-  if (sentences.length >= 2) {
-    const combined = `${sentences[0].trim()}. ${sentences[1].trim()}`;
-    if (combined.length <= 120) {
-      return combined;
-    }
-    // If combined is too long, try to shorten second sentence
-    const shortened = `${sentences[0].trim()}. ${sentences[1].trim().substring(0, 80)}`;
-    if (shortened.length <= 120) {
-      return shortened;
-    }
-  }
-  
-  // Strategy 3: Extract key sentence (one that contains important keywords)
-  // Look for sentences with action verbs or key terms
-  const keyTerms = ['method', 'protocol', 'analysis', 'result', 'procedure', 'technique', 'approach', 
-                    'configuration', 'implementation', 'process', 'performed', 'used', 'applied'];
-  for (const sentence of sentences) {
-    const lowerSentence = sentence.toLowerCase();
-    if (keyTerms.some(term => lowerSentence.includes(term))) {
-      const trimmed = sentence.trim();
-      if (trimmed.length <= 120) {
-        return trimmed;
-      }
-      // If too long, truncate at word boundary
-      if (trimmed.length > 120) {
-        const truncated = trimmed.substring(0, 117);
-        const lastSpace = truncated.lastIndexOf(' ');
-        return lastSpace > 80 ? truncated.substring(0, lastSpace) + '...' : truncated + '...';
-      }
-    }
-  }
-  
-  // Strategy 4: Use first sentence, truncated to 120 chars at word boundary
-  if (firstSentence.length > 120) {
-    const truncated = firstSentence.substring(0, 117);
-    const lastSpace = truncated.lastIndexOf(' ');
-    return lastSpace > 80 ? truncated.substring(0, lastSpace) + '...' : truncated + '...';
-  }
-  
-  // Fallback: Use first sentence as-is
-  return firstSentence;
+  // Extract first complete sentence (max 500 chars)
+  return extractFirstSentence(trimmedContent, 500);
 }
 
 /**
