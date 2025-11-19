@@ -271,17 +271,17 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
   const getResultTypeColor = (result: SearchResult) => {
     switch (result.type) {
       case 'block':
-        return "bg-indigo-100 text-indigo-800"
+        return "bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200"
       case 'node':
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
       case 'attachment':
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
       case 'link':
-        return "bg-purple-100 text-purple-800"
+        return "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200"
       case 'content':
-        return "bg-orange-100 text-orange-800"
+        return "bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
     }
   }
 
@@ -294,7 +294,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
     
     return parts.map((part, index) => 
       regex.test(part) ? (
-        <mark key={index} className="bg-yellow-300 text-yellow-900 px-1 py-0.5 rounded font-semibold">
+        <mark key={index} className="bg-yellow-300 dark:bg-yellow-600 text-yellow-900 dark:text-yellow-100 px-1 py-0.5 rounded font-semibold">
           {part}
         </mark>
       ) : part
@@ -316,10 +316,10 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
                   variant="outline"
                   size="sm"
                   onClick={() => setIsOpen(true)}
-                  className="h-9 px-3 flex items-center space-x-2 bg-blue-50 border-blue-300 hover:bg-blue-100 shadow-sm hover:shadow-md transition-all duration-200 hover:border-blue-400 text-blue-700"
+                  className="h-9 px-3 flex items-center space-x-2 bg-primary/10 border-primary/20 hover:bg-primary/20 shadow-sm hover:shadow-md transition-all duration-200 hover:border-primary/30 text-primary"
                 >
-                  <MagnifyingGlassIcon className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm text-blue-700 hidden sm:inline">Search...</span>
+                  <MagnifyingGlassIcon className="h-4 w-4 text-primary" />
+                  <span className="text-sm text-primary hidden sm:inline">Search...</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -333,11 +333,11 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
           <div className="flex items-center space-x-2 justify-end">
             <div className="relative" ref={inputContainerRef} style={{ maxWidth: 'calc(100vw - 48px - 32px)' }}>
               {loading ? (
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-gray-600"></div>
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-muted border-t-primary"></div>
                 </div>
               ) : (
-                <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               )}
         <Input
           ref={inputRef}
@@ -346,7 +346,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
           onFocus={handleInputFocus}
           onKeyDown={handleKeyDown}
           placeholder="Search nodes, content, attachments..."
-          className="pl-10 pr-20 h-10 text-base border-2 border-blue-300 focus:border-blue-500 shadow-lg"
+          className="pl-10 pr-20 h-10 text-base border-2 border-primary/20 focus:border-primary shadow-lg"
           autoFocus
           style={{ width: '384px', maxWidth: 'min(384px, calc(100vw - 100px), calc(100% - 0px))' }}
         />
@@ -354,7 +354,7 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 hover:bg-gray-100"
+                  className="h-8 w-8 p-0"
                   onClick={() => {
                     setIsOpen(false)
                     setQuery("")
@@ -374,17 +374,17 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
 
       {/* Search Results Dropdown */}
       {isOpen && (showResults || showHistory) && dropdownPosition && (
-        <div className="fixed w-[500px] max-h-[500px] overflow-y-auto z-30 bg-white border-2 border-gray-200 rounded-lg shadow-2xl animate-in fade-in-0 slide-in-from-top-2 duration-200" style={{ maxWidth: 'min(500px, calc(100vw - 100px))', top: `${dropdownPosition.top}px`, right: `${dropdownPosition.right}px` }}>
+        <div className="fixed w-[500px] max-h-[500px] overflow-y-auto z-30 bg-background border-2 border-border rounded-lg shadow-2xl animate-in fade-in-0 slide-in-from-top-2 duration-200" style={{ maxWidth: 'min(500px, calc(100vw - 100px))', top: `${dropdownPosition.top}px`, right: `${dropdownPosition.right}px` }}>
           <div className="p-0">
             {showHistory && searchHistory.length > 0 ? (
               <div className="py-2">
-                <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
-                  <p className="text-sm font-medium text-gray-700">Recent searches</p>
+                <div className="px-4 py-2 border-b border-border bg-muted">
+                  <p className="text-sm font-medium text-foreground">Recent searches</p>
                 </div>
                 {searchHistory.map((historyItem, index) => (
                   <div
                     key={index}
-                    className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 cursor-pointer"
+                    className="flex items-center justify-between px-4 py-3 hover:bg-muted cursor-pointer transition-colors border-b border-border last:border-b-0"
                     onClick={() => {
                       setQuery(historyItem)
                       setShowHistory(false)
@@ -392,15 +392,15 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
                     }}
                   >
                     <div className="flex items-center space-x-3">
-                      <ClockIcon className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm text-gray-700">{historyItem}</span>
+                      <ClockIcon className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-foreground">{historyItem}</span>
                     </div>
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         removeFromHistory(historyItem)
                       }}
-                      className="text-gray-400 hover:text-gray-600 p-1"
+                      className="text-muted-foreground hover:text-foreground p-1 rounded transition-colors"
                     >
                       <XMarkIcon className="h-4 w-4" />
                     </button>
@@ -409,19 +409,19 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
               </div>
             ) : loading ? (
               <div className="p-6 text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-3"></div>
-                <p className="text-gray-600 font-medium">Searching...</p>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-3"></div>
+                <p className="text-muted-foreground font-medium">Searching...</p>
               </div>
             ) : results.length === 0 ? (
               <div className="p-6 text-center">
-                <MagnifyingGlassIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-600 font-medium">No results found</p>
-                <p className="text-sm text-gray-500 mt-1">Try different keywords or check spelling</p>
+                <MagnifyingGlassIcon className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground font-medium">No results found</p>
+                <p className="text-sm text-muted-foreground mt-1">Try different keywords or check spelling</p>
               </div>
             ) : (
               <div className="py-2">
-                <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
-                  <p className="text-sm font-medium text-gray-700">
+                <div className="px-4 py-2 border-b border-border bg-muted">
+                  <p className="text-sm font-medium text-foreground">
                     {results.length} result{results.length !== 1 ? 's' : ''} found
                   </p>
                 </div>
@@ -429,25 +429,25 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
                   <div
                     key={`${result.type}-${result.id}`}
                     className={cn(
-                      "flex items-start space-x-4 p-4 cursor-pointer hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0",
-                      selectedIndex === index && "bg-blue-50 border-l-4 border-l-blue-500"
+                      "flex items-start space-x-4 p-4 cursor-pointer hover:bg-muted transition-colors border-b border-border last:border-b-0",
+                      selectedIndex === index && "bg-muted border-l-4 border-l-primary"
                     )}
                     onClick={() => handleResultClick(result)}
                   >
                     <div className="flex-shrink-0 mt-1">
-                      <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                         {getResultIcon(result)}
                       </div>
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       <div className="mb-2">
-                        <div className="text-base font-semibold text-gray-900 truncate mb-1">
+                        <div className="text-base font-semibold text-foreground truncate mb-1">
                           {highlightText(result.nodeTitle || result.blockName || result.title, query)}
                         </div>
                         <div className="flex items-center space-x-2">
                           {result.blockName && (
-                            <span className="text-sm text-blue-600 font-medium">
+                            <span className="text-sm text-primary font-medium">
                               {result.blockName}
                             </span>
                           )}
@@ -458,30 +458,30 @@ export default function SearchTool({ treeId, projectId, onNodeSelect, onAIChatOp
                       </div>
                       
                       {result.description && (
-                        <p className="text-sm text-gray-600 line-clamp-2 mb-2">
+                        <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
                           {highlightText(result.description, query)}
                         </p>
                       )}
                       
                       {result.content && (
-                        <p className="text-sm text-gray-600 line-clamp-2 mb-2 bg-gray-50 p-2 rounded">
+                        <p className="text-sm text-muted-foreground line-clamp-2 mb-2 bg-muted p-2 rounded">
                           {highlightText(result.content, query)}
                         </p>
                       )}
                       
-                      <div className="flex items-center space-x-1 text-xs text-gray-500">
+                      <div className="flex items-center space-x-1 text-xs text-muted-foreground">
                         <span>Found in:</span>
                         {result.path && result.path.length > 0 ? (
                           <div className="flex items-center space-x-1">
                             {result.path.map((pathItem, index) => (
                               <span key={index} className="flex items-center space-x-1">
-                                <span className="font-medium text-blue-600">{pathItem}</span>
+                                <span className="font-medium text-primary">{pathItem}</span>
                                 {index < result.path.length - 1 && <ArrowRightIcon className="h-3 w-3" />}
                               </span>
                             ))}
                           </div>
                         ) : (
-                          <span className="font-medium text-blue-600">{result.nodeTitle || result.blockName || result.title}</span>
+                          <span className="font-medium text-primary">{result.nodeTitle || result.blockName || result.title}</span>
                         )}
                       </div>
                     </div>
