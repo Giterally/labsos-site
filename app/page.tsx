@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   FolderIcon,
   LinkIcon,
@@ -24,6 +25,9 @@ import {
   VideoCameraIcon,
   CircleStackIcon,
   ShareIcon,
+  ArrowRightIcon,
+  CloudArrowUpIcon,
+  DocumentDuplicateIcon,
 } from "@heroicons/react/24/outline"
 import { useState, useEffect, Suspense, useMemo, memo, useCallback, useRef } from "react"
 import Link from "next/link"
@@ -568,11 +572,9 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Capture</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-foreground font-semibold">Problem</p>
                     <p className="text-sm text-foreground font-medium">Experiments and data scattered across Dropbox, Sharepoint, and forgotten folders</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-foreground font-semibold">Solution</p>
                     <p className="text-sm text-foreground font-medium">Olvaro centralizes all experiments and data into organized knowledge trees</p>
                   </div>
                 </div>
@@ -590,11 +592,9 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Organise</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-foreground font-semibold">Problem</p>
                     <p className="text-sm text-foreground font-medium">Documentation missing or not presented in context, making research irreproducible</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-foreground font-semibold">Solution</p>
                     <p className="text-sm text-foreground font-medium">Olvaro links everything contextually, making your research fully reproducible</p>
                   </div>
                 </div>
@@ -612,11 +612,9 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Manage</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-sm text-foreground font-semibold">Problem</p>
                     <p className="text-sm text-foreground font-medium">Tacit knowledge walks out when team members leave, causing work duplication</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-sm text-foreground font-semibold">Solution</p>
                     <p className="text-sm text-foreground font-medium">Olvaro preserves team knowledge and streamlines handovers</p>
                   </div>
                 </div>
@@ -626,8 +624,139 @@ export default function KnowledgeCaptureLanding() {
         </div>
       </section>
 
+      {/* The Current Landscape */}
+      <section className="py-16 px-4 relative z-10">
+        <div className="container mx-auto max-w-6xl">
+          <h2 className="text-3xl font-bold mb-12 text-foreground text-center">The Current Landscape</h2>
+          
+          {/* Three blocks side by side with flowing lines */}
+          <div className="relative">
+            <div className="grid md:grid-cols-3 gap-8 mb-0">
+              {/* Cloud Storage Block */}
+              <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
+                <CardContent className="space-y-4 flex-1">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
+                      <CloudArrowUpIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground">Cloud Storage</h3>
+                      <p className="text-xs text-muted-foreground">Dropbox, Google Drive, OneDrive</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 flex-1">
+                    <p className="text-sm text-foreground leading-relaxed">
+                      Sophisticated directories that store files but reveal no experimental dependencies or workflow relationships.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Note-Taking Tools Block */}
+              <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
+                <CardContent className="space-y-4 flex-1">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
+                      <DocumentDuplicateIcon className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground">Note-Taking Tools</h3>
+                      <p className="text-xs text-muted-foreground">Notion, Obsidian, and similar</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 flex-1">
+                    <p className="text-sm text-foreground leading-relaxed">
+                      Documentation disconnected from code repositories, datasets, and computational infrastructure.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* AI Assistants Block */}
+              <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
+                <CardContent className="space-y-4 flex-1">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="p-3 bg-green-100 dark:bg-green-900/20 rounded-lg">
+                      <Sparkles className="h-6 w-6 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground">AI Assistants</h3>
+                      <p className="text-xs text-muted-foreground">Microsoft Copilot and similar</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 flex-1">
+                    <p className="text-sm text-foreground leading-relaxed">
+                      AI that reads single files in isolation, lacking visibility into experimental workflows and dependencies.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Elegant flowing lines from blocks to Olvaro - converging at center */}
+            <div className="relative w-full hidden md:block" style={{ height: '60px', marginTop: '0.5rem', marginBottom: '0' }}>
+              <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+                {/* Line from left block (Cloud Storage) - curves inward to center */}
+                <path
+                  d="M 16.666 0 Q 30 50, 50 100"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth="1"
+                  fill="none"
+                  strokeOpacity="0.5"
+                  className="transition-opacity hover:stroke-opacity-70"
+                  strokeLinecap="round"
+                />
+                {/* Line from middle block (Note-Taking) - straight down to center */}
+                <path
+                  d="M 50 0 L 50 100"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth="1"
+                  fill="none"
+                  strokeOpacity="0.5"
+                  className="transition-opacity hover:stroke-opacity-70"
+                  strokeLinecap="round"
+                />
+                {/* Line from right block (AI Assistants) - curves inward to center */}
+                <path
+                  d="M 83.333 0 Q 70 50, 50 100"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth="1"
+                  fill="none"
+                  strokeOpacity="0.5"
+                  className="transition-opacity hover:stroke-opacity-70"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+          </div>
+
+          {/* Olvaro Block */}
+          <div className="relative z-10 mt-0">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center space-x-3 mb-4">
+                <Image
+                  src="/olvaro-logo.png"
+                  alt="Olvaro Logo"
+                  width={40}
+                  height={40}
+                  className="h-10 w-10"
+                />
+                <h3 className="text-3xl font-bold text-foreground">Olvaro</h3>
+              </div>
+              <p className="text-lg text-muted-foreground">Transform your research workflow into organized, searchable knowledge</p>
+            </div>
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+              {features.map((feature, index) => (
+                <FeatureCard key={index} feature={feature} index={index} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Research Projects Discovery */}
-      <section id="labs" className="py-16 px-4 bg-muted/10 relative z-10 scroll-mt-32">
+      <section id="labs" className="py-16 px-4 relative z-10 scroll-mt-32">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Researchers and Research Projects Using Olvaro</h2>
@@ -647,26 +776,8 @@ export default function KnowledgeCaptureLanding() {
           </div>
         </div>
       </section>
-
-
-      {/* Features */}
-      <section id="features" className="py-16 px-4 relative z-10">
-        <div className="container mx-auto max-w-6xl">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4 text-foreground">How Olvaro Works</h2>
-            <p className="text-lg text-muted-foreground">Transform your research workflow into organized, searchable knowledge</p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {features.map((feature, index) => (
-              <FeatureCard key={index} feature={feature} index={index} />
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* FAQ Section */}
-      <section id="faq" className="py-16 px-4 bg-muted/10 relative z-10">
+      <section id="faq" className="py-16 px-4 relative z-10">
         <div className="container mx-auto max-w-4xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4 text-foreground">Frequently Asked Questions</h2>

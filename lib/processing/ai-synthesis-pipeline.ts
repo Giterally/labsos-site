@@ -306,8 +306,8 @@ function truncateAtWordBoundary(text: string, maxLength: number): string {
   }
   
   return truncated.trim();
-}
-
+  }
+  
 /**
  * Truncates text at a natural break point (comma, semicolon, colon) or word boundary
  */
@@ -326,8 +326,8 @@ function truncateAtNaturalBreak(text: string, maxLength: number): string {
   
   // Fallback: truncate at word boundary
   return truncateAtWordBoundary(text, maxLength);
-}
-
+  }
+  
 /**
  * Extracts the first complete sentence from text
  * Always returns a complete sentence that ends with punctuation
