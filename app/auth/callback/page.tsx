@@ -20,32 +20,10 @@ export default function AuthCallbackPage() {
 
     const handleAuthCallback = async () => {
       try {
-        // Check for token_hash or code in URL query parameters (PKCE flow uses 'code')
+        // Check for token_hash in URL query parameters (email verification uses token_hash, not code)
         const urlParams = new URLSearchParams(window.location.search)
         const tokenHash = urlParams.get('token_hash')
         const type = urlParams.get('type')
-        const code = urlParams.get('code') // PKCE flow uses 'code' parameter
-
-        // If code exists (PKCE flow), manually exchange it for a session
-        if (code && !handled) {
-          const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          
-          if (!exchangeError && exchangeData?.session?.user) {
-            if (exchangeData.session.user.email_confirmed_at) {
-              handled = true
-              setStatus('success')
-              setMessage('Email verified successfully! Redirecting to login...')
-              setTimeout(() => router.push('/login?verified=true'), 2000)
-              if (subscription) subscription.unsubscribe()
-              if (timeoutId) clearTimeout(timeoutId)
-              if (checkIntervalId) clearInterval(checkIntervalId)
-              return
-            }
-          } else if (exchangeError) {
-            console.error('exchangeCodeForSession error:', exchangeError)
-            // Continue to normal flow - might need token_hash instead
-          }
-        }
 
         // If token_hash exists in query params, try manual verification (PKCE fallback)
         if (tokenHash && type && !handled) {
@@ -54,17 +32,16 @@ export default function AuthCallbackPage() {
             type: type as 'signup' | 'email'
           })
 
+          // If verifyOtp succeeded (no error), email is verified - treat as success
           if (!verifyError && verifyData?.user) {
             handled = true
-            if (verifyData.user.email_confirmed_at) {
-              setStatus('success')
-              setMessage('Email verified successfully! Redirecting to login...')
-              setTimeout(() => router.push('/login?verified=true'), 2000)
-              if (subscription) subscription.unsubscribe()
-              if (timeoutId) clearTimeout(timeoutId)
-              if (checkIntervalId) clearInterval(checkIntervalId)
-              return
-            }
+            setStatus('success')
+            setMessage('Email verified successfully! Redirecting to login...')
+            setTimeout(() => router.push('/login?verified=true'), 2000)
+            if (subscription) subscription.unsubscribe()
+            if (timeoutId) clearTimeout(timeoutId)
+            if (checkIntervalId) clearInterval(checkIntervalId)
+            return
           } else if (verifyError) {
             console.error('verifyOtp error:', verifyError)
             // Continue to normal flow - might be hash-based instead
@@ -94,13 +71,15 @@ export default function AuthCallbackPage() {
                 type: type as 'signup' | 'email'
               })
 
-              if (!verifyError && verifyData?.user?.email_confirmed_at) {
+              // If verifyOtp succeeded (no error), email is verified - treat as success
+              if (!verifyError && verifyData?.user) {
                 handled = true
                 setStatus('success')
                 setMessage('Email verified successfully! Redirecting to login...')
                 setTimeout(() => router.push('/login?verified=true'), 2000)
                 if (subscription) subscription.unsubscribe()
                 if (timeoutId) clearTimeout(timeoutId)
+                if (checkIntervalId) clearInterval(checkIntervalId)
                 return
               }
             }
@@ -150,9 +129,8 @@ export default function AuthCallbackPage() {
           }
         }
 
-        // If code exists, Supabase should process it automatically with detectSessionInUrl: true
-        // But we'll check periodically in case it takes time
-        if ((code || tokenHash) && !handled) {
+        // If token_hash exists, check periodically in case verification takes time
+        if (tokenHash && !handled) {
           const checkSessionState = async () => {
             try {
               const { data: { session } } = await supabase.auth.getSession()
