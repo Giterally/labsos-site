@@ -26,6 +26,27 @@ export default function AuthCallbackPage() {
         const type = urlParams.get('type')
         const code = urlParams.get('code') // PKCE flow uses 'code' parameter
 
+        // If code exists (PKCE flow), manually exchange it for a session
+        if (code && !handled) {
+          const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          
+          if (!exchangeError && exchangeData?.session?.user) {
+            if (exchangeData.session.user.email_confirmed_at) {
+              handled = true
+              setStatus('success')
+              setMessage('Email verified successfully! Redirecting to login...')
+              setTimeout(() => router.push('/login?verified=true'), 2000)
+              if (subscription) subscription.unsubscribe()
+              if (timeoutId) clearTimeout(timeoutId)
+              if (checkIntervalId) clearInterval(checkIntervalId)
+              return
+            }
+          } else if (exchangeError) {
+            console.error('exchangeCodeForSession error:', exchangeError)
+            // Continue to normal flow - might need token_hash instead
+          }
+        }
+
         // If token_hash exists in query params, try manual verification (PKCE fallback)
         if (tokenHash && type && !handled) {
           const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
@@ -41,6 +62,7 @@ export default function AuthCallbackPage() {
               setTimeout(() => router.push('/login?verified=true'), 2000)
               if (subscription) subscription.unsubscribe()
               if (timeoutId) clearTimeout(timeoutId)
+              if (checkIntervalId) clearInterval(checkIntervalId)
               return
             }
           } else if (verifyError) {
