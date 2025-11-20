@@ -35,8 +35,8 @@ export default function AuthCallbackPage() {
             handled = true
             if (verifyData.user.email_confirmed_at) {
               setStatus('success')
-              setMessage('Email verified successfully! Redirecting to dashboard...')
-              setTimeout(() => router.push('/dashboard'), 2000)
+              setMessage('Email verified successfully! Redirecting to login...')
+              setTimeout(() => router.push('/login?verified=true'), 2000)
               if (subscription) subscription.unsubscribe()
               if (timeoutId) clearTimeout(timeoutId)
               return
@@ -53,8 +53,8 @@ export default function AuthCallbackPage() {
             if (session?.user?.email_confirmed_at && !handled) {
               handled = true
               setStatus('success')
-              setMessage('Email verified successfully! Redirecting to dashboard...')
-              setTimeout(() => router.push('/dashboard'), 2000)
+              setMessage('Email verified successfully! Redirecting to login...')
+              setTimeout(() => router.push('/login?verified=true'), 2000)
               if (subscription) subscription.unsubscribe()
               if (timeoutId) clearTimeout(timeoutId)
             }
@@ -73,8 +73,8 @@ export default function AuthCallbackPage() {
               if (!verifyError && verifyData?.user?.email_confirmed_at) {
                 handled = true
                 setStatus('success')
-                setMessage('Email verified successfully! Redirecting to dashboard...')
-                setTimeout(() => router.push('/dashboard'), 2000)
+                setMessage('Email verified successfully! Redirecting to login...')
+                setTimeout(() => router.push('/login?verified=true'), 2000)
                 if (subscription) subscription.unsubscribe()
                 if (timeoutId) clearTimeout(timeoutId)
                 return
@@ -111,8 +111,8 @@ export default function AuthCallbackPage() {
           if (data.session.user.email_confirmed_at) {
             handled = true
             setStatus('success')
-            setMessage('Email verified successfully! Redirecting to dashboard...')
-            setTimeout(() => router.push('/dashboard'), 2000)
+            setMessage('Email verified successfully! Redirecting to login...')
+            setTimeout(() => router.push('/login?verified=true'), 2000)
             return
           } else {
             if (!handled) {

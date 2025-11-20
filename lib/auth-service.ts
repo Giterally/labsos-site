@@ -73,7 +73,7 @@ export async function signUp(email: string, password: string, fullName?: string,
         institution: institution,
         department: department
       },
-      emailRedirectTo: 'https://olvaro.net/login?verified=true'
+      emailRedirectTo: 'https://www.olvaro.net/auth/callback'
     }
   })
 

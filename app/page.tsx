@@ -260,11 +260,13 @@ export default function KnowledgeCaptureLanding() {
     }
   }, [currentUser, userLoading])
 
-  // Redirect password reset codes to reset-password page
+  // Redirect password reset codes to reset-password page (but not email verification codes)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const code = urlParams.get('code')
-    if (code) {
+    const type = urlParams.get('type')
+    // Only redirect password recovery codes, not email verification codes
+    if (code && type === 'recovery') {
       router.replace(`/reset-password?code=${code}`)
     }
   }, [router])
