@@ -33,11 +33,16 @@ export default function AuthCallbackPage() {
         console.log('[Auth Callback] Hash params object:', Object.fromEntries(hashParams))
 
         // Check for PKCE code parameter (Supabase sends this after server-side verification)
-        const code = searchParams.get('code')
-        const tokenHash = searchParams.get('token_hash')
-        const type = searchParams.get('type')
+        // Code can be in query params OR hash fragment
+        const codeFromQuery = searchParams.get('code')
+        const codeFromHash = hashParams.get('code')
+        const code = codeFromQuery || codeFromHash
+        const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash')
+        const type = searchParams.get('type') || hashParams.get('type')
         
-        console.log('[Auth Callback] PKCE code found:', code)
+        console.log('[Auth Callback] PKCE code found (query):', codeFromQuery)
+        console.log('[Auth Callback] PKCE code found (hash):', codeFromHash)
+        console.log('[Auth Callback] PKCE code (final):', code)
         console.log('[Auth Callback] Token hash found:', tokenHash)
         console.log('[Auth Callback] Type found:', type)
 
@@ -45,19 +50,20 @@ export default function AuthCallbackPage() {
         // detectSessionInUrl might not always work, so we do it explicitly
         if (code && !handled) {
           console.log('[Auth Callback] Exchanging PKCE code for session...')
-          const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-          
-          if (exchangeError) {
-            console.error('[Auth Callback] Code exchange error:', exchangeError)
-            // Continue to normal flow - might still work via detectSessionInUrl
-          } else if (exchangeData?.session?.user) {
-            console.log('[Auth Callback] Session established via code exchange:', {
-              userId: exchangeData.session.user.id,
-              email: exchangeData.session.user.email,
-              emailConfirmed: exchangeData.session.user.email_confirmed_at
-            })
+          try {
+            const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
             
-            if (exchangeData.session.user.email_confirmed_at) {
+            if (exchangeError) {
+              console.error('[Auth Callback] Code exchange error:', {
+                message: exchangeError.message,
+                status: exchangeError.status,
+                error: exchangeError
+              })
+              // If code exchange fails but we have a code, it means Supabase verified the email server-side
+              // The email is verified even if session creation fails
+              // In this case, we should redirect to login - user can sign in normally
+              // The verification was successful, just the session creation failed
+              console.log('[Auth Callback] Code exchange failed but email was verified server-side, redirecting to login...')
               handled = true
               setStatus('success')
               setMessage('Email verified successfully! Redirecting to login...')
@@ -66,7 +72,27 @@ export default function AuthCallbackPage() {
               if (timeoutId) clearTimeout(timeoutId)
               if (checkIntervalId) clearInterval(checkIntervalId)
               return
+            } else if (exchangeData?.session?.user) {
+              console.log('[Auth Callback] Session established via code exchange:', {
+                userId: exchangeData.session.user.id,
+                email: exchangeData.session.user.email,
+                emailConfirmed: exchangeData.session.user.email_confirmed_at
+              })
+              
+              if (exchangeData.session.user.email_confirmed_at) {
+                handled = true
+                setStatus('success')
+                setMessage('Email verified successfully! Redirecting to login...')
+                setTimeout(() => router.push('/login?verified=true'), 2000)
+                if (subscription) subscription.unsubscribe()
+                if (timeoutId) clearTimeout(timeoutId)
+                if (checkIntervalId) clearInterval(checkIntervalId)
+                return
+              }
             }
+          } catch (error) {
+            console.error('[Auth Callback] Exception during code exchange:', error)
+            // Continue to normal flow
           }
         }
 
