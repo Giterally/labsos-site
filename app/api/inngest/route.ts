@@ -20,4 +20,7 @@ export const { GET, POST, PUT } = serve({
     clusterChunks,
     synthesizeNodes,
   ],
+  // Configure base URL for production - Inngest needs to know where to call back
+  baseUrl: process.env.NEXT_PUBLIC_SITE_URL 
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
 });
