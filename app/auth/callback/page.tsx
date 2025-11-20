@@ -15,14 +15,16 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     let subscription: { unsubscribe: () => void } | null = null
     let timeoutId: NodeJS.Timeout | null = null
+    let checkIntervalId: NodeJS.Timeout | null = null
     let handled = false
 
     const handleAuthCallback = async () => {
       try {
-        // Check for token_hash in URL query parameters (fallback for PKCE failures)
+        // Check for token_hash or code in URL query parameters (PKCE flow uses 'code')
         const urlParams = new URLSearchParams(window.location.search)
         const tokenHash = urlParams.get('token_hash')
         const type = urlParams.get('type')
+        const code = urlParams.get('code') // PKCE flow uses 'code' parameter
 
         // If token_hash exists in query params, try manual verification (PKCE fallback)
         if (tokenHash && type && !handled) {
@@ -113,6 +115,7 @@ export default function AuthCallbackPage() {
             setStatus('success')
             setMessage('Email verified successfully! Redirecting to login...')
             setTimeout(() => router.push('/login?verified=true'), 2000)
+            if (checkIntervalId) clearInterval(checkIntervalId)
             return
           } else {
             if (!handled) {
@@ -120,19 +123,60 @@ export default function AuthCallbackPage() {
               setStatus('error')
               setMessage('Email not verified. Please check your email and try again.')
             }
+            if (checkIntervalId) clearInterval(checkIntervalId)
             return
           }
         }
 
-        // If no session found immediately, wait for auth state change (max 5 seconds)
+        // If code exists, Supabase should process it automatically with detectSessionInUrl: true
+        // But we'll check periodically in case it takes time
+        if ((code || tokenHash) && !handled) {
+          const checkSessionState = async () => {
+            try {
+              const { data: { session } } = await supabase.auth.getSession()
+              if (session?.user?.email_confirmed_at && !handled) {
+                handled = true
+                setStatus('success')
+                setMessage('Email verified successfully! Redirecting to login...')
+                setTimeout(() => router.push('/login?verified=true'), 2000)
+                if (subscription) subscription.unsubscribe()
+                if (timeoutId) clearTimeout(timeoutId)
+                if (checkIntervalId) clearInterval(checkIntervalId)
+              }
+            } catch (error) {
+              console.error('Error checking session state:', error)
+            }
+          }
+
+          // Check immediately after a short delay (give Supabase time to process code)
+          setTimeout(() => {
+            if (!handled) {
+              checkSessionState()
+            }
+          }, 1000)
+
+          // Also check periodically (every 800ms) for up to 10 seconds
+          let checkCount = 0
+          checkIntervalId = setInterval(() => {
+            if (!handled && checkCount < 12) {
+              checkSessionState()
+              checkCount++
+            } else {
+              if (checkIntervalId) clearInterval(checkIntervalId)
+            }
+          }, 800)
+        }
+
+        // If no session found immediately, wait for auth state change (max 15 seconds)
         if (!handled) {
           timeoutId = setTimeout(() => {
             if (!handled) {
               handled = true
               setStatus('error')
               setMessage('Verification timed out. Please try again or sign up again.')
+              if (checkIntervalId) clearInterval(checkIntervalId)
             }
-          }, 5000)
+          }, 15000)
         }
       } catch (error) {
         console.error('Error handling auth callback:', error)
@@ -150,6 +194,7 @@ export default function AuthCallbackPage() {
     return () => {
       if (subscription) subscription.unsubscribe()
       if (timeoutId) clearTimeout(timeoutId)
+      if (checkIntervalId) clearInterval(checkIntervalId)
     }
   }, [router])
 
