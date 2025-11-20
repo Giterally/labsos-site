@@ -20,12 +20,65 @@ export default function AuthCallbackPage() {
 
     const handleAuthCallback = async () => {
       try {
-        // Supabase verifies email server-side at their domain, then redirects here
-        // By the time we reach this callback, verification is done - we just wait for session
-        // detectSessionInUrl: true will automatically process any session info in the URL
+        // DEBUG: Log complete URL information
+        console.log('[Auth Callback] Full URL:', window.location.href)
+        console.log('[Auth Callback] Search params:', window.location.search)
+        console.log('[Auth Callback] Hash fragment:', window.location.hash)
+
+        // Parse URL parameters
+        const searchParams = new URLSearchParams(window.location.search)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        
+        console.log('[Auth Callback] Search params object:', Object.fromEntries(searchParams))
+        console.log('[Auth Callback] Hash params object:', Object.fromEntries(hashParams))
+
+        // Check for PKCE code parameter (Supabase sends this after server-side verification)
+        const code = searchParams.get('code')
+        const tokenHash = searchParams.get('token_hash')
+        const type = searchParams.get('type')
+        
+        console.log('[Auth Callback] PKCE code found:', code)
+        console.log('[Auth Callback] Token hash found:', tokenHash)
+        console.log('[Auth Callback] Type found:', type)
+
+        // If PKCE code exists, manually exchange it for a session
+        // detectSessionInUrl might not always work, so we do it explicitly
+        if (code && !handled) {
+          console.log('[Auth Callback] Exchanging PKCE code for session...')
+          const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          
+          if (exchangeError) {
+            console.error('[Auth Callback] Code exchange error:', exchangeError)
+            // Continue to normal flow - might still work via detectSessionInUrl
+          } else if (exchangeData?.session?.user) {
+            console.log('[Auth Callback] Session established via code exchange:', {
+              userId: exchangeData.session.user.id,
+              email: exchangeData.session.user.email,
+              emailConfirmed: exchangeData.session.user.email_confirmed_at
+            })
+            
+            if (exchangeData.session.user.email_confirmed_at) {
+              handled = true
+              setStatus('success')
+              setMessage('Email verified successfully! Redirecting to login...')
+              setTimeout(() => router.push('/login?verified=true'), 2000)
+              if (subscription) subscription.unsubscribe()
+              if (timeoutId) clearTimeout(timeoutId)
+              if (checkIntervalId) clearInterval(checkIntervalId)
+              return
+            }
+          }
+        }
 
         // Set up listener for auth state change (fires when Supabase processes the redirect)
         const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+          console.log('[Auth Callback] Auth state change:', event, {
+            hasSession: !!session,
+            userId: session?.user?.id,
+            email: session?.user?.email,
+            emailConfirmed: session?.user?.email_confirmed_at
+          })
+          
           if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
             // Session established - email was verified by Supabase server-side
             if (session?.user?.email_confirmed_at && !handled) {
@@ -43,9 +96,17 @@ export default function AuthCallbackPage() {
 
         // Check for immediate session (in case Supabase already processed it)
         const { data, error } = await supabase.auth.getSession()
+        
+        console.log('[Auth Callback] Immediate session check:', {
+          hasSession: !!data.session,
+          hasError: !!error,
+          error: error?.message,
+          userId: data.session?.user?.id,
+          emailConfirmed: data.session?.user?.email_confirmed_at
+        })
 
         if (error) {
-          console.error('Auth callback error:', error)
+          console.error('[Auth Callback] Session check error:', error)
           if (!handled) {
             handled = true
             setStatus('error')
@@ -57,12 +118,15 @@ export default function AuthCallbackPage() {
         if (data.session?.user && !handled) {
           // Session exists - check if email is verified
           if (data.session.user.email_confirmed_at) {
+            console.log('[Auth Callback] Session found with verified email, redirecting...')
             handled = true
             setStatus('success')
             setMessage('Email verified successfully! Redirecting to login...')
             setTimeout(() => router.push('/login?verified=true'), 2000)
             if (checkIntervalId) clearInterval(checkIntervalId)
             return
+          } else {
+            console.log('[Auth Callback] Session found but email not confirmed yet')
           }
         }
 
@@ -71,6 +135,7 @@ export default function AuthCallbackPage() {
           try {
             const { data: { session } } = await supabase.auth.getSession()
             if (session?.user?.email_confirmed_at && !handled) {
+              console.log('[Auth Callback] Session detected in periodic check, redirecting...')
               handled = true
               setStatus('success')
               setMessage('Email verified successfully! Redirecting to login...')
@@ -80,7 +145,7 @@ export default function AuthCallbackPage() {
               if (checkIntervalId) clearInterval(checkIntervalId)
             }
           } catch (error) {
-            console.error('Error checking session state:', error)
+            console.error('[Auth Callback] Error checking session state:', error)
           }
         }
 
