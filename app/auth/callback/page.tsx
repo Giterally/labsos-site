@@ -20,37 +20,14 @@ export default function AuthCallbackPage() {
 
     const handleAuthCallback = async () => {
       try {
-        // Check for token_hash in URL query parameters (email verification uses token_hash, not code)
-        const urlParams = new URLSearchParams(window.location.search)
-        const tokenHash = urlParams.get('token_hash')
-        const type = urlParams.get('type')
+        // Supabase verifies email server-side at their domain, then redirects here
+        // By the time we reach this callback, verification is done - we just wait for session
+        // detectSessionInUrl: true will automatically process any session info in the URL
 
-        // If token_hash exists in query params, try manual verification (PKCE fallback)
-        if (tokenHash && type && !handled) {
-          const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type: type as 'signup' | 'email'
-          })
-
-          // If verifyOtp succeeded (no error), email is verified - treat as success
-          if (!verifyError && verifyData?.user) {
-            handled = true
-            setStatus('success')
-            setMessage('Email verified successfully! Redirecting to login...')
-            setTimeout(() => router.push('/login?verified=true'), 2000)
-            if (subscription) subscription.unsubscribe()
-            if (timeoutId) clearTimeout(timeoutId)
-            if (checkIntervalId) clearInterval(checkIntervalId)
-            return
-          } else if (verifyError) {
-            console.error('verifyOtp error:', verifyError)
-            // Continue to normal flow - might be hash-based instead
-          }
-        }
-
-        // Set up listener for auth state change (fires when URL hash is processed by Supabase)
+        // Set up listener for auth state change (fires when Supabase processes the redirect)
         const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
           if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            // Session established - email was verified by Supabase server-side
             if (session?.user?.email_confirmed_at && !handled) {
               handled = true
               setStatus('success')
@@ -58,45 +35,13 @@ export default function AuthCallbackPage() {
               setTimeout(() => router.push('/login?verified=true'), 2000)
               if (subscription) subscription.unsubscribe()
               if (timeoutId) clearTimeout(timeoutId)
-            }
-          } else if (event === 'SIGNED_OUT' && !handled) {
-            // PKCE failed, but check if we have token_hash to try manual verification
-            const urlParams = new URLSearchParams(window.location.search)
-            const tokenHash = urlParams.get('token_hash')
-            const type = urlParams.get('type')
-            
-            if (tokenHash && type) {
-              const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-                token_hash: tokenHash,
-                type: type as 'signup' | 'email'
-              })
-
-              // If verifyOtp succeeded (no error), email is verified - treat as success
-              if (!verifyError && verifyData?.user) {
-                handled = true
-                setStatus('success')
-                setMessage('Email verified successfully! Redirecting to login...')
-                setTimeout(() => router.push('/login?verified=true'), 2000)
-                if (subscription) subscription.unsubscribe()
-                if (timeoutId) clearTimeout(timeoutId)
-                if (checkIntervalId) clearInterval(checkIntervalId)
-                return
-              }
-            }
-
-            // If we get here, verification truly failed
-            if (!handled) {
-              handled = true
-              setStatus('error')
-              setMessage('No active session found. This often happens if you used a different browser or cleared your browser data. Please try signing up again.')
-              if (subscription) subscription.unsubscribe()
-              if (timeoutId) clearTimeout(timeoutId)
+              if (checkIntervalId) clearInterval(checkIntervalId)
             }
           }
         })
         subscription = authSubscription
 
-        // Also try immediate check (in case session is already processed)
+        // Check for immediate session (in case Supabase already processed it)
         const { data, error } = await supabase.auth.getSession()
 
         if (error) {
@@ -110,7 +55,7 @@ export default function AuthCallbackPage() {
         }
 
         if (data.session?.user && !handled) {
-          // Check if email is verified
+          // Session exists - check if email is verified
           if (data.session.user.email_confirmed_at) {
             handled = true
             setStatus('success')
@@ -118,56 +63,46 @@ export default function AuthCallbackPage() {
             setTimeout(() => router.push('/login?verified=true'), 2000)
             if (checkIntervalId) clearInterval(checkIntervalId)
             return
-          } else {
-            if (!handled) {
-              handled = true
-              setStatus('error')
-              setMessage('Email not verified. Please check your email and try again.')
-            }
-            if (checkIntervalId) clearInterval(checkIntervalId)
-            return
           }
         }
 
-        // If token_hash exists, check periodically in case verification takes time
-        if (tokenHash && !handled) {
-          const checkSessionState = async () => {
-            try {
-              const { data: { session } } = await supabase.auth.getSession()
-              if (session?.user?.email_confirmed_at && !handled) {
-                handled = true
-                setStatus('success')
-                setMessage('Email verified successfully! Redirecting to login...')
-                setTimeout(() => router.push('/login?verified=true'), 2000)
-                if (subscription) subscription.unsubscribe()
-                if (timeoutId) clearTimeout(timeoutId)
-                if (checkIntervalId) clearInterval(checkIntervalId)
-              }
-            } catch (error) {
-              console.error('Error checking session state:', error)
-            }
-          }
-
-          // Check immediately after a short delay (give Supabase time to process code)
-          setTimeout(() => {
-            if (!handled) {
-              checkSessionState()
-            }
-          }, 1000)
-
-          // Also check periodically (every 800ms) for up to 10 seconds
-          let checkCount = 0
-          checkIntervalId = setInterval(() => {
-            if (!handled && checkCount < 12) {
-              checkSessionState()
-              checkCount++
-            } else {
+        // Periodically check for session (give Supabase time to process redirect)
+        const checkSessionState = async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session?.user?.email_confirmed_at && !handled) {
+              handled = true
+              setStatus('success')
+              setMessage('Email verified successfully! Redirecting to login...')
+              setTimeout(() => router.push('/login?verified=true'), 2000)
+              if (subscription) subscription.unsubscribe()
+              if (timeoutId) clearTimeout(timeoutId)
               if (checkIntervalId) clearInterval(checkIntervalId)
             }
-          }, 800)
+          } catch (error) {
+            console.error('Error checking session state:', error)
+          }
         }
 
-        // If no session found immediately, wait for auth state change (max 15 seconds)
+        // Check immediately after a short delay
+        setTimeout(() => {
+          if (!handled) {
+            checkSessionState()
+          }
+        }, 1000)
+
+        // Also check periodically (every 800ms) for up to 10 seconds
+        let checkCount = 0
+        checkIntervalId = setInterval(() => {
+          if (!handled && checkCount < 12) {
+            checkSessionState()
+            checkCount++
+          } else {
+            if (checkIntervalId) clearInterval(checkIntervalId)
+          }
+        }, 800)
+
+        // Fallback timeout - if no session after 15 seconds, show error
         if (!handled) {
           timeoutId = setTimeout(() => {
             if (!handled) {
