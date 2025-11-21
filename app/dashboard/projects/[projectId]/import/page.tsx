@@ -2245,7 +2245,7 @@ export default function ImportPage() {
                   <Input
                     id="files"
                     type="file"
-                    accept=".pdf,.xlsx,.xls,.mp4,.avi,.mov,.txt,.md"
+                    accept=".pdf,.xlsx,.xls,.docx,.doc,.mp4,.avi,.mov,.txt,.md"
                     multiple
                     onChange={(e) => {
                       const files = Array.from(e.target.files || []);

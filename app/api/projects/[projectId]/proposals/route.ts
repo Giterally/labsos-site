@@ -310,7 +310,7 @@ export async function GET(
       .eq('project_id', actualProjectId)
       .eq('user_id', user.id) // Proposals are per-user, per-project
       .eq('status', 'proposed')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true });
 
     if (fetchError) {
       console.error('Failed to fetch proposals:', fetchError);

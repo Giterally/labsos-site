@@ -88,6 +88,9 @@ export async function POST(request: NextRequest) {
           'application/pdf',
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword',
+          'application/vnd.google-apps.document',
           'text/plain',
           'text/markdown',
           'video/mp4',
@@ -118,6 +121,7 @@ export async function POST(request: NextRequest) {
         const storagePath = `${user.id}/${uniqueFileName}`;
 
         // Upload to Supabase Storage (user-scoped)
+        console.log(`[Google Drive Import] Uploading file: ${fileMetadata.name}, size: ${buffer.length}, mimeType: ${mimeType}`);
         const { error: uploadError } = await supabaseServer.storage
           .from('user-uploads')
           .upload(storagePath, buffer, {
@@ -126,11 +130,19 @@ export async function POST(request: NextRequest) {
           });
 
         if (uploadError) {
-          console.error('Upload error:', uploadError);
+          console.error('[Google Drive Import] Upload error details:', {
+            error: uploadError,
+            message: uploadError.message,
+            statusCode: uploadError.statusCode,
+            fileName: fileMetadata.name,
+            fileSize: buffer.length,
+            mimeType: mimeType,
+            storagePath: storagePath,
+          });
           errors.push({
             fileId,
             fileName: fileMetadata.name,
-            error: 'Failed to upload file to storage',
+            error: `Failed to upload file to storage: ${uploadError.message || 'Unknown error'}`,
           });
           continue;
         }
@@ -262,6 +274,9 @@ export async function POST(request: NextRequest) {
 function getSourceTypeFromMimeType(mimeType: string): string {
   if (mimeType === 'application/pdf') return 'pdf';
   if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'excel';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+      mimeType === 'application/msword' ||
+      mimeType === 'application/vnd.google-apps.document') return 'word';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType === 'text/markdown') return 'markdown';

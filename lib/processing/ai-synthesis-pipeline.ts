@@ -6,7 +6,7 @@ import { mergeMultiDocumentWorkflows } from '../ai/multi-document-synthesis';
 import { resolveAttachments } from './attachment-resolver';
 import { extractDependenciesRuleBased } from './dependency-extractor';
 import { detectNestedTrees } from './nested-tree-detector';
-import { storeSynthesizedNode } from '../ai/synthesis';
+import { storeSynthesizedNode, generateBriefSummary } from '../ai/synthesis';
 import { cleanStructuredDocument } from './document-cleaner';
 import { analyzeDocumentComplexity } from './document-analyzer';
 import { calculateExtractionMetrics, logExtractionMetrics } from '../ai/extraction-metrics';
@@ -359,10 +359,10 @@ function extractFirstSentence(text: string, maxLength: number = 500): string {
 }
 
 /**
- * Generates a concise summary of node content for the description field
- * Always returns a complete sentence that ends with proper punctuation
+ * Generates a concise AI summary of node content for the description field
+ * Uses AI to create a proper one-sentence summary instead of just extracting the first sentence
  */
-function generateNodeSummary(content: string, title: string): string {
+async function generateNodeSummary(content: string, title: string): Promise<string> {
   const trimmedContent = content.trim();
   
   // If content is already short (< 150 chars), use it as-is and ensure punctuation
@@ -370,8 +370,21 @@ function generateNodeSummary(content: string, title: string): string {
     return ensureEndsWithPunctuation(trimmedContent);
   }
   
-  // Extract first complete sentence (max 500 chars)
-  return extractFirstSentence(trimmedContent, 500);
+  // Use AI to generate a proper one-sentence summary
+  try {
+    const summary = await generateBriefSummary(trimmedContent);
+    // Ensure it ends with punctuation and is within reasonable length
+    const finalSummary = ensureEndsWithPunctuation(summary.trim());
+    // Truncate if too long (max 150 chars for descriptions)
+    if (finalSummary.length > 150) {
+      return truncateAtNaturalBreak(finalSummary, 150) + '...';
+    }
+    return finalSummary;
+  } catch (error) {
+    console.error('[GENERATE_NODE_SUMMARY] Failed to generate AI summary, falling back to first sentence:', error);
+    // Fallback to first sentence if AI summary fails
+    return extractFirstSentence(trimmedContent, 500);
+  }
 }
 
 /**
@@ -965,8 +978,8 @@ export async function generateProposals(userId: string, projectId: string, selec
 
       try {
         // Convert ExtractedNode to SynthesizedNode format for storage
-        // Generate a proper 1-line summary instead of truncating content
-        const nodeSummary = generateNodeSummary(node.content.text, node.title);
+        // Generate a proper AI-generated 1-sentence summary
+        const nodeSummary = await generateNodeSummary(node.content.text, node.title);
         
         const synthesizedNode = {
           node_id: node.nodeId || crypto.randomUUID(), // Add required node_id field

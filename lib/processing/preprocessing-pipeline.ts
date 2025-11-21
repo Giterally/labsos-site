@@ -3,6 +3,7 @@ import { parsePDF } from './parsers/pdf-parser';
 import { parseExcel } from './parsers/excel-parser';
 import { parseVideo, parseAudio } from './parsers/video-parser';
 import { parseText } from './parsers/text-parser';
+import { parseWord } from './parsers/word-parser';
 import type { StructuredDocument } from './parsers/pdf-parser';
 
 /**
@@ -12,6 +13,9 @@ import type { StructuredDocument } from './parsers/pdf-parser';
 function getSourceTypeFromMimeType(mimeType: string): string {
   if (mimeType === 'application/pdf') return 'pdf';
   if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'excel';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+      mimeType === 'application/msword' ||
+      mimeType === 'application/vnd.google-apps.document') return 'word';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType === 'text/markdown') return 'markdown';
@@ -105,6 +109,16 @@ export async function preprocessFile(sourceId: string, userId: string) {
           break;
         case 'excel':
           structuredDoc = await parseExcel(source.storage_path, sourceId, source.source_name) as StructuredDocument;
+          break;
+        case 'word':
+          console.log(`[PREPROCESSING] Starting Word parsing...`);
+          try {
+            structuredDoc = await parseWord(source.storage_path, sourceId, source.source_name);
+            console.log(`[PREPROCESSING] Word parsing completed successfully`);
+          } catch (wordError: any) {
+            console.error(`[PREPROCESSING] Word parsing failed:`, wordError);
+            throw new Error(`Word parsing error: ${wordError.message || 'Unknown error'}`);
+          }
           break;
         case 'video':
           structuredDoc = await parseVideo(source.storage_path, sourceId, source.source_name);

@@ -126,6 +126,8 @@ export async function POST(request: NextRequest) {
           'application/pdf',
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword',
           'text/plain',
           'text/markdown',
           'video/mp4',
@@ -320,6 +322,8 @@ export async function POST(request: NextRequest) {
 function getSourceTypeFromMimeType(mimeType: string): string {
   if (mimeType === 'application/pdf') return 'pdf';
   if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'excel';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+      mimeType === 'application/msword') return 'word';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType === 'text/markdown') return 'markdown';

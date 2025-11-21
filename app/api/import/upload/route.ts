@@ -50,6 +50,8 @@ export async function POST(request: NextRequest) {
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
       'text/plain',
       'text/markdown',
       'video/mp4',
@@ -61,10 +63,41 @@ export async function POST(request: NextRequest) {
       'audio/mpeg',
     ];
 
-    if (!allowedTypes.includes(file.type)) {
+    // Also check file extension as fallback (browsers may send incorrect MIME types)
+    const fileExtension = file.name.toLowerCase().split('.').pop();
+    const allowedExtensions = ['pdf', 'xlsx', 'xls', 'docx', 'doc', 'txt', 'md', 'mp4', 'avi', 'mov', 'mp3', 'wav', 'mpeg'];
+    
+    const isValidMimeType = allowedTypes.includes(file.type);
+    const isValidExtension = fileExtension && allowedExtensions.includes(fileExtension);
+    
+    if (!isValidMimeType && !isValidExtension) {
+      console.log(`[UPLOAD] File type validation failed: MIME type="${file.type}", extension="${fileExtension}", filename="${file.name}"`);
       return NextResponse.json({ 
-        error: `File type ${file.type} not supported` 
+        error: `File type not supported. MIME type: ${file.type}, extension: ${fileExtension || 'none'}` 
       }, { status: 400 });
+    }
+    
+    // Use MIME type if valid, otherwise infer from extension
+    let actualMimeType = file.type;
+    if (!isValidMimeType && isValidExtension) {
+      // Infer MIME type from extension
+      const mimeTypeMap: Record<string, string> = {
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'doc': 'application/msword',
+        'pdf': 'application/pdf',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'txt': 'text/plain',
+        'md': 'text/markdown',
+        'mp4': 'video/mp4',
+        'avi': 'video/avi',
+        'mov': 'video/quicktime',
+        'mp3': 'audio/mp3',
+        'wav': 'audio/wav',
+        'mpeg': 'audio/mpeg',
+      };
+      actualMimeType = mimeTypeMap[fileExtension] || file.type;
+      console.log(`[UPLOAD] Inferred MIME type from extension: ${actualMimeType} for file ${file.name}`);
     }
 
     const maxSize = 100 * 1024 * 1024; // 100MB
@@ -74,8 +107,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Determine source type from file type
-    const sourceType = getSourceTypeFromMimeType(file.type);
+    // Determine source type from file type (use actual MIME type)
+    const sourceType = getSourceTypeFromMimeType(actualMimeType);
 
     // Generate unique filename
     const timestamp = Date.now();
@@ -85,17 +118,26 @@ export async function POST(request: NextRequest) {
 
             // Upload file to Supabase Storage (user-scoped)
             const fileBuffer = await file.arrayBuffer();
+            console.log(`[UPLOAD] Uploading file: ${file.name}, size: ${fileBuffer.byteLength}, mimeType: ${actualMimeType}, storagePath: ${storagePath}`);
             const { data: uploadData, error: uploadError } = await supabaseServer.storage
               .from('user-uploads')
               .upload(storagePath, fileBuffer, {
-                contentType: file.type,
+                contentType: actualMimeType,
                 upsert: false,
               });
 
     if (uploadError) {
-      console.error('Upload error:', uploadError);
+      console.error('[UPLOAD] Upload error details:', {
+        error: uploadError,
+        message: uploadError.message,
+        statusCode: uploadError.statusCode,
+        fileName: file.name,
+        fileSize: fileBuffer.byteLength,
+        mimeType: actualMimeType,
+        storagePath: storagePath,
+      });
       return NextResponse.json({ 
-        error: 'Failed to upload file' 
+        error: `Failed to upload file: ${uploadError.message || 'Unknown error'}` 
       }, { status: 500 });
     }
     
@@ -111,7 +153,7 @@ export async function POST(request: NextRequest) {
         source_name: file.name,
         storage_path: storagePath,
         file_size: file.size,
-        mime_type: file.type,
+        mime_type: actualMimeType,
         status: 'uploaded', // Explicitly set initial status
         metadata: {
           originalName: file.name,
@@ -286,6 +328,8 @@ export async function POST(request: NextRequest) {
 function getSourceTypeFromMimeType(mimeType: string): string {
   if (mimeType === 'application/pdf') return 'pdf';
   if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'excel';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+      mimeType === 'application/msword') return 'word';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType === 'text/markdown') return 'markdown';
