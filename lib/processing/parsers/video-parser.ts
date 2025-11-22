@@ -39,9 +39,24 @@ export async function parseVideo(
       throw new Error(`Failed to download video file: ${downloadError.message}`);
     }
 
-    // Convert to File/Blob for Whisper API
-    const videoBlob = await videoData.blob();
-    const videoFile = new File([videoBlob], fileName, { type: videoBlob.type });
+    // Convert to ArrayBuffer then to File for Whisper API
+    const videoBuffer = await videoData.arrayBuffer();
+    
+    // Determine MIME type from file extension or use default
+    const fileExtension = fileName.toLowerCase().split('.').pop();
+    const mimeTypeMap: Record<string, string> = {
+      'mp4': 'video/mp4',
+      'avi': 'video/avi',
+      'mov': 'video/quicktime',
+      'mp3': 'audio/mp3',
+      'wav': 'audio/wav',
+      'mpeg': 'audio/mpeg',
+      'm4a': 'audio/mp4',
+      'aac': 'audio/aac',
+    };
+    const mimeType = mimeTypeMap[fileExtension || ''] || 'audio/mpeg';
+    
+    const videoFile = new File([videoBuffer], fileName, { type: mimeType });
 
     // Transcribe using Whisper API
     console.log(`[VIDEO_PARSER] Transcribing video with Whisper API...`);

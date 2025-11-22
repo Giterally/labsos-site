@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    const MAX_FILES_PER_USER = 10;
+    const MAX_FILES_PER_USER = 7;
     if ((fileCount || 0) >= MAX_FILES_PER_USER) {
       return NextResponse.json({ 
         error: `You have reached the maximum limit of ${MAX_FILES_PER_USER} uploaded files. Please delete some files before uploading new ones.` 
@@ -52,6 +52,9 @@ export async function POST(request: NextRequest) {
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/msword',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.google-apps.presentation',
       'text/plain',
       'text/markdown',
       'video/mp4',
@@ -61,11 +64,15 @@ export async function POST(request: NextRequest) {
       'audio/mp3',
       'audio/wav',
       'audio/mpeg',
+      'audio/mp4',
+      'audio/x-m4a',
+      'audio/aac',
+      'audio/x-aac',
     ];
 
     // Also check file extension as fallback (browsers may send incorrect MIME types)
     const fileExtension = file.name.toLowerCase().split('.').pop();
-    const allowedExtensions = ['pdf', 'xlsx', 'xls', 'docx', 'doc', 'txt', 'md', 'mp4', 'avi', 'mov', 'mp3', 'wav', 'mpeg'];
+    const allowedExtensions = ['pdf', 'xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt', 'txt', 'md', 'mp4', 'avi', 'mov', 'mp3', 'wav', 'mpeg', 'm4a', 'aac'];
     
     const isValidMimeType = allowedTypes.includes(file.type);
     const isValidExtension = fileExtension && allowedExtensions.includes(fileExtension);
@@ -87,6 +94,8 @@ export async function POST(request: NextRequest) {
         'pdf': 'application/pdf',
         'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'xls': 'application/vnd.ms-excel',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'ppt': 'application/vnd.ms-powerpoint',
         'txt': 'text/plain',
         'md': 'text/markdown',
         'mp4': 'video/mp4',
@@ -95,15 +104,17 @@ export async function POST(request: NextRequest) {
         'mp3': 'audio/mp3',
         'wav': 'audio/wav',
         'mpeg': 'audio/mpeg',
+        'm4a': 'audio/mp4',
+        'aac': 'audio/aac',
       };
       actualMimeType = mimeTypeMap[fileExtension] || file.type;
       console.log(`[UPLOAD] Inferred MIME type from extension: ${actualMimeType} for file ${file.name}`);
     }
 
-    const maxSize = 100 * 1024 * 1024; // 100MB
+    const maxSize = 25 * 1024 * 1024; // 25MB
     if (file.size > maxSize) {
       return NextResponse.json({ 
-        error: 'File size exceeds 100MB limit' 
+        error: 'File size exceeds 25MB limit' 
       }, { status: 400 });
     }
 
@@ -330,6 +341,9 @@ function getSourceTypeFromMimeType(mimeType: string): string {
   if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'excel';
   if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
       mimeType === 'application/msword') return 'word';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      mimeType === 'application/vnd.ms-powerpoint' ||
+      mimeType === 'application/vnd.google-apps.presentation') return 'presentation';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType === 'text/markdown') return 'markdown';

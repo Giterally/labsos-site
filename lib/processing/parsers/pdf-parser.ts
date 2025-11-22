@@ -2,7 +2,7 @@ import { supabaseServer } from '../../supabase-server';
 import { Buffer } from 'buffer';
 
 export interface StructuredDocument {
-  type: 'pdf' | 'excel' | 'video' | 'text';
+  type: 'pdf' | 'excel' | 'video' | 'text' | 'presentation';
   sourceId: string;
   fileName: string;
   sections: Section[];

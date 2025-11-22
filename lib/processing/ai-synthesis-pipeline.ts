@@ -383,7 +383,7 @@ async function generateNodeSummary(content: string, title: string): Promise<stri
   } catch (error) {
     console.error('[GENERATE_NODE_SUMMARY] Failed to generate AI summary, falling back to first sentence:', error);
     // Fallback to first sentence if AI summary fails
-    return extractFirstSentence(trimmedContent, 500);
+  return extractFirstSentence(trimmedContent, 500);
   }
 }
 

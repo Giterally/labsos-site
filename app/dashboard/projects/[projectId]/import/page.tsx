@@ -1179,17 +1179,26 @@ export default function ImportPage() {
   const handleFileUpload = async () => {
     if (selectedFiles.length === 0) return;
 
+    // Check file size before attempting upload (client-side validation)
+    const maxSize = 25 * 1024 * 1024; // 25MB
+    const oversizedFiles = selectedFiles.filter(f => f.size > maxSize);
+    if (oversizedFiles.length > 0) {
+      const fileNames = oversizedFiles.map(f => f.name).join(', ');
+      toast.error(`${oversizedFiles.length === 1 ? 'File' : 'Files'} too large: ${fileNames}. Maximum file size is 25MB.`);
+      return;
+    }
+
     // Check file limit before attempting upload
-    if (sources.length >= 10) {
-      toast.error('You have reached the maximum limit of 10 uploaded files. Please delete some files before uploading new ones.');
+    if (sources.length >= 7) {
+      toast.error('You have reached the maximum limit of 7 uploaded files. Please delete some files before uploading new ones.');
       return;
     }
 
     // Check if adding these files would exceed the limit
     const filesToAdd = selectedFiles.length;
     const totalAfterUpload = sources.length + filesToAdd;
-    if (totalAfterUpload > 10) {
-      const allowed = 10 - sources.length;
+    if (totalAfterUpload > 7) {
+      const allowed = 7 - sources.length;
       toast.error(`You can only upload ${allowed} more file(s). You selected ${filesToAdd} file(s). Please delete some files or reduce your selection.`);
       return;
     }
@@ -1257,8 +1266,8 @@ export default function ImportPage() {
     if (!githubUrl) return;
 
     // Check file limit before attempting import
-    if (sources.length >= 10) {
-      toast.error('You have reached the maximum limit of 10 uploaded files. Please delete some files before importing new ones.');
+    if (sources.length >= 7) {
+      toast.error('You have reached the maximum limit of 7 uploaded files. Please delete some files before importing new ones.');
       return;
     }
 
@@ -2225,7 +2234,7 @@ export default function ImportPage() {
             <CardHeader>
               <CardTitle>Upload Files</CardTitle>
               <CardDescription>
-                Upload PDFs, Excel files, videos, or text documents to extract experiment protocols
+                Upload PDFs, Excel files, Word documents, PowerPoint presentations, videos, audio files, or text documents to extract experiment protocols
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -2245,7 +2254,7 @@ export default function ImportPage() {
                   <Input
                     id="files"
                     type="file"
-                    accept=".pdf,.xlsx,.xls,.docx,.doc,.mp4,.avi,.mov,.txt,.md"
+                    accept=".pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.mp4,.avi,.mov,.txt,.md,.mp3,.wav,.mpeg,.m4a,.aac"
                     multiple
                     onChange={(e) => {
                       const files = Array.from(e.target.files || []);
@@ -2321,14 +2330,14 @@ export default function ImportPage() {
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  Supported formats: PDF, Excel (.xlsx, .xls), Video (.mp4, .avi, .mov), Text (.txt, .md)
+                  Supported formats: PDF, Excel (.xlsx, .xls), Word (.docx, .doc), PowerPoint (.pptx, .ppt), Text (.txt, .md), Video (.mp4, .avi, .mov), Audio (.mp3, .wav, .mpeg, .m4a, .aac)
                   <br />
-                  Maximum file size: 100MB per file
+                  Maximum file size: 25MB per file
                   <br />
                   You can select multiple files at once for batch upload
                   <br />
                   <span className="font-semibold text-blue-600 dark:text-blue-500">
-                    File limit: {sources.length}/10 files uploaded
+                    File limit: {sources.length}/7 files uploaded
                   </span>
                 </AlertDescription>
               </Alert>
@@ -2460,16 +2469,16 @@ export default function ImportPage() {
                         if (selectedCloudFiles.length === 0) return;
                         
                         // Check file limit before attempting import
-                        if (sources.length >= 10) {
-                          toast.error('You have reached the maximum limit of 10 uploaded files. Please delete some files before importing new ones.');
+                        if (sources.length >= 7) {
+                          toast.error('You have reached the maximum limit of 7 uploaded files. Please delete some files before importing new ones.');
                           return;
                         }
 
                         // Check if adding these files would exceed the limit
                         const filesToAdd = selectedCloudFiles.length;
                         const totalAfterImport = sources.length + filesToAdd;
-                        if (totalAfterImport > 10) {
-                          const allowed = 10 - sources.length;
+                        if (totalAfterImport > 7) {
+                          const allowed = 7 - sources.length;
                           toast.error(`You can only import ${allowed} more file(s). You selected ${filesToAdd} file(s). Please delete some files or reduce your selection.`);
                           return;
                         }
@@ -2578,7 +2587,7 @@ export default function ImportPage() {
                     Track the status of your uploaded files and repositories
                     <br />
                     <span className="text-sm font-semibold text-blue-600 dark:text-blue-500">
-                      {sources.length}/10 files uploaded
+                      {sources.length}/7 files uploaded
                     </span>
                   </CardDescription>
                 </div>
@@ -2875,7 +2884,7 @@ export default function ImportPage() {
                 Review, delete, and manage your uploaded files before generating AI proposals
                 <br />
                 <span className="text-sm font-medium">
-                  {sources.length}/10 files uploaded
+                  {sources.length}/7 files uploaded
                 </span>
               </CardDescription>
             </CardHeader>

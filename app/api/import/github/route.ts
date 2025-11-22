@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    const MAX_FILES_PER_USER = 10;
+    const MAX_FILES_PER_USER = 7;
     if ((fileCount || 0) >= MAX_FILES_PER_USER) {
       return NextResponse.json({ 
         error: `You have reached the maximum limit of ${MAX_FILES_PER_USER} uploaded files. Please delete some files before importing new ones.` 

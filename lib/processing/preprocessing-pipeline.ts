@@ -4,6 +4,7 @@ import { parseExcel } from './parsers/excel-parser';
 import { parseVideo, parseAudio } from './parsers/video-parser';
 import { parseText } from './parsers/text-parser';
 import { parseWord } from './parsers/word-parser';
+import { parsePresentation } from './parsers/presentation-parser';
 import type { StructuredDocument } from './parsers/pdf-parser';
 
 /**
@@ -16,6 +17,9 @@ function getSourceTypeFromMimeType(mimeType: string): string {
   if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
       mimeType === 'application/msword' ||
       mimeType === 'application/vnd.google-apps.document') return 'word';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      mimeType === 'application/vnd.ms-powerpoint' ||
+      mimeType === 'application/vnd.google-apps.presentation') return 'presentation';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType === 'text/markdown') return 'markdown';
@@ -118,6 +122,16 @@ export async function preprocessFile(sourceId: string, userId: string) {
           } catch (wordError: any) {
             console.error(`[PREPROCESSING] Word parsing failed:`, wordError);
             throw new Error(`Word parsing error: ${wordError.message || 'Unknown error'}`);
+          }
+          break;
+        case 'presentation':
+          console.log(`[PREPROCESSING] Starting Presentation parsing...`);
+          try {
+            structuredDoc = await parsePresentation(source.storage_path, sourceId, source.source_name, source.mime_type);
+            console.log(`[PREPROCESSING] Presentation parsing completed successfully`);
+          } catch (presentationError: any) {
+            console.error(`[PREPROCESSING] Presentation parsing failed:`, presentationError);
+            throw new Error(`Presentation parsing error: ${presentationError.message || 'Unknown error'}`);
           }
           break;
         case 'video':

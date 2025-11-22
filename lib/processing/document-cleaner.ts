@@ -72,6 +72,9 @@ export function cleanStructuredDocument(doc: StructuredDocument): StructuredDocu
   const totalSections = doc.sections.length;
   let filteredCount = 0;
   
+  // Excel files contain mostly numerical data in tables - need special handling
+  const isExcelFile = doc.type === 'excel';
+  
   const cleanedSections = doc.sections
     .filter(section => {
       // Remove very short sections (less than 50 characters total)
@@ -80,14 +83,23 @@ export function cleanStructuredDocument(doc: StructuredDocument): StructuredDocu
         return false;
       }
       
+      // For Excel files or sections with table blocks, skip alpha ratio check
+      // Tables are expected to contain mostly numerical data
+      const hasTableBlocks = section.content.some(block => block.type === 'table');
+      const shouldCheckAlphaRatio = !isExcelFile && !hasTableBlocks;
+      
+      if (shouldCheckAlphaRatio) {
       // Remove sections that are mostly punctuation or special characters
-      const allText = section.content.map(b => b.content).join(' ');
+        // Only check text blocks for alpha ratio (exclude tables)
+        const textBlocks = section.content.filter(b => b.type === 'text' || b.type === 'list');
+        const allText = textBlocks.map(b => b.content).join(' ');
       const alphaChars = (allText.match(/[a-zA-Z]/g) || []).length;
       const totalChars = allText.length;
       const alphaRatio = totalChars > 0 ? alphaChars / totalChars : 0;
       
       if (alphaRatio < 0.5) {
-        return false; // Less than 50% alphabetic characters
+          return false; // Less than 50% alphabetic characters in text content
+        }
       }
       
       // Filter out reference sections

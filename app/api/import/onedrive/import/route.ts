@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    const MAX_FILES_PER_USER = 10;
+    const MAX_FILES_PER_USER = 7;
     const currentCount = fileCount || 0;
     const maxAllowed = MAX_FILES_PER_USER - currentCount;
 
@@ -81,13 +81,13 @@ export async function POST(request: NextRequest) {
         // Download file
         const { buffer, mimeType, fileName } = await downloadFile(user.id, fileId, fileSiteId);
 
-        // Validate file size (100MB limit)
-        const maxSize = 100 * 1024 * 1024;
+        // Validate file size (25MB limit)
+        const maxSize = 25 * 1024 * 1024;
         if (buffer.length > maxSize) {
           errors.push({
             fileId,
             fileName: fileMetadata.name,
-            error: 'File size exceeds 100MB limit',
+            error: 'File size exceeds 25MB limit',
           });
           continue;
         }
@@ -99,6 +99,8 @@ export async function POST(request: NextRequest) {
           'application/vnd.ms-excel',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           'application/msword',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'application/vnd.ms-powerpoint',
           'text/plain',
           'text/markdown',
           'video/mp4',
@@ -108,6 +110,10 @@ export async function POST(request: NextRequest) {
           'audio/mp3',
           'audio/wav',
           'audio/mpeg',
+          'audio/mp4',
+          'audio/x-m4a',
+          'audio/aac',
+          'audio/x-aac',
         ];
 
         if (!allowedTypes.includes(mimeType)) {
@@ -278,6 +284,8 @@ function getSourceTypeFromMimeType(mimeType: string): string {
   if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'excel';
   if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
       mimeType === 'application/msword') return 'word';
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      mimeType === 'application/vnd.ms-powerpoint') return 'presentation';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
   if (mimeType === 'text/markdown') return 'markdown';

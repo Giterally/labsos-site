@@ -7,7 +7,7 @@ VALUES (
   'user-uploads',
   'user-uploads',
   false,
-  104857600, -- 100MB limit
+  26214400, -- 25MB limit
   ARRAY[
     'application/pdf',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -20,7 +20,11 @@ VALUES (
     'video/quicktime',
     'audio/mp3',
     'audio/wav',
-    'audio/mpeg'
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/x-m4a',
+    'audio/aac',
+    'audio/x-aac'
   ]
 )
 ON CONFLICT (id) DO NOTHING;

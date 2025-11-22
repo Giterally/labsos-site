@@ -4,7 +4,7 @@ VALUES (
   'project-uploads',
   'project-uploads',
   false,
-  104857600, -- 100MB limit
+  26214400, -- 25MB limit
   ARRAY[
     'application/pdf',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
