@@ -2034,18 +2034,20 @@ export default function SimpleExperimentTreePage() {
                             isHighlighted ? 'bg-primary/10' : 'bg-muted/30'
                           }`}>
                             <div className="flex items-start justify-between">
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1 min-w-0 flex flex-col">
                                 <div 
                                   className="flex items-center space-x-3 cursor-pointer hover:bg-muted/50 transition-colors rounded px-2 py-1 -mx-2 -my-1"
                                   onClick={() => toggleBlock(nodeType)}
                                 >
                                   <span className="text-lg flex-shrink-0">{getBlockIcon(nodeType)}</span>
                                   <span className="text-sm font-medium flex-1 min-w-0">{getBlockTitle(nodeType)}</span>
-                                  {isCollapsed ? (
-                                    <ChevronRightIcon className="h-4 w-4 text-muted-foreground ml-auto" />
-                                  ) : (
-                                    <ChevronDownIcon className="h-4 w-4 text-muted-foreground ml-auto" />
-                                  )}
+                                  <span className="flex-shrink-0">
+                                    {isCollapsed ? (
+                                      <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
+                                    ) : (
+                                      <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                  </span>
                                 </div>
                                 {hasReferencedNodes && (
                                   <div className="flex items-center space-x-1 mt-1 ml-8">
