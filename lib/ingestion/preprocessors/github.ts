@@ -8,70 +8,83 @@ export interface PreprocessedContent {
   metadata?: any;
 }
 
-// Preprocess GitHub repository (placeholder - would integrate with GitHub API)
+// Preprocess GitHub repository - extracts README file
 export async function preprocessGitHub(
   repoUrl: string,
   metadata: any
 ): Promise<PreprocessedContent> {
   try {
-    // This would integrate with GitHub API to:
-    // 1. Clone the repository
-    // 2. Parse README files
-    // 3. Extract code from various file types
-    // 4. Parse documentation
-    // 5. Extract commit messages and history
+    // Extract owner and repo from URL
+    const urlMatch = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (!urlMatch) {
+      throw new Error('Invalid GitHub repository URL');
+    }
     
-    // For now, return placeholder content
-    const placeholderContent = `[GitHub Repository: ${repoUrl}]
-
-This is a placeholder for GitHub repository preprocessing. In a full implementation, this would:
-
-1. Clone the repository using GitHub API
-2. Parse README.md and other documentation files
-3. Extract code from .py, .js, .ts, .java, .cpp, etc. files
-4. Parse package.json, requirements.txt, setup.py, etc.
-5. Extract commit messages and history
-6. Identify key functions, classes, and modules
-7. Parse test files and examples
-
-Repository Structure:
-- README.md: Project description and setup instructions
-- src/: Source code files
-- tests/: Test files
-- docs/: Documentation
-- requirements.txt: Python dependencies
-- package.json: Node.js dependencies
-
-Key Files Found:
-- main.py: Main application entry point
-- utils.py: Utility functions
-- config.py: Configuration settings
-- tests/test_main.py: Unit tests
-
-Dependencies:
-- Python 3.8+
-- numpy
-- pandas
-- matplotlib
-- pytest
-
-Setup Instructions:
-1. Clone the repository
-2. Install dependencies: pip install -r requirements.txt
-3. Run tests: pytest
-4. Run application: python main.py
-`;
-
+    const owner = urlMatch[1];
+    const repo = urlMatch[2];
+    const branch = metadata?.branch || metadata?.defaultBranch || 'main';
+    const token = metadata?.token; // Note: token is stored as '***' in metadata, so we can't use it here
+    
+    console.log(`[GitHub Preprocessor] Fetching README for ${owner}/${repo} (branch: ${branch})`);
+    
+    // Try to fetch README.md (try common variations)
+    const readmeVariations = ['README.md', 'README.MD', 'readme.md', 'README.txt', 'README'];
+    let readmeContent = '';
+    let readmePath = '';
+    
+    for (const readmeFile of readmeVariations) {
+      try {
+        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${readmeFile}?ref=${branch}`;
+        const headers: Record<string, string> = {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'LabsOS-Experiment-Builder',
+        };
+        
+        // Note: We can't use token from metadata since it's stored as '***'
+        // For public repos, this should work without a token
+        
+        const response = await fetch(apiUrl, { headers });
+        
+        if (response.ok) {
+          const fileData = await response.json();
+          
+          // Decode base64 content
+          if (fileData.content && fileData.encoding === 'base64') {
+            readmeContent = Buffer.from(fileData.content, 'base64').toString('utf-8');
+            readmePath = readmeFile;
+            console.log(`[GitHub Preprocessor] Successfully fetched ${readmeFile}`);
+            break;
+          }
+        } else if (response.status === 404) {
+          // File doesn't exist, try next variation
+          continue;
+        } else {
+          console.warn(`[GitHub Preprocessor] Failed to fetch ${readmeFile}: ${response.status} ${response.statusText}`);
+        }
+      } catch (fetchError) {
+        console.warn(`[GitHub Preprocessor] Error fetching ${readmeFile}:`, fetchError);
+        continue;
+      }
+    }
+    
+    // If no README found, use fallback content
+    if (!readmeContent) {
+      console.warn(`[GitHub Preprocessor] No README file found in ${owner}/${repo}, using fallback`);
+      readmeContent = `# ${repo}\n\nRepository: ${repoUrl}\n\nNo README file found in this repository.`;
+    }
+    
     return {
-      text: placeholderContent,
-      code: placeholderContent,
+      text: readmeContent,
+      code: readmeContent,
       metadata: {
         ...metadata,
         repoUrl,
+        owner,
+        repo,
+        branch,
+        readmePath: readmePath || null,
         processedAt: new Date().toISOString(),
-        fileCount: 0, // Would be populated by actual processing
-        languageCount: 0, // Would be populated by actual processing
-        totalLines: 0, // Would be populated by actual processing
+        hasReadme: !!readmePath,
       },
     };
   } catch (error) {

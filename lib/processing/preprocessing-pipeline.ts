@@ -5,7 +5,8 @@ import { parseVideo, parseAudio } from './parsers/video-parser';
 import { parseText } from './parsers/text-parser';
 import { parseWord } from './parsers/word-parser';
 import { parsePresentation } from './parsers/presentation-parser';
-import type { StructuredDocument } from './parsers/pdf-parser';
+import { preprocessGitHub } from '../ingestion/preprocessors/github';
+import type { StructuredDocument, ContentBlock } from './parsers/pdf-parser';
 
 /**
  * Determine source type from MIME type
@@ -84,23 +85,76 @@ export async function preprocessFile(sourceId: string, userId: string) {
       // Step 1: Parse file with structure-aware parser
       console.log(`[PREPROCESSING] Step 1/2: Parsing ${source.source_type} file with structure preservation`);
       
-      if (!source.storage_path) {
-        throw new Error('Source storage path is missing');
-      }
-
       let structuredDoc: StructuredDocument;
 
-      // Determine actual file type - handle cloud storage provider types
-      let actualSourceType = source.source_type;
-      const cloudProviders = ['googledrive', 'onedrive', 'dropbox', 'sharepoint'];
-      
-      if (cloudProviders.includes(source.source_type) && source.mime_type) {
-        // If source_type is a provider, determine file type from MIME type
-        actualSourceType = getSourceTypeFromMimeType(source.mime_type);
-        console.log(`[PREPROCESSING] Detected cloud storage provider '${source.source_type}', using file type '${actualSourceType}' from MIME type '${source.mime_type}'`);
-      }
+      // Handle GitHub sources specially (they don't have a file in storage)
+      if (source.source_type === 'github') {
+        console.log(`[PREPROCESSING] Processing GitHub repository: ${source.source_name}`);
+        if (!source.source_url) {
+          throw new Error('GitHub source URL is missing');
+        }
+        
+        const preprocessed = await preprocessGitHub(source.source_url, source.metadata || {});
+        
+        // Convert preprocessed content to StructuredDocument format with proper ContentBlock[] structure
+        const readmeText = preprocessed.text || '';
+        
+        // Split README into lines and create ContentBlock array
+        const lines = readmeText.split('\n');
+        const contentBlocks: ContentBlock[] = lines
+          .filter(line => line.trim().length > 0) // Remove empty lines
+          .map((line, index) => ({
+            type: 'text' as const,
+            content: line,
+            pageNumber: 1,
+          }));
+        
+        // If no content, add at least one block
+        if (contentBlocks.length === 0) {
+          contentBlocks.push({
+            type: 'text',
+            content: readmeText || 'No content available',
+            pageNumber: 1,
+          });
+        }
+        
+        structuredDoc = {
+          type: 'text',
+          sourceId: sourceId,
+          fileName: source.source_name,
+          title: source.source_name,
+          sections: [
+            {
+              title: 'README',
+              level: 1,
+              content: contentBlocks,
+              pageRange: [1, 1],
+              sectionNumber: '1',
+            },
+          ],
+          metadata: {
+            sourceType: 'github',
+            totalPages: 1,
+            ...preprocessed.metadata,
+          },
+        };
+      } else {
+        // For file-based sources, require storage_path
+        if (!source.storage_path) {
+          throw new Error('Source storage path is missing');
+        }
 
-      switch (actualSourceType) {
+        // Determine actual file type - handle cloud storage provider types
+        let actualSourceType = source.source_type;
+        const cloudProviders = ['googledrive', 'onedrive', 'dropbox', 'sharepoint'];
+        
+        if (cloudProviders.includes(source.source_type) && source.mime_type) {
+          // If source_type is a provider, determine file type from MIME type
+          actualSourceType = getSourceTypeFromMimeType(source.mime_type);
+          console.log(`[PREPROCESSING] Detected cloud storage provider '${source.source_type}', using file type '${actualSourceType}' from MIME type '${source.mime_type}'`);
+        }
+
+        switch (actualSourceType) {
         case 'pdf':
           console.log(`[PREPROCESSING] Starting PDF parsing...`);
           try {
@@ -148,6 +202,7 @@ export async function preprocessFile(sourceId: string, userId: string) {
           break;
         default:
           throw new Error(`Unsupported source type: ${source.source_type} (resolved to: ${actualSourceType})`);
+        }
       }
 
       console.log(`[PREPROCESSING] Parsed document: ${structuredDoc.sections.length} sections`);

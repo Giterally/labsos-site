@@ -33,3 +33,4 @@ To re-enable agentic features:
 - `REMOVED_FEATURES.md` in project root for user-facing documentation
 - `lib/config.ts` for feature flag configuration
 
+

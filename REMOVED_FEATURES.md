@@ -38,3 +38,4 @@ When users request modifications (e.g., "create a new node"), the AI assistant w
 Example response:
 > "I can help you plan your data analysis step, but I cannot create nodes directly. To create a new node, click the '+' button in the tree editor next to the 'Analysis' block. Based on your current tree structure, I'd suggest adding this after the 'Data Collection Summary' node. Would you like me to suggest specific analysis methods?"
 
+

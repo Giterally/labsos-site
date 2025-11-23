@@ -1184,7 +1184,10 @@ export default function ImportPage() {
     const oversizedFiles = selectedFiles.filter(f => f.size > maxSize);
     if (oversizedFiles.length > 0) {
       const fileNames = oversizedFiles.map(f => f.name).join(', ');
-      toast.error(`${oversizedFiles.length === 1 ? 'File' : 'Files'} too large: ${fileNames}. Maximum file size is 25MB.`);
+      // Check if any oversized files are videos
+      const hasVideo = oversizedFiles.some(f => f.type.startsWith('video/'));
+      const videoNote = hasVideo ? ' Tip: If your video is too large, convert it to an audio file (MP3, WAV, etc.) for a significant decrease in file size.' : '';
+      toast.error(`${oversizedFiles.length === 1 ? 'File' : 'Files'} too large: ${fileNames}. Maximum file size is 25MB.${videoNote}`);
       return;
     }
 
@@ -1288,7 +1291,8 @@ export default function ImportPage() {
         body: JSON.stringify({
           repoUrl: githubUrl,
           // Note: projectId removed - files are user-scoped, shared across all projects
-          token: githubToken || undefined,
+          // Token removed - only public repos supported for now
+          token: undefined,
         }),
       });
 
@@ -2225,6 +2229,7 @@ export default function ImportPage() {
         <TabsList>
           <TabsTrigger value="upload">Upload Files</TabsTrigger>
           <TabsTrigger value="cloud">Cloud Storage</TabsTrigger>
+          <TabsTrigger value="github">GitHub</TabsTrigger>
           <TabsTrigger value="manage">Manage Files</TabsTrigger>
           <TabsTrigger value="proposals">Review Proposals</TabsTrigger>
         </TabsList>
@@ -2333,6 +2338,14 @@ export default function ImportPage() {
                   Supported formats: PDF, Excel (.xlsx, .xls), Word (.docx, .doc), PowerPoint (.pptx, .ppt), Text (.txt, .md), Video (.mp4, .avi, .mov), Audio (.mp3, .wav, .mpeg, .m4a, .aac)
                   <br />
                   Maximum file size: 25MB per file
+                  {selectedFiles.some(f => f.type.startsWith('video/')) && (
+                    <>
+                      <br />
+                      <span className="text-sm text-muted-foreground italic">
+                        Tip: If your video is too large, convert it to an audio file for a significant decrease in file size.
+                      </span>
+                    </>
+                  )}
                   <br />
                   You can select multiple files at once for batch upload
                   <br />
@@ -2350,12 +2363,22 @@ export default function ImportPage() {
             <CardHeader>
               <CardTitle>Import from GitHub</CardTitle>
               <CardDescription>
-                Connect a GitHub repository to extract code, documentation, and research artifacts
+                Import a public GitHub repository to extract the README file for experiment node generation
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>What gets extracted:</strong> Only the README.md file is currently extracted from the repository. 
+                  The README content will be used to generate experiment nodes.
+                  <br />
+                  <strong>Note:</strong> Only public repositories are supported at this time.
+                </AlertDescription>
+              </Alert>
+              
               <div className="space-y-2">
-                <Label htmlFor="github-url">Repository URL</Label>
+                <Label htmlFor="github-url">Repository URL (Public repositories only)</Label>
                 <Input
                   id="github-url"
                   type="url"
@@ -2363,19 +2386,8 @@ export default function ImportPage() {
                   value={githubUrl}
                   onChange={(e) => setGithubUrl(e.target.value)}
                 />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="github-token">GitHub Token (Optional)</Label>
-                <Input
-                  id="github-token"
-                  type="password"
-                  placeholder="ghp_xxxxxxxxxxxx"
-                  value={githubToken}
-                  onChange={(e) => setGithubToken(e.target.value)}
-                />
                 <p className="text-sm text-muted-foreground">
-                  Required for private repositories. Create a token with repo access.
+                  Enter the URL of a public GitHub repository. Private repositories are not currently supported.
                 </p>
               </div>
               

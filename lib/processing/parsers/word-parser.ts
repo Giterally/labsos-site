@@ -256,3 +256,4 @@ function extractSectionNumber(text: string): string | undefined {
   return match ? match[1].trim() : undefined;
 }
 
+
