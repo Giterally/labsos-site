@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, ChevronRightIcon, EllipsisVerticalIcon, LinkIcon } from "@heroicons/react/24/outline"
+import { ArrowLeftIcon, PlusIcon, PencilIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon, ChevronRightIcon, EllipsisVerticalIcon, LinkIcon, InformationCircleIcon } from "@heroicons/react/24/outline"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase-client"
 import { useUser } from "@/lib/user-context"
@@ -16,6 +16,7 @@ import AIChatSidebar from "@/components/AIChatSidebar"
 import { Sparkles, ChevronLeft } from "lucide-react"
 import { authFetch } from "@/lib/api-client"
 import { cn } from "@/lib/utils"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 // DEBUG: module load sanity check
 try {
@@ -109,6 +110,7 @@ export default function SimpleExperimentTreePage() {
   const [showHierarchyModal, setShowHierarchyModal] = useState(false)
   const [showReferenceModal, setShowReferenceModal] = useState(false)
   const [referenceModalNode, setReferenceModalNode] = useState<ExperimentNode | null>(null)
+  const [showHelpDialog, setShowHelpDialog] = useState(false)
   const [showAIChatSidebar, setShowAIChatSidebar] = useState(false)
   const [isMac, setIsMac] = useState(false)
 
@@ -1952,11 +1954,22 @@ export default function SimpleExperimentTreePage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Experiment Steps</CardTitle>
-                    <CardDescription>
-                      Click on a step to view details
-                    </CardDescription>
+                  <div className="flex items-center space-x-2">
+                    <div>
+                      <CardTitle>Experiment Steps</CardTitle>
+                      <CardDescription>
+                        Click on a step to view details
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      onClick={() => setShowHelpDialog(true)}
+                      title="Learn how to use experiment trees"
+                    >
+                      <InformationCircleIcon className="h-4 w-4 text-muted-foreground" />
+                    </Button>
                   </div>
                   {hasEditPermission && (
                     <Button
@@ -2020,36 +2033,33 @@ export default function SimpleExperimentTreePage() {
                           <div className={`px-4 py-3 transition-colors ${
                             isHighlighted ? 'bg-primary/10' : 'bg-muted/30'
                           }`}>
-                            <div className="flex items-center justify-between">
-                              <div 
-                                className="flex items-center space-x-3 cursor-pointer hover:bg-muted/50 transition-colors rounded px-2 py-1 -mx-2 -my-1 flex-1"
-                                onClick={() => toggleBlock(nodeType)}
-                              >
-                                <span className="text-lg flex-shrink-0">{getBlockIcon(nodeType)}</span>
-                                <span className="text-sm font-medium flex-1 min-w-0">{getBlockTitle(nodeType)}</span>
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 min-w-0">
+                                <div 
+                                  className="flex items-center space-x-3 cursor-pointer hover:bg-muted/50 transition-colors rounded px-2 py-1 -mx-2 -my-1"
+                                  onClick={() => toggleBlock(nodeType)}
+                                >
+                                  <span className="text-lg flex-shrink-0">{getBlockIcon(nodeType)}</span>
+                                  <span className="text-sm font-medium flex-1 min-w-0">{getBlockTitle(nodeType)}</span>
+                                  {isCollapsed ? (
+                                    <ChevronRightIcon className="h-4 w-4 text-muted-foreground ml-auto" />
+                                  ) : (
+                                    <ChevronDownIcon className="h-4 w-4 text-muted-foreground ml-auto" />
+                                  )}
+                                </div>
                                 {hasReferencedNodes && (
-                                  <div className="flex items-center space-x-1 flex-shrink-0">
-                                    <LinkIcon className="h-4 w-4 text-blue-500 dark:text-blue-400" />
-                                    {totalReferencesInBlock > 1 && (
-                                      <Badge variant="secondary" className="text-xs h-5 px-1.5">
-                                        {totalReferencesInBlock}
-                                      </Badge>
-                                    )}
+                                  <div className="flex items-center space-x-1 mt-1 ml-8">
+                                    <LinkIcon className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
+                                    <span className="text-xs text-muted-foreground">
+                                      {totalReferencesInBlock} Nested Tree{totalReferencesInBlock > 1 ? 's' : ''}
+                                    </span>
                                   </div>
-                                )}
-                                <Badge variant="secondary" className="text-xs">
-                                  {nodes.length}
-                                </Badge>
-                                {isCollapsed ? (
-                                  <ChevronRightIcon className="h-4 w-4 text-muted-foreground ml-auto" />
-                                ) : (
-                                  <ChevronDownIcon className="h-4 w-4 text-muted-foreground ml-auto" />
                                 )}
                               </div>
                               
                               {/* Block Management Menu */}
                               {hasEditPermission && (
-                                <div className="flex items-center space-x-1 ml-3">
+                                <div className="flex items-center space-x-1 ml-3 flex-shrink-0">
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -2062,6 +2072,9 @@ export default function SimpleExperimentTreePage() {
                                   >
                                     <PlusIcon className="h-3 w-3" />
                                   </Button>
+                                  <Badge variant="secondary" className="text-xs">
+                                    {nodes.length}
+                                  </Badge>
                                 
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
@@ -3282,6 +3295,88 @@ export default function SimpleExperimentTreePage() {
           }
         }}
       />
+
+      {/* Help Dialog */}
+      <Dialog open={showHelpDialog} onOpenChange={setShowHelpDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>How to Use Experiment Trees</DialogTitle>
+            <DialogDescription>
+              Everything you need to know about working with experiment trees
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-4">
+            {/* Blocks Section */}
+            <div>
+              <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                <span className="text-lg">📦</span>
+                Blocks
+              </h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                Blocks organize your experiment steps by type: Protocol, Data Creation, Analysis, Results, and Software.
+              </p>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                <li>Click the chevron icon to expand or collapse a block</li>
+                <li>Use the "+" button to add new nodes to a block</li>
+                <li>Drag blocks to reorder your workflow sequence</li>
+              </ul>
+            </div>
+
+            {/* Nodes Section */}
+            <div>
+              <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                <span className="text-lg">🔬</span>
+                Nodes
+              </h3>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                <li>Click any node to view its details, content, and attachments</li>
+                <li>Nodes can have dependencies linking to other nodes</li>
+                <li>Nodes can reference nested trees (reusable sub-workflows)</li>
+                <li>Drag nodes between blocks to change their type or reorder them</li>
+              </ul>
+            </div>
+
+            {/* Drag and Drop Section */}
+            <div>
+              <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                <span className="text-lg">🔄</span>
+                Drag and Drop
+              </h3>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                <li>Drag nodes to move them between blocks or reorder within a block</li>
+                <li>Drag blocks to change the workflow sequence</li>
+                <li>Visual feedback shows where items will be dropped</li>
+                <li>Changes save automatically when you drop</li>
+              </ul>
+            </div>
+
+            {/* Nested Trees Section */}
+            <div>
+              <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
+                <LinkIcon className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+                Nested Trees
+              </h3>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                <li>Blue link icon indicates nodes that reference nested trees</li>
+                <li>Nested trees are reusable sub-workflows you can use across experiments</li>
+                <li>Click the nested tree reference to navigate to the referenced tree</li>
+                <li>The count shows how many nested trees are in each block</li>
+              </ul>
+            </div>
+
+            {/* Quick Tips Section */}
+            <div className="border-t pt-3">
+              <h3 className="text-base font-semibold mb-2">💡 Quick Tips</h3>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+                <li>Use the search tool (⌘K / Ctrl+K) to quickly find nodes and content</li>
+                <li>Add attachments, links, and dependencies to enrich your nodes</li>
+                <li>Mark nodes as completed to track your progress</li>
+                <li>Use nested trees to create reusable workflow templates</li>
+              </ul>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
