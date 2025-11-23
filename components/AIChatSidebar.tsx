@@ -910,10 +910,32 @@ export default function AIChatSidebar({ treeId, projectId, open, onOpenChange, i
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {activeChat.messages.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Sparkles className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-foreground font-medium">Start a conversation</p>
-                    <p className="text-sm text-muted-foreground mt-1">Ask questions about this experiment tree</p>
+                  <div className="flex flex-col items-center justify-center py-12 px-4">
+                    <Sparkles className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-foreground font-medium mb-1">Start a conversation</p>
+                    <p className="text-sm text-muted-foreground mb-6">Ask questions about this experiment tree</p>
+                    
+                    {/* Suggested Questions */}
+                    <div className="w-full max-w-md space-y-2">
+                      <p className="text-xs font-medium text-foreground/70 mb-3 text-center">Suggested questions:</p>
+                      {[
+                        "Summarise this experiment tree",
+                        "What suggestions do you have for improving this tree?",
+                        "Explain the Protocol block",
+                        "What are the dependencies between nodes?",
+                        "What data collection methods are used?"
+                      ].map((suggestion, index) => (
+                        <Button
+                          key={index}
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-start text-left h-auto py-2.5 px-3 text-sm text-foreground hover:bg-muted hover:text-foreground border-border"
+                          onClick={() => sendMessage(suggestion)}
+                        >
+                          <span className="flex-1 text-left">{suggestion}</span>
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   (() => {
