@@ -7,8 +7,9 @@ export const WorkflowExtractionResultSchema = z.object({
   treeName: z.string().describe('The overall experiment name/title'),
   treeDescription: z.string().describe('Brief description of the experiment (1 sentence)'),
   blocks: z.array(z.object({
-    blockName: z.string().describe('Name of the workflow block (e.g., "Protocol", "Data Creation")'),
-    blockType: z.enum(['protocol', 'data_creation', 'analysis', 'results', 'software']),
+    blockName: z.string().describe('Descriptive name for this workflow phase (e.g., "Cell Culture Preparation Protocol", "Statistical Model Validation")'),
+    blockType: z.string().describe('General category: methodology, data, analysis, results, or tools'),
+    blockDescription: z.string().optional().describe('1-2 sentences explaining what this phase accomplishes'),
     position: z.number().describe('Ordering position of this block'),
     nodes: z.array(z.object({
       nodeId: z.string().describe('Temporary unique ID for this node'),
@@ -21,7 +22,7 @@ export const WorkflowExtractionResultSchema = z.object({
           hasTable: z.boolean().optional(),
         }).optional(),
       }),
-      nodeType: z.enum(['protocol', 'data_creation', 'analysis', 'results', 'software']),
+      nodeType: z.string().describe('Category matching blockType'),
       status: z.enum(['draft', 'complete']).describe('Inferred from source language'),
       parameters: z.record(z.any()).optional().describe('Extracted parameters from content'),
       dependencies: z.array(z.object({

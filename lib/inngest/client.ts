@@ -12,7 +12,7 @@ export interface Events {
   'ingestion/preprocess-file': {
     data: {
       sourceId: string;
-      projectId: string;
+      userId: string;
       sourceType: string;
       storagePath: string;
       metadata: Record<string, any>;
@@ -24,47 +24,6 @@ export interface Events {
       projectId: string;
       storagePath: string;
       metadata: Record<string, any>;
-    };
-  };
-  'ingestion/chunk-text': {
-    data: {
-      sourceId: string;
-      projectId: string;
-      text: string;
-      sourceType: string;
-      metadata: Record<string, any>;
-    };
-  };
-  'ingestion/generate-embeddings': {
-    data: {
-      projectId: string;
-      chunkIds: string[];
-    };
-  };
-  'ingestion/cluster-chunks': {
-    data: {
-      projectId: string;
-    };
-  };
-  'ingestion/synthesize-nodes': {
-    data: {
-      projectId: string;
-      clusterIds: string[];
-    };
-  };
-  'ingestion/validate-node': {
-    data: {
-      proposalId: string;
-      nodeJson: any;
-      chunkIds: string[];
-    };
-  };
-  'ingestion/complete-processing': {
-    data: {
-      sourceId: string;
-      projectId: string;
-      status: 'completed' | 'failed';
-      error?: string;
     };
   };
 }

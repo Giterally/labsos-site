@@ -464,52 +464,81 @@ export default function ProposalsPage() {
   const acceptedProposals = proposals.filter(p => p.status === 'accepted');
   const rejectedProposals = proposals.filter(p => p.status === 'rejected');
 
-  // Group proposed nodes by type (like the tree building logic)
+  // Group proposed nodes by blockName (descriptive) or fallback to node_type
   const nodeTypeGroups = proposedProposals.reduce((groups, proposal) => {
-    // Determine node type from tags or fallback to a default
-    let nodeType = 'uncategorized'; // default fallback
+    // Try to get descriptive block name first (new structure)
+    const blockName = proposal.node_json?.blockName || 
+                     proposal.node_json?.metadata?.proposedBlockName ||
+                     proposal.node_json?.metadata?.blockName;
     
-    // Try to get node_type from metadata first
-    if (proposal.node_json.metadata?.node_type) {
-      const rawType = proposal.node_json.metadata.node_type.toLowerCase();
-      // Map common variations to valid types
-      if (rawType === 'protocol' || rawType === 'method' || rawType === 'procedure') {
-        nodeType = 'protocol';
-      } else if (rawType === 'analysis' || rawType === 'processing' || rawType === 'computation') {
-        nodeType = 'analysis';
-      } else if (rawType === 'results' || rawType === 'result' || rawType === 'findings' || rawType === 'conclusions') {
-        nodeType = 'results';
-      } else if (rawType === 'data' || rawType === 'data_creation' || rawType === 'materials' || rawType === 'equipment') {
-        nodeType = 'data_creation';
-      } else {
-        // If none match, keep as uncategorized but log it
-        console.log(`[PROPOSALS] Unknown node_type: ${rawType} for proposal ${proposal.id}`);
+    let groupKey: string;
+    let displayName: string;
+    
+    if (blockName && !blockName.includes('Block')) {
+      // Use descriptive block name (e.g., "Financial Data Preparation & Feature Engineering")
+      groupKey = blockName;
+      displayName = blockName;
+    } else {
+      // Fallback to node_type grouping for old proposals
+      let nodeType = 'uncategorized'; // default fallback
+      
+      // Try to get node_type from metadata first
+      if (proposal.node_json.metadata?.node_type) {
+        const rawType = proposal.node_json.metadata.node_type.toLowerCase();
+        // Map common variations to valid types
+        if (rawType === 'protocol' || rawType === 'method' || rawType === 'procedure') {
+          nodeType = 'protocol';
+        } else if (rawType === 'analysis' || rawType === 'processing' || rawType === 'computation') {
+          nodeType = 'analysis';
+        } else if (rawType === 'results' || rawType === 'result' || rawType === 'findings' || rawType === 'conclusions') {
+          nodeType = 'results';
+        } else if (rawType === 'data' || rawType === 'data_creation' || rawType === 'materials' || rawType === 'equipment') {
+          nodeType = 'data_creation';
+        } else {
+          // If none match, keep as uncategorized but log it
+          console.log(`[PROPOSALS] Unknown node_type: ${rawType} for proposal ${proposal.id}`);
+        }
+      } 
+      // Fallback to checking tags if node_type is not available
+      else if (proposal.node_json.metadata?.tags && Array.isArray(proposal.node_json.metadata.tags)) {
+        const tags = proposal.node_json.metadata.tags;
+        if (tags.includes('protocol') || tags.includes('method') || tags.includes('procedure')) {
+          nodeType = 'protocol';
+        } else if (tags.includes('analysis') || tags.includes('processing') || tags.includes('computation')) {
+          nodeType = 'analysis';
+        } else if (tags.includes('results') || tags.includes('findings') || tags.includes('conclusions')) {
+          nodeType = 'results';
+        } else if (tags.includes('data') || tags.includes('materials') || tags.includes('equipment')) {
+          nodeType = 'data_creation';
+        }
       }
-    } 
-    // Fallback to checking tags if node_type is not available
-    else if (proposal.node_json.metadata?.tags && Array.isArray(proposal.node_json.metadata.tags)) {
-      const tags = proposal.node_json.metadata.tags;
-      if (tags.includes('protocol') || tags.includes('method') || tags.includes('procedure')) {
-        nodeType = 'protocol';
-      } else if (tags.includes('analysis') || tags.includes('processing') || tags.includes('computation')) {
-        nodeType = 'analysis';
-      } else if (tags.includes('results') || tags.includes('findings') || tags.includes('conclusions')) {
-        nodeType = 'results';
-      } else if (tags.includes('data') || tags.includes('materials') || tags.includes('equipment')) {
-        nodeType = 'data_creation';
-      }
+      
+      groupKey = nodeType;
+      const nameMap: Record<string, string> = {
+        'protocol': 'Protocol Block',
+        'analysis': 'Analysis Block',
+        'results': 'Results Block',
+        'data_creation': 'Data Creation Block',
+        'data': 'Data Block',
+        'software': 'Software Block',
+        'uncategorized': 'Uncategorized'
+      };
+      displayName = nameMap[nodeType] || nodeType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') + ' Block';
     }
     
-    if (!groups[nodeType]) {
-      groups[nodeType] = [];
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        displayName,
+        proposals: []
+      };
     }
-    groups[nodeType].push(proposal);
+    groups[groupKey].proposals.push(proposal);
     return groups;
-  }, {} as Record<string, typeof proposedProposals>);
+  }, {} as Record<string, { displayName: string; proposals: typeof proposedProposals }>);
 
   // Log grouping summary
-  console.log('[PROPOSALS] Grouped proposals:', Object.entries(nodeTypeGroups).map(([type, nodes]) => 
-    `${type}: ${nodes.length}`
+  console.log('[PROPOSALS] Grouped proposals:', Object.entries(nodeTypeGroups).map(([key, group]) => 
+    `${group.displayName}: ${group.proposals.length}`
   ).join(', '));
 
   if (loading) {
@@ -631,7 +660,7 @@ export default function ProposalsPage() {
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{Object.keys(nodeTypeGroups).length}</div>
             <p className="text-xs text-muted-foreground">
-              {Object.entries(nodeTypeGroups).map(([type, nodes]) => `${type} (${nodes.length})`).join(', ')}
+              {Object.entries(nodeTypeGroups).map(([key, group]) => `${group.displayName} (${group.proposals.length})`).join(', ')}
             </p>
           </CardContent>
         </Card>
@@ -724,15 +753,19 @@ export default function ProposalsPage() {
 
           {/* Block-Based Proposals View */}
           <div className="space-y-6">
-            {Object.entries(nodeTypeGroups).map(([nodeType, nodes]) => (
-              <Card key={nodeType} className={`${getBlockColor(nodeType)} border-2`}>
+            {Object.entries(nodeTypeGroups).map(([groupKey, group]) => {
+              const { displayName, proposals: nodes } = group;
+              // Extract node_type for color/icon (fallback to groupKey if it's a legacy type)
+              const nodeType = nodes[0]?.node_json?.metadata?.node_type || groupKey;
+              return (
+              <Card key={groupKey} className={`${getBlockColor(nodeType)} border-2`}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{getBlockIcon(nodeType)}</span>
                       <div>
-                        <CardTitle className="text-xl capitalize">
-                          {nodeType.replace('_', ' ')} Block
+                        <CardTitle className="text-xl">
+                          {displayName}
                         </CardTitle>
                         <CardDescription>
                           {nodes.length} {nodes.length === 1 ? 'node' : 'nodes'} • 
@@ -1007,7 +1040,8 @@ export default function ProposalsPage() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

@@ -3,10 +3,6 @@ import { inngest } from '../../../lib/inngest/client';
 import {
   preprocessFile,
   transcribeVideo,
-  processChunks,
-  generateEmbeddings,
-  clusterChunks,
-  synthesizeNodes,
 } from '../../../lib/inngest/functions';
 
 // Serve all Inngest functions
@@ -15,10 +11,6 @@ export const { GET, POST, PUT } = serve({
   functions: [
     preprocessFile,
     transcribeVideo,
-    processChunks,
-    generateEmbeddings,
-    clusterChunks,
-    synthesizeNodes,
   ],
   // Configure base URL for production - Inngest needs to know where to call back
   baseUrl: process.env.NEXT_PUBLIC_SITE_URL 

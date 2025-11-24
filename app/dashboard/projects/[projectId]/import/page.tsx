@@ -3194,20 +3194,53 @@ export default function ImportPage() {
                     </div>
                   )}
                   
-                  {/* Group proposals by block type */}
+                  {/* Group proposals by block name (descriptive) or fallback to node type */}
                   {(() => {
-                    // Group all proposals by node type (normalize to lowercase) - including nested trees
+                    // Group all proposals by blockName (if available) or fallback to node_type
                     const groupedProposals = proposals.reduce((acc, proposal) => {
-                      const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
-                      const blockType = rawType.toLowerCase();
-                      if (!acc[blockType]) {
-                        acc[blockType] = [];
+                      // Try to get descriptive block name from root level, then metadata, then fallback to node_type
+                      const blockName = proposal.node_json?.blockName || 
+                                       proposal.node_json?.metadata?.proposedBlockName ||
+                                       proposal.node_json?.metadata?.blockName;
+                      
+                      let groupKey: string;
+                      let displayName: string;
+                      
+                      if (blockName && !blockName.includes('Block')) {
+                        // Use descriptive block name (e.g., "Financial Data Preparation & Feature Engineering")
+                        groupKey = blockName;
+                        displayName = blockName;
+                      } else {
+                        // Fallback to node_type grouping for old proposals
+                        const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
+                        const blockType = rawType.toLowerCase();
+                        groupKey = blockType;
+                        
+                        // Format block names for display (legacy)
+                        const nameMap: Record<string, string> = {
+                          'protocol': 'Protocol Block',
+                          'analysis': 'Analysis Block',
+                          'results': 'Results Block',
+                          'data_creation': 'Data Creation Block',
+                          'data': 'Data Block',
+                          'software': 'Software Block',
+                          'instrument': 'Instrument Block',
+                          'uncategorized': 'Uncategorized'
+                        };
+                        displayName = nameMap[blockType] || blockType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') + ' Block';
                       }
-                      acc[blockType].push(proposal);
+                      
+                      if (!acc[groupKey]) {
+                        acc[groupKey] = {
+                          displayName,
+                          proposals: []
+                        };
+                      }
+                      acc[groupKey].proposals.push(proposal);
                       return acc;
-                    }, {} as Record<string, any[]>);
+                    }, {} as Record<string, { displayName: string; proposals: any[] }>);
 
-                    // Format block names for display
+                    // Format block names for display (for legacy node_type grouping)
                     const formatBlockName = (type: string, partNum?: number, totalParts?: number) => {
                       const nameMap: Record<string, string> = {
                         'protocol': 'Protocol',
@@ -3228,20 +3261,21 @@ export default function ImportPage() {
 
                     // Split large blocks into smaller sub-blocks (max 15 nodes each)
                     const MAX_NODES_PER_BLOCK = 15;
-                    const splitLargeBlocks = (grouped: Record<string, any[]>) => {
-                      const result: Array<{ key: string; type: string; nodes: any[]; part?: number; totalParts?: number }> = [];
+                    const splitLargeBlocks = (grouped: Record<string, { displayName: string; proposals: any[] }>) => {
+                      const result: Array<{ key: string; displayName: string; nodes: any[]; part?: number; totalParts?: number }> = [];
                       
-                      for (const [type, nodes] of Object.entries(grouped)) {
+                      for (const [groupKey, groupData] of Object.entries(grouped)) {
+                        const { displayName, proposals: nodes } = groupData;
                         if (nodes.length <= MAX_NODES_PER_BLOCK) {
-                          result.push({ key: type, type, nodes });
+                          result.push({ key: groupKey, displayName, nodes });
                         } else {
                           const numParts = Math.ceil(nodes.length / MAX_NODES_PER_BLOCK);
                           for (let i = 0; i < numParts; i++) {
                             const start = i * MAX_NODES_PER_BLOCK;
                             const end = Math.min((i + 1) * MAX_NODES_PER_BLOCK, nodes.length);
                             result.push({
-                              key: `${type}_part_${i + 1}`,
-                              type,
+                              key: `${groupKey}_part_${i + 1}`,
+                              displayName: `${displayName} - Part ${i + 1}`,
                               nodes: nodes.slice(start, end),
                               part: i + 1,
                               totalParts: numParts
@@ -3252,21 +3286,24 @@ export default function ImportPage() {
                       return result;
                     };
 
-                    // Workflow-based ordering (put uncategorized last)
-                    const workflowOrder = ['protocol', 'data_creation', 'data', 'analysis', 'results', 'software', 'instrument'];
-                    const allBlockTypes = Object.keys(groupedProposals);
-                    const orderedTypes = [
-                      ...workflowOrder.filter(type => allBlockTypes.includes(type)),
-                      ...allBlockTypes.filter(type => !workflowOrder.includes(type))
-                    ];
-                    
-                    // Create ordered grouped object
-                    const orderedGrouped: Record<string, any[]> = {};
-                    orderedTypes.forEach(type => {
-                      orderedGrouped[type] = groupedProposals[type];
+                    // Sort blocks: descriptive names first (by position if available), then legacy node_type blocks
+                    const blocksToRender = splitLargeBlocks(groupedProposals).sort((a, b) => {
+                      // Get position from first proposal in each block
+                      const aPos = a.nodes[0]?.node_json?.position ?? a.nodes[0]?.node_json?.metadata?.blockPosition ?? 999;
+                      const bPos = b.nodes[0]?.node_json?.position ?? b.nodes[0]?.node_json?.metadata?.blockPosition ?? 999;
+                      
+                      // If both have positions, sort by position
+                      if (aPos !== 999 && bPos !== 999) {
+                        return aPos - bPos;
+                      }
+                      
+                      // If only one has position, prioritize it
+                      if (aPos !== 999) return -1;
+                      if (bPos !== 999) return 1;
+                      
+                      // Otherwise maintain original order
+                      return 0;
                     });
-                    
-                    const blocksToRender = splitLargeBlocks(orderedGrouped);
 
                     return (
                       <div className="space-y-6">
@@ -3299,7 +3336,7 @@ export default function ImportPage() {
                                   {blockIndex + 1}
                                 </div>
                                 <h3 className="text-lg font-semibold flex-1 flex items-center gap-2">
-                                  {formatBlockName(block.type, block.part, block.totalParts)} Block
+                                  {block.displayName || formatBlockName(block.type || 'uncategorized', block.part, block.totalParts)}
                                   {/* Nested Tree Links next to Block Name - Non-clickable indicator */}
                                   {nestedTreeProposalsInBlock.length > 0 && (
                                     <div className="flex items-center gap-1">

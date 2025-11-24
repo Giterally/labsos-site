@@ -15,154 +15,108 @@ import { PermissionService } from '@/lib/permission-service';
  * Valid database types: 'protocol', 'data_creation', 'analysis', 'results'
  */
 function mapToValidNodeType(nodeType: string | undefined): string {
-  try {
-    console.log(`[MAP_NODE_TYPE] Input: "${nodeType}"`);
-    
-    if (!nodeType) {
-      console.log(`[MAP_NODE_TYPE] No nodeType provided, returning 'protocol'`);
-      return 'protocol';
-    }
-    
-    // Normalize to lowercase for comparison
-    const normalized = nodeType.toLowerCase().trim();
-    console.log(`[MAP_NODE_TYPE] Normalized: "${normalized}"`);
-    
-    // Valid types that match database constraint
-    const validTypes = ['protocol', 'data_creation', 'analysis', 'results', 'software'];
-    
-    // If already valid, return as-is (lowercase)
-    if (validTypes.includes(normalized)) {
-      console.log(`[MAP_NODE_TYPE] Already valid, returning: "${normalized}"`);
-      return normalized;
-    }
-    
-    // Map common AI-generated variations and synonyms
-    console.log(`[MAP_NODE_TYPE] Checking switch cases for: "${normalized}"`);
-    switch (normalized) {
-      // Software/setup/configuration -> protocol (procedural steps)
-      case 'software':
-      case 'experiment':
-      case 'setup':
-      case 'configuration':
-      case 'equipment':
-      case 'instrument':
-      case 'calibration':
-        console.log(`[MAP_NODE_TYPE] Mapped "${normalized}" -> "protocol"`);
-        return 'protocol';
-      
-      // Data-related variations -> data_creation
-      case 'data':
-      case 'data_collection':
-      case 'data_generation':
-      case 'data_acquisition':
-      case 'sequencing':
-      case 'measurement':
-        console.log(`[MAP_NODE_TYPE] Mapped "${normalized}" -> "data_creation"`);
-        return 'data_creation';
-      
-      // Analysis variations -> analysis
-      case 'data_analysis':
-      case 'statistical_analysis':
-      case 'computational_analysis':
-      case 'bioinformatics':
-      case 'processing':
-      case 'post_processing':
-        console.log(`[MAP_NODE_TYPE] Mapped "${normalized}" -> "analysis"`);
-        return 'analysis';
-      
-      // Results variations -> results
-      case 'result':
-      case 'findings':
-      case 'outcomes':
-      case 'output':
-      case 'handover':
-        console.log(`[MAP_NODE_TYPE] Mapped "${normalized}" -> "results"`);
-        return 'results';
-      
-      // Default fallback
-      default:
-        console.warn(`[MAP_NODE_TYPE] Unknown type "${nodeType}", defaulting to 'protocol'`);
-        return 'protocol';
-    }
-  } catch (error: any) {
-    console.error(`[MAP_NODE_TYPE] ERROR in function:`, error.message);
-    console.error(`[MAP_NODE_TYPE] Falling back to 'protocol' due to error`);
-    return 'protocol';
+  if (!nodeType) return 'methodology';
+  
+  const normalized = nodeType.toLowerCase().trim();
+  
+  // Valid categories for backward compatibility
+  const validTypes = ['protocol', 'data_creation', 'analysis', 'results', 'software', 
+                      'methodology', 'data', 'tools'];
+  
+  if (validTypes.includes(normalized)) {
+    return normalized;
   }
+  
+  // Map legacy types
+  const typeMap: Record<string, string> = {
+    'experiment': 'methodology',
+    'setup': 'methodology',
+    'configuration': 'methodology',
+    'collection': 'data',
+    'processing': 'data',
+    'computation': 'analysis',
+    'evaluation': 'results',
+    'validation': 'results'
+  };
+  
+  return typeMap[normalized] || 'methodology';
 }
 
-// Build tree blocks directly from proposals (preserving structure)
+// Build tree blocks from AI-proposed structure (dynamic block names)
 async function createBlocksFromProposals(proposals: any[], experimentTreeId: string) {
-  console.log('[BLOCK ORGANIZATION] Creating blocks directly from proposals to preserve structure');
+  console.log('[BLOCK ORGANIZATION] Creating blocks from AI-proposed structure');
   
-  // Group proposals by node_type to create logical blocks
-  const blocksByType = new Map<string, any[]>();
+  // Extract block structure preserving order
+  const blockOrder: string[] = [];
+  const blockInfo = new Map<string, {
+    name: string;
+    description: string;
+    type: string;
+    position: number;
+    proposals: any[];
+  }>();
   
-  proposals.forEach(proposal => {
-    const nodeType = proposal.node_json?.metadata?.node_type || 'general';
-    if (!blocksByType.has(nodeType)) {
-      blocksByType.set(nodeType, []);
+  proposals.forEach((proposal, index) => {
+    // Try new structure first (block info at root level), fall back to metadata, then legacy
+    const blockName = proposal.node_json?.blockName || 
+                     proposal.node_json?.metadata?.proposedBlockName ||
+                     proposal.node_json?.metadata?.blockName ||
+                     getBlockDisplayName(proposal.node_json?.metadata?.node_type || 'protocol');
+    const blockDesc = proposal.node_json?.blockDescription || 
+                     proposal.node_json?.metadata?.blockDescription ||
+                     `Block containing ${proposal.node_json?.metadata?.node_type || 'general'} nodes`;
+    const blockType = proposal.node_json?.blockType || 
+                     proposal.node_json?.metadata?.proposedBlockType ||
+                     proposal.node_json?.metadata?.blockType ||
+                     proposal.node_json?.metadata?.node_type || 
+                     'methodology';
+    const blockPos = proposal.node_json?.position ?? 
+                     proposal.node_json?.metadata?.blockPosition ??
+                     (index + 1);
+    
+    if (!blockInfo.has(blockName)) {
+      blockOrder.push(blockName);
+      blockInfo.set(blockName, {
+        name: blockName,
+        description: blockDesc,
+        type: blockType,
+        position: blockPos,
+        proposals: []
+      });
     }
-    blocksByType.get(nodeType)!.push(proposal);
+    
+    blockInfo.get(blockName)!.proposals.push(proposal);
   });
   
-  console.log('[BLOCK ORGANIZATION] Grouped proposals by type:', Array.from(blocksByType.keys()));
+  console.log('[BLOCK ORGANIZATION] Found blocks:', blockOrder);
   
-  // Create block inserts with logical ordering
-  const blockTypeOrder = ['protocol', 'data_creation', 'analysis', 'results', 'software'];
+  // Create blocks in order
   const blockInserts = [];
   const nodeBlockMapping = new Map<string, string>();
   
-  let blockPosition = 1;
+  // Sort by position
+  const sortedBlocks = blockOrder
+    .map(name => ({ name, ...blockInfo.get(name)! }))
+    .sort((a, b) => a.position - b.position);
   
-  // Create blocks in logical order
-  for (const nodeType of blockTypeOrder) {
-    if (blocksByType.has(nodeType)) {
-      const blockName = getBlockDisplayName(nodeType);
-      const blockId = randomUUID();
-      
-      blockInserts.push({
-        id: blockId,
-        tree_id: experimentTreeId,
-        name: blockName,
-        position: blockPosition,
-        description: `Block containing ${nodeType} nodes`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-      
-      // Map all proposals of this type to this block
-      blocksByType.get(nodeType)!.forEach(proposal => {
-        nodeBlockMapping.set(proposal.id, blockId);
-      });
-      
-      blockPosition++;
-    }
-  }
-  
-  // Handle any remaining types not in the ordered list
-  for (const [nodeType, typeProposals] of blocksByType) {
-    if (!blockTypeOrder.includes(nodeType)) {
-      const blockName = getBlockDisplayName(nodeType);
-      const blockId = randomUUID();
-      
-      blockInserts.push({
-        id: blockId,
-        tree_id: experimentTreeId,
-        name: blockName,
-        position: blockPosition,
-        description: `Block containing ${nodeType} nodes`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-      
-      typeProposals.forEach(proposal => {
-        nodeBlockMapping.set(proposal.id, blockId);
-      });
-      
-      blockPosition++;
-    }
-  }
+  sortedBlocks.forEach((block, index) => {
+    const blockId = randomUUID();
+    
+    blockInserts.push({
+      id: blockId,
+      tree_id: experimentTreeId,
+      name: block.name,
+      position: index + 1,
+      description: block.description,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+    
+    // Map proposals to this block
+    block.proposals.forEach(proposal => {
+      nodeBlockMapping.set(proposal.id, blockId);
+    });
+  });
   
   console.log('[BLOCK ORGANIZATION] Created', blockInserts.length, 'blocks');
   console.log('[BLOCK ORGANIZATION] Node-block mapping:', nodeBlockMapping.size, 'mappings');
@@ -777,12 +731,11 @@ async function buildTreeInBackground(
             console.log(`[NODE_TYPE] Node "${rawTitle}" in block "${blockName || 'unknown'}" → type: ${inferredNodeType}`);
             
             // INLINE VALIDATION: Double-check the inferred type is valid
-            const validTypes = ['protocol', 'data_creation', 'analysis', 'results'];
+            const validTypes = ['protocol', 'data_creation', 'analysis', 'results', 'software'];
             let finalNodeType = inferredNodeType;
             if (!validTypes.includes(inferredNodeType)) {
-              console.error(`[BUILD_TREE] [${nodeId}] CRITICAL: inferredNodeType returned invalid type "${inferredNodeType}"!`);
-              console.error(`[BUILD_TREE] [${nodeId}] Force-correcting to 'protocol'`);
-              finalNodeType = 'protocol'; // Force override
+              console.warn(`[BUILD_TREE] [${nodeId}] WARNING: inferredNodeType "${inferredNodeType}" not in standard types, using as-is`);
+              // Allow custom types for dynamic blocks - no force correction
             }
             
             return {
@@ -830,34 +783,11 @@ async function buildTreeInBackground(
 
       console.log(`[BUILD_TREE] All batches complete. Created ${treeNodes.length} tree nodes`);
 
-      // VALIDATE node types before insertion (AGGRESSIVE MODE)
+      // Log node types for debugging (no force correction - allow dynamic types)
       console.log(`[BUILD_TREE] ========================================`);
       console.log(`[BUILD_TREE] FINAL VALIDATION BEFORE DATABASE INSERT`);
       console.log(`[BUILD_TREE] ========================================`);
       console.log(`[BUILD_TREE] Total nodes to insert: ${treeNodes.length}`);
-
-      const validNodeTypes = ['protocol', 'data_creation', 'analysis', 'results'];
-      let correctionsMade = 0;
-
-      // Check EVERY node and force-correct ANY invalid type
-      for (let i = 0; i < treeNodes.length; i++) {
-        const node = treeNodes[i];
-        const isValid = validNodeTypes.includes(node.node_type);
-        
-        if (!isValid) {
-          correctionsMade++;
-          const originalType = node.node_type;
-          treeNodes[i].node_type = 'protocol'; // Force correction
-          
-          console.error(`[BUILD_TREE] [${i}] CORRECTED: "${originalType}" -> "protocol" (node: "${node.name.substring(0, 40)}")`);
-        }
-      }
-
-      if (correctionsMade > 0) {
-        console.warn(`[BUILD_TREE] Made ${correctionsMade} corrections out of ${treeNodes.length} nodes`);
-      } else {
-        console.log(`[BUILD_TREE] ✓ All ${treeNodes.length} nodes have valid types`);
-      }
 
       // Log first 5 node types as sample
       console.log(`[BUILD_TREE] Sample node types (first 5):`, treeNodes.slice(0, 5).map((n, i) => ({
@@ -868,11 +798,8 @@ async function buildTreeInBackground(
 
       console.log(`[BUILD_TREE] ========================================`);
 
-    // FINAL TYPE ASSERTION: Ensure TypeScript knows these are valid
-    const treeNodesToInsert = treeNodes.map(node => ({
-      ...node,
-      node_type: node.node_type as 'protocol' | 'data_creation' | 'analysis' | 'results'
-    }));
+    // Prepare nodes for insertion (no type assertion needed - database will validate)
+    const treeNodesToInsert = treeNodes;
 
     console.log(`[BUILD_TREE] Inserting ${treeNodesToInsert.length} type-safe nodes into database...`);
     const insertStartTime = Date.now();

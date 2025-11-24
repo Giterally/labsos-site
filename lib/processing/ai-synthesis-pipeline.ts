@@ -795,14 +795,24 @@ export async function generateProposals(userId: string, projectId: string, selec
           const attempt = extractionAttempts.find(a => a.documentIndex === batchResult.index);
           const documentFileName = attempt?.fileName || 'unknown';
 
-          // Flatten nodes from all blocks
+          // Flatten nodes from all blocks, preserving block-level information
           for (const block of extractionResult.blocks) {
+            // Capture block-level info to pass to each node
+            const blockInfo = {
+              blockName: block.blockName,
+              blockType: block.blockType,
+              blockDescription: block.blockDescription,
+              position: block.position
+            };
+            
             for (const node of block.nodes) {
               // Add block context and extraction metrics to node
               node.metadata = {
                 ...node.metadata,
-                blockName: block.blockName,
-                blockType: block.blockType,
+                blockName: blockInfo.blockName,
+                blockType: blockInfo.blockType,
+                blockDescription: blockInfo.blockDescription,
+                blockPosition: blockInfo.position,
                 extractionMetrics: metrics, // Store metrics from document-level calculation
                 documentSource: documentFileName,
                 complexity: complexity?.extractionStrategy
@@ -873,14 +883,23 @@ export async function generateProposals(userId: string, projectId: string, selec
         extractionResults.length = 0;
         extractionResults.push(mergedWorkflow);
         
-        // Rebuild allProposedNodes from merged workflow
+        // Rebuild allProposedNodes from merged workflow, preserving block info
         allProposedNodes.length = 0;
         for (const block of mergedWorkflow.blocks) {
+          const blockInfo = {
+            blockName: block.blockName,
+            blockType: block.blockType,
+            blockDescription: block.blockDescription,
+            position: block.position
+          };
+          
           for (const node of block.nodes) {
             node.metadata = {
               ...node.metadata,
-              blockName: block.blockName,
-              blockType: block.blockType,
+              blockName: blockInfo.blockName,
+              blockType: blockInfo.blockType,
+              blockDescription: blockInfo.blockDescription,
+              blockPosition: blockInfo.position,
             };
             allProposedNodes.push(node);
           }
@@ -981,10 +1000,23 @@ export async function generateProposals(userId: string, projectId: string, selec
         // Generate a proper AI-generated 1-sentence summary
         const nodeSummary = await generateNodeSummary(node.content.text, node.title);
         
+        // Extract block-level info from node metadata (set during flattening)
+        const blockInfo = {
+          blockName: node.metadata?.blockName,
+          blockType: node.metadata?.blockType,
+          blockDescription: node.metadata?.blockDescription,
+          position: node.metadata?.blockPosition
+        };
+        
         const synthesizedNode = {
           node_id: node.nodeId || crypto.randomUUID(), // Add required node_id field
           title: node.title,
           short_summary: nodeSummary,
+          // Store block info at ROOT LEVEL for easy access in tree building
+          blockName: blockInfo.blockName,
+          blockType: blockInfo.blockType,
+          blockDescription: blockInfo.blockDescription,
+          position: blockInfo.position,
           content: {
             text: node.content.text,
             structured_steps: node.content.preservedFormatting?.isNumberedList && node.content.preservedFormatting.listItems
@@ -1001,8 +1033,9 @@ export async function generateProposals(userId: string, projectId: string, selec
             status: node.status,
             parameters: node.parameters || {},
             estimated_time_minutes: node.metadata?.estimatedTimeMinutes,
-            blockName: node.metadata?.blockName,
-            blockType: node.metadata?.blockType,
+            // Keep a copy in metadata for backward compatibility
+            proposedBlockName: blockInfo.blockName,
+            proposedBlockType: blockInfo.blockType,
             isNestedTree: node.isNestedTree,
             extractionMetrics: node.metadata?.extractionMetrics, // Store extraction quality metrics
             complexity: node.metadata?.complexity,

@@ -231,9 +231,276 @@ Total: ~7 nodes
 - Each node can contain multiple paragraphs if needed
 - Include all relevant details from the source
 - Don't summarize - preserve complete information
+
+**Block Naming Guidelines:**
+
+- Analyze the document to identify 3-7 major thematic phases
+
+- Create descriptive block names that reflect actual content, not generic categories
+
+- **CRITICAL: Block names MUST be specific and domain-relevant. Use terminology from the source document.**
+
+**BAD examples (too generic - DO NOT USE THESE):**
+- "Data Block"
+- "Methodology Block"  
+- "Analysis Block"
+- "Results Block"
+- "Protocol Block"
+- "Data Creation Block"
+
+**GOOD examples (specific and descriptive - USE THESE AS TEMPLATES):**
+- "Financial Data Preparation & Feature Engineering"
+- "Kalman Filter Model Implementation"
+- "Performance Evaluation & Comparison"
+- "Model Performance & ROI Analysis"
+- "Cell Culture Preparation & Quality Control"
+- "RNA Extraction & Purification Protocol"
+- "Sequencing Data Generation & Quality Assessment"
+- "Bioinformatics Analysis Pipeline & Statistical Validation"
+
+**Domain-Specific Examples:**
+
+* **Biology/Wet Lab:**
+  - "Cell Culture Preparation Protocol"
+  - "RNA Extraction & Purification"
+  - "Sequencing Data Generation"
+  - "Differential Expression Analysis & Statistical Validation"
+
+* **Machine Learning/AI:**
+  - "Dataset Curation & Preprocessing"
+  - "Model Architecture Design & Configuration"
+  - "Training & Hyperparameter Optimization"
+  - "Benchmark Evaluation & Ablation Studies"
+
+* **Finance/Economics:**
+  - "Financial Data Preparation & Feature Engineering"
+  - "Kalman Filter Implementation & State Space Modeling"
+  - "Performance Backtesting & Risk Analysis"
+  - "ROI Analysis & Portfolio Optimization"
+
+**Block Naming Strategy:**
+
+1. **Read the document title and abstract first** - Identify the main topic, methods, and domain terminology
+
+2. **Extract key terms** from the document:
+   - Method names (e.g., "Kalman Filter", "ANOVA", "PCR")
+   - Data types (e.g., "Bond Yield", "RNA-seq", "Financial Time Series")
+   - Analysis types (e.g., "Sentiment Analysis", "Differential Expression", "Performance Evaluation")
+   - Outcome metrics (e.g., "ROI", "Accuracy", "Gene Expression Levels")
+
+3. **Incorporate these terms into block names:**
+   - For data sections: "[Specific Data Type] Collection & Preprocessing"
+   - For method sections: "[Specific Method Name] Implementation"
+   - For analysis sections: "[Specific Analysis Type] & Comparison"
+   - For results sections: "[Specific Outcome Metric] Performance Analysis"
+
+4. **Use domain terminology** - If the document mentions "Kalman Filter", use that in the block name. If it mentions "Bond Yield Prediction", use that terminology.
+
+**Block Organization:**
+
+- Group related nodes into coherent phases
+
+- Each block should represent a distinct stage of the workflow
+
+- Blocks should flow logically from preparation → execution → evaluation
+
+- Block names should immediately convey what that phase accomplishes
 `;
         exampleAdjustment = `
-EXAMPLE OUTPUT STRUCTURE (for simple documents):
+EXAMPLE OUTPUT STRUCTURE (for a machine learning paper):
+{
+  "blocks": [
+    {
+      "blockName": "Dataset Curation & Preprocessing",
+      "blockType": "data",
+      "blockDescription": "Data collection, cleaning, and feature engineering steps",
+      "nodes": [
+        {
+          "nodeId": "node-1",
+          "title": "Data Collection Protocol",
+          "dependencies": []
+        }
+        // 2 nodes total
+      ]
+    },
+    {
+      "blockName": "Model Architecture Design",
+      "blockType": "methodology",
+      "blockDescription": "Neural network architecture specification and configuration",
+      "nodes": [
+        {
+          "nodeId": "node-2",
+          "title": "Architecture Specification",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Data Collection Protocol",
+              "dependencyType": "requires",
+              "extractedPhrase": "after data collection",
+              "confidence": 0.9
+            }
+          ]
+        }
+        // 2 nodes total
+      ]
+    },
+    {
+      "blockName": "Training & Optimization",
+      "blockType": "methodology",
+      "blockDescription": "Model training procedures and hyperparameter tuning",
+      "nodes": [
+        {
+          "nodeId": "node-3",
+          "title": "Training Loop Implementation",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Architecture Specification",
+              "dependencyType": "uses_output",
+              "extractedPhrase": "using the specified architecture",
+              "confidence": 0.9
+            }
+          ]
+        }
+        // 2 nodes total
+      ]
+    },
+    {
+      "blockName": "Benchmark Evaluation",
+      "blockType": "results",
+      "blockDescription": "Performance metrics and comparison with baseline models",
+      "nodes": [
+        {
+          "nodeId": "node-4",
+          "title": "Performance Metrics Calculation",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Training Loop Implementation",
+              "dependencyType": "uses_output",
+              "extractedPhrase": "based on trained model",
+              "confidence": 0.95
+            }
+          ]
+        }
+        // 2 nodes total
+      ]
+    }
+  ]
+}
+
+EXAMPLE OUTPUT STRUCTURE (for a biology protocol):
+{
+  "blocks": [
+    {
+      "blockName": "Sample Preparation & Quality Control",
+      "blockType": "methodology",
+      "blockDescription": "Cell culture maintenance and sample collection procedures",
+      "nodes": [
+        {
+          "nodeId": "node-1",
+          "title": "Cell Culture Maintenance",
+          "dependencies": []
+        }
+        // 2 nodes total
+      ]
+    },
+    {
+      "blockName": "RNA Extraction Protocol",
+      "blockType": "methodology",
+      "blockDescription": "RNA isolation and purification procedures",
+      "nodes": [
+        {
+          "nodeId": "node-2",
+          "title": "Cell Lysis & RNA Isolation",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Cell Culture Maintenance",
+              "dependencyType": "requires",
+              "extractedPhrase": "after cell culture",
+              "confidence": 0.9
+            }
+          ]
+        }
+        // 3 nodes total
+      ]
+    },
+    {
+      "blockName": "Sequencing & Data Generation",
+      "blockType": "data",
+      "blockDescription": "Library preparation and sequencing run procedures",
+      "nodes": [
+        {
+          "nodeId": "node-3",
+          "title": "Library Preparation",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Cell Lysis & RNA Isolation",
+              "dependencyType": "uses_output",
+              "extractedPhrase": "using extracted RNA",
+              "confidence": 0.9
+            }
+          ]
+        }
+        // 2 nodes total
+      ]
+    },
+    {
+      "blockName": "Bioinformatics Analysis Pipeline",
+      "blockType": "analysis",
+      "blockDescription": "Read alignment, quality filtering, and differential expression analysis",
+      "nodes": [
+        {
+          "nodeId": "node-4",
+          "title": "Read Alignment & Quality Control",
+          "dependencies": [
+            {
+              "referencedNodeTitle": "Library Preparation",
+              "dependencyType": "uses_output",
+              "extractedPhrase": "using sequencing data",
+              "confidence": 0.95
+            }
+          ]
+        }
+        // 2 nodes total
+      ]
+    }
+  ]
+}
+
+REMEMBER: Dependencies must be objects with referencedNodeTitle, dependencyType, extractedPhrase, and optionally confidence.`;
+        break;
+
+      case 'moderate':
+        extractionIntensityGuidance = `
+## EXTRACTION INTENSITY: MODERATE DOCUMENT
+
+This document should yield approximately 15-30 nodes (target: ${complexity.estimatedNodeCount} nodes).
+
+**Your task:**
+- Extract ALL distinct experimental procedures (not just main ones)
+- Create separate nodes for each protocol variation
+- Create nodes for ALL data collection methods
+- Create nodes for ALL analysis techniques
+- Create nodes for ALL major results with their figures/tables
+
+**Example structure:**
+- Protocol Block: 5-8 nodes (each distinct procedure)
+- Data Creation Block: 3-5 nodes (each data source/collection method)
+- Analysis Block: 4-7 nodes (each statistical test/analysis)
+- Results Block: 8-12 nodes (each finding/figure/comparison)
+Total: 20-32 nodes
+
+**DO NOT SKIP:**
+- Validation protocols
+- Control experiments
+- Preliminary results
+- Supporting analyses
+
+**Content detail:**
+- Nodes can be comprehensive with multiple paragraphs
+- Include all methodological details, not just summaries
+- Preserve complete context from source document
+`;
+        exampleAdjustment = `
+EXAMPLE OUTPUT STRUCTURE (for moderate documents):
 {
   "blocks": [
     {
@@ -1152,11 +1419,41 @@ After your initial extraction, perform a SECOND PASS review:
 
 `;
 
+  // Extract key terms from document title and first sections for context
+  const documentTitle = structuredDoc.title || structuredDoc.fileName || 'Untitled Document';
+  const firstSectionText = structuredDoc.sections[0]?.content
+    ?.map(c => c.type === 'text' ? c.content : '')
+    .join(' ')
+    .substring(0, 1000) || '';
+  
+  const keyTermsGuidance = `
+**DOCUMENT CONTEXT FOR BLOCK NAMING:**
+
+Document Title: "${documentTitle}"
+
+First Section Preview: "${firstSectionText.substring(0, 500)}..."
+
+**INSTRUCTIONS:**
+1. Read the document title and first section to identify the main topic and domain
+2. Extract key terminology (method names, data types, analysis techniques)
+3. Use this terminology when creating block names
+4. Make block names specific to THIS document's content, not generic categories
+
+**For this document about "${documentTitle}", appropriate blocks might be:**
+- Look for specific methods mentioned (e.g., "Kalman Filter", "ANOVA", "PCR")
+- Look for specific data types (e.g., "Bond Yield", "RNA-seq", "Financial Time Series")
+- Look for specific analyses (e.g., "Sentiment Analysis", "Differential Expression")
+- Incorporate these terms into descriptive block names
+
+`;
+
   return `
 PROJECT CONTEXT:
 ${projectContext ?
     `Project: ${projectContext.name || 'Unnamed Project'}${projectContext.description ? `\nDescription: ${projectContext.description}` : ''}`
     : 'No additional context provided'}
+
+${keyTermsGuidance}
 
 SOURCE DOCUMENT:
 File: ${structuredDoc.fileName}
@@ -1186,8 +1483,9 @@ You MUST return a JSON object with these exact top-level fields:
   "treeDescription": "string - One sentence describing what this experiment does",
   "blocks": [
     {
-      "blockName": "string - Name of this workflow phase (e.g., 'Protocol', 'Data Collection')",
-      "blockType": "string - Type: 'protocol', 'data_creation', 'analysis', 'results', or 'software'",
+      "blockName": "string - Descriptive name reflecting the phase's purpose (e.g., 'Financial Data Preparation & Feature Engineering', 'RNA Extraction & Purification', 'Model Architecture Design')",
+      "blockType": "string - General category: 'methodology', 'data', 'analysis', 'results', or 'tools'",
+      "blockDescription": "string (optional) - Brief explanation of what this phase accomplishes",
       "position": number - Order in workflow (1, 2, 3...),
       "nodes": [
         {
@@ -1196,7 +1494,7 @@ You MUST return a JSON object with these exact top-level fields:
           "content": {
             "text": "string - The exact relevant text from the source document"
           },
-          "nodeType": "string - Same as blockType",
+          "nodeType": "string - Category matching blockType",
           "status": "complete" or "draft",
           "dependencies": [],
           "attachments": [],
@@ -1210,12 +1508,16 @@ You MUST return a JSON object with these exact top-level fields:
 
 EXTRACTION GUIDELINES:
 
-1. treeName: Extract from document title, abstract, or first heading
-2. treeDescription: Write ONE sentence summarizing the experiment
-3. blocks: Group related steps into workflow phases (Protocol, Data Creation, Analysis, Results, Software)
-4. nodes: Each step/procedure/analysis should be a separate node
-5. Extract content: Use exact text from the document, don't paraphrase
-6. dependencies: Link nodes that must happen in sequence (use empty array if none)
+1. **treeName**: Extract from document title, abstract, or first heading
+2. **treeDescription**: Write ONE sentence summarizing the experiment
+3. **blocks**: Group related steps into workflow phases with SPECIFIC, DOMAIN-RELEVANT names
+   - DO NOT use generic names like "Data Block" or "Methodology Block"
+   - DO use specific names like "Financial Data Preparation & Feature Engineering" or "Kalman Filter Model Implementation"
+   - Extract key terms from the document (method names, data types, analysis techniques) and use them in block names
+   - Read the document title and abstract first to understand the domain, then use that terminology
+4. **nodes**: Each step/procedure/analysis should be a separate node
+5. **Extract content**: Use exact text from the document, don't paraphrase
+6. **dependencies**: Link nodes that must happen in sequence (use empty array if none)
 
 ## CRITICAL REMINDERS:
 
