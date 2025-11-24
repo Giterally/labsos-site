@@ -83,7 +83,7 @@ export async function extractWorkflow(
 
     return result;
   } catch (error: any) {
-    // Check if error is rate limit and fallback provider is available
+    // Check if error is rate limit or truncation and fallback provider is available
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStatus = (error as any)?.status;
     const isRateLimit = errorStatus === 429 || 
@@ -91,8 +91,16 @@ export async function extractWorkflow(
       errorMessage?.includes('Rate limit') ||
       errorMessage?.includes('rate_limit');
     
-    if (isRateLimit && shouldAttemptFallback(provider, structuredDoc)) {
-      console.log(`[WORKFLOW_EXTRACTOR] Rate limit detected, falling back to alternative provider`);
+    const isTruncationError = 
+      errorMessage?.includes('exceeded') && errorMessage?.includes('output limit') ||
+      errorMessage?.includes('too large') ||
+      errorMessage?.includes('truncated') ||
+      errorMessage?.includes('Unterminated string') ||
+      errorMessage?.includes('cut off');
+    
+    if ((isRateLimit || isTruncationError) && shouldAttemptFallback(provider, structuredDoc)) {
+      const errorType = isTruncationError ? 'truncation' : 'rate limit';
+      console.log(`[WORKFLOW_EXTRACTOR] ${errorType} detected, falling back to alternative provider`);
       try {
         const fallbackProvider = getFallbackProvider(provider, structuredDoc);
         const fallbackModelInfo = fallbackProvider.getModelInfo();

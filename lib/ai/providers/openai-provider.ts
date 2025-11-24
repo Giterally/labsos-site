@@ -76,12 +76,36 @@ export class OpenAIProvider implements AIProvider {
           );
         }
         
+        // Check if content appears truncated (doesn't end with closing brace)
+        const trimmedContent = content.trim();
+        const lastChar = trimmedContent[trimmedContent.length - 1];
+        const isLikelyTruncated = lastChar !== '}' && lastChar !== ']';
+        
         // Parse JSON response
         let result: any;
         try {
           result = JSON.parse(content);
         } catch (parseError) {
           const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown parse error';
+          
+          // Detect truncation errors
+          const isTruncationError = 
+            errorMessage.includes('Unterminated string') ||
+            errorMessage.includes('Unexpected end') ||
+            errorMessage.includes('Expected') && errorMessage.includes('after') ||
+            isLikelyTruncated ||
+            finishReason === 'length';
+          
+          if (isTruncationError) {
+            throw new Error(
+              'Document too large for GPT-4o (exceeded 16K output limit). ' +
+              'The workflow extraction requires more space than the current limit allows. ' +
+              'The JSON response was cut off mid-way, resulting in incomplete data. ' +
+              'This usually happens with very long documents like dissertations or research papers with many sections. ' +
+              'Please try splitting the document into smaller parts, or the system will automatically retry with Gemini (which has a higher output limit).'
+            );
+          }
+          
           throw new Error(
             `Failed to parse OpenAI response as JSON: ${errorMessage}. ` +
             `This may indicate the response was truncated. Content preview: ${content.substring(0, 200)}...`
