@@ -2,6 +2,7 @@ import { supabaseServer } from '../supabase-server';
 import { progressTracker } from '../progress-tracker';
 import { extractWorkflow } from '../ai/workflow-extractor';
 import { extractWorkflowHierarchical } from '../ai/hierarchical-extractor';
+import { consolidateBlocks } from './block-consolidator';
 import { mergeMultiDocumentWorkflows } from '../ai/multi-document-synthesis';
 import { resolveAttachments } from './attachment-resolver';
 import { extractDependenciesRuleBased } from './dependency-extractor';
@@ -865,8 +866,70 @@ export async function generateProposals(userId: string, projectId: string, selec
 
     console.log(`[FAST_IMPORT] Extracted ${allProposedNodes.length} nodes total`);
 
-    // Step 2.5: Merge multi-document workflows if we have multiple documents
-    if (extractionResults.length > 1) {
+    // Step 2.5: Consolidate single document or merge multi-document workflows
+    if (extractionResults.length === 1) {
+      // Consolidate single document extraction
+      const singleResult = extractionResults[0];
+      const { result: consolidatedResult, log: consolidationLog } = consolidateBlocks(
+        singleResult,
+        {
+          targetBlockCount: 5,
+          minNodesPerBlock: 2,
+          mergeSimilarBlocks: true,
+          similarityThreshold: 0.6
+        }
+      );
+
+      // Log consolidation results
+      if (consolidationLog.mergedBlocks.length > 0) {
+        console.log(`[FAST_IMPORT] Block consolidation applied to single document:`);
+        console.log(`[FAST_IMPORT] ${consolidationLog.originalBlockCount} → ${consolidationLog.finalBlockCount} blocks`);
+        consolidationLog.mergedBlocks.forEach(merge => {
+          console.log(`[FAST_IMPORT] - ${merge.reason}: ${merge.merged.join(', ')} → ${merge.into}`);
+        });
+      }
+
+      // Update allProposedNodes with consolidated block info
+      // Create a map of nodeId to block info for quick lookup
+      const nodeToBlockMap = new Map<string, { blockName: string; blockType: string; blockDescription?: string; position: number }>();
+      for (const block of consolidatedResult.blocks) {
+        for (const node of block.nodes) {
+          nodeToBlockMap.set(node.nodeId, {
+            blockName: block.blockName,
+            blockType: block.blockType,
+            blockDescription: block.blockDescription,
+            position: block.position
+          });
+        }
+      }
+
+      // Update existing nodes' metadata with consolidated block info
+      for (const node of allProposedNodes) {
+        const blockInfo = nodeToBlockMap.get(node.nodeId);
+        if (blockInfo) {
+          node.metadata = {
+            ...node.metadata, // Preserve existing metadata (extractionMetrics, documentSource, etc.)
+            blockName: blockInfo.blockName,
+            blockType: blockInfo.blockType,
+            blockDescription: blockInfo.blockDescription,
+            blockPosition: blockInfo.position,
+          };
+        }
+      }
+
+      // Update extraction results with consolidated workflow
+      extractionResults[0] = consolidatedResult;
+      
+      console.log(`[FAST_IMPORT] Consolidated single document: ${consolidatedResult.blocks.length} blocks, ${allProposedNodes.length} nodes`);
+      
+      // Store consolidation metadata
+      (extractionResults[0] as any).mergeMetadata = {
+        sourceDocumentCount: 1,
+        consolidationApplied: consolidationLog.mergedBlocks.length > 0,
+        originalBlockCount: consolidationLog.originalBlockCount,
+        consolidationDetails: consolidationLog.mergedBlocks
+      };
+    } else if (extractionResults.length > 1) {
       await progressTracker.updateWithPersistence(trackingJobId, {
         stage: 'merging',
         current: 55,
@@ -907,11 +970,68 @@ export async function generateProposals(userId: string, projectId: string, selec
         
         console.log(`[FAST_IMPORT] Merged workflow: ${mergedWorkflow.blocks.length} blocks, ${allProposedNodes.length} nodes`);
         
+        // Consolidate blocks to reduce fragmentation
+        const { result: consolidatedWorkflow, log: consolidationLog } = consolidateBlocks(
+          mergedWorkflow,
+          {
+            targetBlockCount: 5,
+            minNodesPerBlock: 2,
+            mergeSimilarBlocks: true,
+            similarityThreshold: 0.6
+          }
+        );
+
+        // Log consolidation results
+        if (consolidationLog.mergedBlocks.length > 0) {
+          console.log(`[FAST_IMPORT] Block consolidation applied:`);
+          console.log(`[FAST_IMPORT] ${consolidationLog.originalBlockCount} → ${consolidationLog.finalBlockCount} blocks`);
+          consolidationLog.mergedBlocks.forEach(merge => {
+            console.log(`[FAST_IMPORT] - ${merge.reason}: ${merge.merged.join(', ')} → ${merge.into}`);
+          });
+        }
+
+        // Update allProposedNodes with consolidated block info
+        // Create a map of nodeId to block info for quick lookup
+        const nodeToBlockMap = new Map<string, { blockName: string; blockType: string; blockDescription?: string; position: number }>();
+        for (const block of consolidatedWorkflow.blocks) {
+          for (const node of block.nodes) {
+            nodeToBlockMap.set(node.nodeId, {
+              blockName: block.blockName,
+              blockType: block.blockType,
+              blockDescription: block.blockDescription,
+              position: block.position
+            });
+          }
+        }
+
+        // Update existing nodes' metadata with consolidated block info
+        for (const node of allProposedNodes) {
+          const blockInfo = nodeToBlockMap.get(node.nodeId);
+          if (blockInfo) {
+            node.metadata = {
+              ...node.metadata, // Preserve existing metadata (extractionMetrics, documentSource, etc.)
+              blockName: blockInfo.blockName,
+              blockType: blockInfo.blockType,
+              blockDescription: blockInfo.blockDescription,
+              blockPosition: blockInfo.position,
+            };
+          }
+        }
+
+        // Update extraction results with consolidated workflow
+        extractionResults.length = 0;
+        extractionResults.push(consolidatedWorkflow);
+        
+        console.log(`[FAST_IMPORT] Consolidated workflow: ${consolidatedWorkflow.blocks.length} blocks, ${allProposedNodes.length} nodes`);
+        
         // Store merge metadata in extraction results for later use in tree building
         (extractionResults[0] as any).mergeMetadata = {
           sourceDocumentCount: extractionResults.length,
           mergedAt: new Date().toISOString(),
           mergeStrategy: 'llm',
+          consolidationApplied: consolidationLog.mergedBlocks.length > 0,
+          originalBlockCount: consolidationLog.originalBlockCount,
+          consolidationDetails: consolidationLog.mergedBlocks
         };
       } catch (error: any) {
         console.error(`[FAST_IMPORT] Failed to merge workflows, using fallback concatenation:`, error);

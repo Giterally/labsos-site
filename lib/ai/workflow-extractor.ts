@@ -47,6 +47,40 @@ export async function extractWorkflow(
     console.log(`[WORKFLOW_EXTRACTOR] ✓ Extraction complete: ${result.blocks.length} blocks, ${totalNodes} nodes`);
     console.log(`[WORKFLOW_EXTRACTOR] Total time: ${totalDuration}ms (LLM: ${llmDuration}ms, processing: ${totalDuration - llmDuration}ms)`);
 
+    // Post-extraction validation logging
+    // Helper function for similarity (simple word overlap)
+    function calculateSimilarity(str1: string, str2: string): number {
+      const words1 = new Set(str1.split(/\s+/));
+      const words2 = new Set(str2.split(/\s+/));
+      const intersection = new Set([...words1].filter(x => words2.has(x)));
+      const union = new Set([...words1, ...words2]);
+      return intersection.size / union.size;
+    }
+
+    // Warn if over-fragmented
+    if (result.blocks.length > 9) {
+      console.warn(`[WORKFLOW_EXTRACTOR] Warning: ${result.blocks.length} blocks detected. Consider consolidation.`);
+    }
+
+    // Warn about single-node blocks
+    const singleNodeBlocks = result.blocks.filter(b => b.nodes.length === 1);
+    if (singleNodeBlocks.length > 0) {
+      console.warn(`[WORKFLOW_EXTRACTOR] Warning: ${singleNodeBlocks.length} block(s) with only 1 node:`, 
+        singleNodeBlocks.map(b => b.blockName));
+    }
+
+    // Check for potential duplicates (>60% similarity in names)
+    const blockNames = result.blocks.map(b => b.blockName.toLowerCase());
+    for (let i = 0; i < blockNames.length; i++) {
+      for (let j = i + 1; j < blockNames.length; j++) {
+        const similarity = calculateSimilarity(blockNames[i], blockNames[j]);
+        if (similarity > 0.6) {
+          console.warn(`[WORKFLOW_EXTRACTOR] Potential duplicate blocks detected:`,
+            `"${result.blocks[i].blockName}" and "${result.blocks[j].blockName}" (${Math.round(similarity * 100)}% similar)`);
+        }
+      }
+    }
+
     return result;
   } catch (error: any) {
     // Check if error is rate limit and fallback provider is available
@@ -73,6 +107,40 @@ export async function extractWorkflow(
         
         console.log(`[WORKFLOW_EXTRACTOR] ✓ Fallback extraction complete: ${fallbackResult.blocks.length} blocks, ${totalNodes} nodes`);
         console.log(`[WORKFLOW_EXTRACTOR] Fallback time: ${fallbackDuration}ms, Total time: ${totalDuration}ms`);
+        
+        // Post-extraction validation logging (fallback path)
+        // Helper function for similarity (simple word overlap)
+        function calculateSimilarity(str1: string, str2: string): number {
+          const words1 = new Set(str1.split(/\s+/));
+          const words2 = new Set(str2.split(/\s+/));
+          const intersection = new Set([...words1].filter(x => words2.has(x)));
+          const union = new Set([...words1, ...words2]);
+          return intersection.size / union.size;
+        }
+
+        // Warn if over-fragmented
+        if (fallbackResult.blocks.length > 9) {
+          console.warn(`[WORKFLOW_EXTRACTOR] Warning: ${fallbackResult.blocks.length} blocks detected. Consider consolidation.`);
+        }
+
+        // Warn about single-node blocks
+        const singleNodeBlocks = fallbackResult.blocks.filter(b => b.nodes.length === 1);
+        if (singleNodeBlocks.length > 0) {
+          console.warn(`[WORKFLOW_EXTRACTOR] Warning: ${singleNodeBlocks.length} block(s) with only 1 node:`, 
+            singleNodeBlocks.map(b => b.blockName));
+        }
+
+        // Check for potential duplicates (>60% similarity in names)
+        const blockNames = fallbackResult.blocks.map(b => b.blockName.toLowerCase());
+        for (let i = 0; i < blockNames.length; i++) {
+          for (let j = i + 1; j < blockNames.length; j++) {
+            const similarity = calculateSimilarity(blockNames[i], blockNames[j]);
+            if (similarity > 0.6) {
+              console.warn(`[WORKFLOW_EXTRACTOR] Potential duplicate blocks detected:`,
+                `"${fallbackResult.blocks[i].blockName}" and "${fallbackResult.blocks[j].blockName}" (${Math.round(similarity * 100)}% similar)`);
+            }
+          }
+        }
         
         return fallbackResult;
       } catch (fallbackError: any) {
@@ -305,8 +373,149 @@ Total: ~7 nodes
 - Blocks should flow logically from preparation → execution → evaluation
 
 - Block names should immediately convey what that phase accomplishes
+
+**Block Consolidation Guidelines:**
+
+CRITICAL: Avoid creating multiple blocks for the same conceptual phase.
+
+Common consolidation patterns:
+- "Data Collection", "Data Preprocessing", "Data Cleaning" 
+  → ONE block: "Data Collection & Preprocessing"
+  
+- "Sentiment Analysis Setup", "Sentiment Analysis Configuration", "Sentiment Analysis Integration"
+  → ONE block: "Sentiment Analysis Ensemble Configuration"
+  
+- "Model Training", "Model Optimization", "Hyperparameter Tuning"
+  → ONE block: "Model Training & Optimization"
+  
+- "Performance Evaluation", "Results Analysis", "Performance Metrics"
+  → ONE block: "Performance Evaluation & Analysis"
+
+Rule: If two potential blocks describe sequential steps in the SAME phase, 
+merge them with descriptive naming (e.g., "Feature Selection & Engineering" 
+instead of separate "Feature Selection" and "Feature Engineering" blocks).
+
+**Block Count Targets (adapt to document complexity):**
+
+Document size guidance:
+- Short paper (10-30 pages): Aim for 3-5 blocks
+- Standard paper (30-80 pages): Aim for 4-7 blocks
+- Long paper/thesis (80-150 pages): Aim for 5-9 blocks
+- Dissertation (150+ pages): Aim for 6-12 blocks
+
+Default target: 4-6 major blocks for most documents.
+
+Only create MORE blocks when:
+1. The document explicitly describes distinct, non-overlapping phases
+2. Phases occur at different times (not parallel sub-tasks)
+3. Each phase has substantial unique methodology (not just parameter variations)
+
+Only create FEWER blocks when:
+1. Document is very focused on a single methodology
+2. Phases are tightly integrated and inseparable
+
+**Workflow Diagram Integration:**
+
+If the document contains a workflow diagram (commonly in figures like "Figure 2: 
+Methodology Workflow" or "Experimental Pipeline"):
+1. Identify the main phases shown in the diagram
+2. Use the diagram's structure as the primary guide for block organization
+3. Block names should reflect the phase names or descriptions in the diagram
+4. Respect the sequential order shown in the diagram
+
+Look for text references like:
+- "As shown in Figure X, our workflow consists of..."
+- "The experimental pipeline (Figure X) includes..."
+- "Following the methodology in Figure X..."
+
+**Block Size Guidelines:**
+
+- Each block should contain at least 2 nodes
+- If a phase has only 1 node, reconsider if it should be:
+  a) Merged into a related block
+  b) Expanded with more detail from the document
+  c) Actually a nested tree procedure (not a standalone block)
+  
+- Blocks can naturally vary in size (2-10 nodes)
+- Imbalance is acceptable if it reflects document structure
+- Don't force artificial balance by splitting logical phases
+
+**Block Sequencing:**
+
+Blocks should follow the natural flow described in the document.
+
+Typical sequence (adapt to actual document):
+1. Data acquisition/preparation phase
+2. Methodology development/implementation phase
+3. Experimental execution/analysis phase
+4. Results evaluation/interpretation phase
+
+However, ALWAYS adapt to the document's actual structure. Some documents:
+- Interleave methodology and results
+- Present multiple parallel workflows
+- Describe iterative refinement cycles
+
+Follow the document, don't force a template.
 `;
         exampleAdjustment = `
+**Example structure for a machine learning paper (30 pages):**
+
+GOOD (consolidated, 4 blocks):
+- Dataset Curation & Preprocessing: 3 nodes
+- Model Architecture Design & Training: 4 nodes
+- Performance Evaluation & Benchmarking: 3 nodes
+- Results Analysis & Discussion: 2 nodes
+Total: 4 blocks, ~12 nodes
+
+BAD (over-fragmented, 9 blocks):
+- Data Collection: 1 node
+- Data Preprocessing: 2 nodes
+- Model Architecture: 2 nodes
+- Training Setup: 1 node
+- Training Execution: 1 node
+- Evaluation Metrics: 2 nodes
+- Benchmark Comparison: 1 node
+- Results: 1 node
+- Discussion: 1 node
+Total: 9 blocks, ~12 nodes (same content, too fragmented!)
+
+**Example structure for a biology protocol (40 pages):**
+
+GOOD (consolidated, 5 blocks):
+- Sample Preparation & Quality Control: 3 nodes
+- RNA Extraction & Purification: 4 nodes
+- Library Preparation & Sequencing: 3 nodes
+- Bioinformatics Analysis Pipeline: 4 nodes
+- Statistical Validation & Results: 3 nodes
+Total: 5 blocks, ~17 nodes
+
+**Example structure for a finance dissertation (150 pages):**
+
+GOOD (consolidated, 7 blocks):
+- Financial Data Collection & Preparation: 3 nodes
+- Feature Engineering & Selection: 4 nodes
+- Kalman Filter Model Implementation: 5 nodes
+- Sentiment Analysis Integration: 3 nodes
+- Performance Evaluation & Comparison: 4 nodes
+- Trading Simulation & ROI Analysis: 3 nodes
+- Sustainability & Implications Analysis: 2 nodes
+Total: 7 blocks, ~24 nodes
+
+BAD (over-fragmented, 12 blocks):
+- Data Collection: 2 nodes
+- Data Preprocessing: 2 nodes
+- Feature Selection: 2 nodes
+- Kalman Filter Setup: 2 nodes
+- Model Training: 2 nodes
+- Sentiment Analysis Setup: 1 node
+- Sentiment Integration: 1 node
+- Performance Metrics: 3 nodes
+- ROI Analysis: 2 nodes
+- Results: 2 nodes
+- Discussion: 2 nodes
+- Sustainability: 1 node
+Total: 12 blocks, ~22 nodes (similar content, twice as many blocks!)
+
 EXAMPLE OUTPUT STRUCTURE (for a machine learning paper):
 {
   "blocks": [
@@ -1430,20 +1639,43 @@ After your initial extraction, perform a SECOND PASS review:
 **DOCUMENT CONTEXT FOR BLOCK NAMING:**
 
 Document Title: "${documentTitle}"
+Document Length: ~${structuredDoc.sections.length} sections
 
 First Section Preview: "${firstSectionText.substring(0, 500)}..."
 
-**INSTRUCTIONS:**
-1. Read the document title and first section to identify the main topic and domain
-2. Extract key terminology (method names, data types, analysis techniques)
-3. Use this terminology when creating block names
-4. Make block names specific to THIS document's content, not generic categories
+**BLOCK ORGANIZATION INSTRUCTIONS:**
 
-**For this document about "${documentTitle}", appropriate blocks might be:**
-- Look for specific methods mentioned (e.g., "Kalman Filter", "ANOVA", "PCR")
-- Look for specific data types (e.g., "Bond Yield", "RNA-seq", "Financial Time Series")
-- Look for specific analyses (e.g., "Sentiment Analysis", "Differential Expression")
-- Incorporate these terms into descriptive block names
+1. IDENTIFY MAJOR PHASES
+   - Read the document title and abstract/introduction to understand the overall workflow
+   - Look for workflow diagrams (Figures showing experimental pipeline or methodology flow)
+   - Identify 4-7 major conceptual phases (unless document clearly requires more)
+
+2. EXTRACT KEY TERMINOLOGY
+   - Method names: "${documentTitle}" likely involves specific methods - use them in block names
+   - Data types: What kind of data is being processed? Use specific terms
+   - Analysis techniques: What analytical approaches are described?
+   - Phases: What are the main stages described in the document?
+
+3. CONSOLIDATE RELATED PHASES
+   - If you identify "Data Collection" and "Data Preprocessing", merge into "Data Collection & Preprocessing"
+   - If you identify multiple setup/configuration steps, merge into one "Configuration" block
+   - If you identify multiple evaluation steps, merge into one "Evaluation" block
+
+4. NAME BLOCKS DESCRIPTIVELY
+   - Use terminology from THIS document (especially from the title and key sections)
+   - Be specific about what phase accomplishes (not just generic "Analysis")
+   - Format: "[Specific Activity] & [Related Activity]" or "[Domain-Specific Phase Name]"
+
+5. CHECK FOR REDUNDANCY
+   - Before finalizing blocks, scan your proposed names
+   - If two blocks sound similar or cover the same phase, merge them
+   - Target: 4-6 blocks for most documents (fewer = better if phases are truly combined)
+
+For this document about "${documentTitle}":
+- Expected major phases based on title and content preview:
+  (The LLM should infer these from the document, but guide it to think about 4-6 major stages)
+- Use domain-specific terminology when naming blocks
+- Consolidate related procedures into coherent phases
 
 `;
 
