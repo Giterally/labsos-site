@@ -1301,7 +1301,7 @@ EXAMPLE OUTPUT (with proper dependency format):
 3. **Author affiliations** - Metadata only
 4. **Funding statements** - Not experimental content
 5. **Conflicts of Interest** - Not experimental content
-6. **Abstract/Introduction with no methods** - Only extract if it describes actual procedures
+6. **Abstract/Introduction** - Extract if it contains any experimental procedures, methods, or protocols (even if brief)
 7. **Appendices with supplementary references only** - Unless they contain protocols
 
 **How to identify reference sections:**
@@ -1340,6 +1340,13 @@ EXAMPLE OUTPUT (with proper dependency format):
 IMPORTANT NODE GRANULARITY RULES:
 
 1. One node = one distinct method/procedure/analysis/result
+
+**CRITICAL: "Distinct" means separate items, not completely different procedures:**
+- Similar procedures → extract as separate nodes
+- Related methods → extract as separate nodes
+- Variations of the same technique → extract as separate nodes
+- Only combine if it's truly ONE continuous procedure that cannot be meaningfully separated
+
 2. If a section describes multiple experiments → create multiple nodes
 3. If a protocol has sub-steps → create main node + nested tree reference
 4. Each figure/table → usually indicates a separate result node
@@ -1365,7 +1372,7 @@ IMPORTANT NODE GRANULARITY RULES:
 - Preserve full context for understanding - extract maximum available, not minimum required
 
 **Exception for short content:**
-- Short content (1 sentence) is ONLY acceptable if:
+- Short content (1 sentence) is acceptable when:
   - The node has attachments (figures/tables/equations)
   - AND the attachment contains the detailed information
   - Even then, try to include 1-2 sentences of context
@@ -1379,6 +1386,13 @@ IMPORTANT NODE GRANULARITY RULES:
 "Configuration of a sentiment analysis ensemble to process financial news and social media data. The ensemble combines three models: a transformer-based classifier for news articles, a fine-tuned BERT model for social media posts, and a rule-based filter for financial terminology. Each model was trained on domain-specific datasets and outputs confidence scores that are weighted and combined using a voting mechanism. The configuration includes hyperparameters for each model (learning rate: 0.001, batch size: 32) and ensemble weights (transformer: 0.4, BERT: 0.4, rule-based: 0.2)."
 
 **Content extraction strategy:**
+
+**For fragmented or sparse content (audio transcripts, short protocols, Word files with short blocks, etc.):**
+- Extract ALL available information, even if incomplete
+- Short sections are acceptable - extract what's there
+- Don't skip content because it seems incomplete
+- Multiple short nodes are better than skipping content
+
 1. Start with the key sentence/phrase
 2. Extract the full paragraph(s) containing the key information, plus 2-3 adjacent paragraphs when available (extract maximum context, not minimum) (if source is sparse, extract all available sentences)
 3. Include relevant parameters, conditions, or details mentioned nearby
@@ -1473,8 +1487,12 @@ Before you start extracting, COUNT these items in the document explicitly:
 - At least 1 node per model/algorithm
 - At least 1 node per validation step
 
-**If your final node count is significantly less than your item count, you're under-extracting.**
-**Go back and extract the missing nodes.**
+**CRITICAL REQUIREMENT: Your final node count MUST equal or exceed your item count:**
+- If you counted 15 figures → you MUST have at least 15 result nodes (preferably 15-20)
+- If you counted 8 tables → you MUST have at least 8 result nodes (preferably 8-12)
+- If you counted 5 statistical tests → you MUST have at least 5 analysis nodes (preferably 5-8)
+- **If your node count is less than your item count → STOP and extract ALL missing nodes before returning**
+- This requirement applies regardless of document size - extract all items you counted
 
 ## ONE NODE PER X - MANDATORY RULES:
 
@@ -2513,10 +2531,10 @@ Before returning your JSON response, verify:
    **If you're extracting fewer nodes, you're likely missing important information.**
 
 2. **Every major section has nodes:**
-   - Introduction/Background → [can skip, usually no protocols]
+   - Introduction/Background → Extract if it contains experimental procedures or methods
    - Methods section → [should have 5-20+ protocol nodes]
    - Results section → [should have 10-40+ result nodes]
-   - Discussion → [can skip, usually interpretation not data]
+   - Discussion → Extract if it contains experimental data, results, or findings (not just interpretation)
 
 3. **Every figure/table has a corresponding node:**
    - Count figures mentioned in document
