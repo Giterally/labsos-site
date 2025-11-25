@@ -1476,16 +1476,24 @@ Before you start extracting, COUNT these items in the document explicitly:
 6. Count ALL distinct protocols/procedures → Write: "X protocols found"
 7. Count ALL model/algorithm implementations → Write: "X models found"
 8. Count ALL validation/verification steps → Write: "X validations found"
+9. Count ALL sub-steps within major procedures → Write: "X sub-steps found"
+10. Count ALL parameter variations or condition changes → Write: "X variations found"
+11. Count ALL distinct findings/results mentioned → Write: "X findings found"
+12. Count ALL preprocessing/transformation steps → Write: "X preprocessing steps found"
 
 **Then extract nodes based on these counts:**
-- At least 1 result node per figure (if 15 figures → at least 15 result nodes)
-- At least 1 result node per table (if 8 tables → at least 8 result nodes)
-- At least 1 analysis node per statistical test (if 5 tests → at least 5 analysis nodes)
-- At least 1 protocol node per Methods subsection (if 8 subsections → at least 8 protocol nodes)
-- At least 1 node per experimental condition (if 3 conditions → at least 3 nodes)
-- At least 1 node per distinct protocol/procedure
-- At least 1 node per model/algorithm
-- At least 1 node per validation step
+- Extract 1-2 result nodes per figure (extract 2 if figure has multiple findings) (if 15 figures → extract 15-20 result nodes)
+- Extract 1-2 result nodes per table (extract 2 if table has multiple results) (if 8 tables → extract 8-12 result nodes)
+- Extract 1-2 analysis nodes per statistical test (extract 2 if test has multiple components) (if 5 tests → extract 5-8 analysis nodes)
+- Extract 1-2 protocol nodes per Methods subsection (if 8 subsections → extract 8-12 protocol nodes)
+- Extract 1-2 nodes per experimental condition (if 3 conditions → extract 3-5 nodes)
+- Extract 1 node per distinct protocol/procedure (extract 2 if procedure has major variations)
+- Extract 1 node per model/algorithm (extract 2 if algorithm has distinct implementations)
+- Extract 1 node per validation step
+- Extract 2-3 nodes per major procedure with sub-steps (extract nodes for major sub-steps)
+- Extract 1 node per parameter variation or condition change
+- Extract 1 node per distinct finding/result mentioned
+- Extract 1 node per preprocessing/transformation step
 
 **CRITICAL REQUIREMENT: Your final node count MUST equal or exceed your item count:**
 - If you counted 15 figures → you MUST have at least 15 result nodes (preferably 15-20)
