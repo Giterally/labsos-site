@@ -33,7 +33,7 @@ export class GeminiProvider implements AIProvider {
     this.model = this.client.getGenerativeModel({
       model: modelName,
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.0, // Maximum determinism for consistent extraction
         maxOutputTokens: 8192,
         responseMimeType: 'application/json' // JSON mode
       }

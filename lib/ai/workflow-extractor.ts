@@ -1358,7 +1358,7 @@ IMPORTANT NODE GRANULARITY RULES:
 ## CONTENT LENGTH REQUIREMENTS:
 
 **Content length target:**
-- AIM for 300-500+ characters (2-4 full paragraphs) when source content is available
+- AIM for 500-800+ characters (4-6 full paragraphs) when source content is available
 - If source content is sparse, extract ALL available text plus surrounding context (minimum 150 characters)
 - Extract surrounding context, not just the single sentence
 - Include relevant details from the paragraph/section and adjacent paragraphs
@@ -1380,10 +1380,11 @@ IMPORTANT NODE GRANULARITY RULES:
 
 **Content extraction strategy:**
 1. Start with the key sentence/phrase
-2. Extract the full paragraph(s) containing the key information, plus 1-2 adjacent paragraphs when available (if source is sparse, extract all available sentences)
+2. Extract the full paragraph(s) containing the key information, plus 2-3 adjacent paragraphs when available (extract maximum context, not minimum) (if source is sparse, extract all available sentences)
 3. Include relevant parameters, conditions, or details mentioned nearby
-4. Preserve the exact wording from the source when possible
-5. If the section is short, look for related content in adjacent paragraphs
+4. **ALWAYS include figure/table/equation references** (e.g., "as shown in Figure 1", "Table 2 displays", "Equation 3") - preserve these references in the extracted content
+5. Preserve the exact wording from the source when possible
+6. If the section is short, look for related content in adjacent paragraphs
 
 **CRITICAL: DO NOT CONSOLIDATE DISTINCT ITEMS**
 
@@ -2387,7 +2388,7 @@ You MUST return a JSON object with these exact top-level fields:
               "confidence": number - 0.7-1.0 (optional)
             }
           ],
-          "attachments": [] - References to figures/tables (optional),
+          "attachments": [] - **Populate when node content references figures/tables/equations** (e.g., if content mentions "Figure 1", add {"fileName": "Figure 1", "sourceId": "doc.pdf", "relevance": "Referenced in content"}),
           "metadata": {} - Additional metadata (optional),
           "isNestedTree": boolean - Mark if reusable sub-workflow (optional)
         }

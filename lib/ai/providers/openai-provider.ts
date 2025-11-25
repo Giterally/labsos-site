@@ -51,7 +51,7 @@ export class OpenAIProvider implements AIProvider {
         const response = await this.client.chat.completions.create({
           model: this.model,
           max_tokens: 16384, // 4x Claude Haiku!
-          temperature: 0.3,
+          temperature: 0.0, // Maximum determinism for consistent extraction
           response_format: { type: 'json_object' }, // Ensures valid JSON
           messages: [
             {
@@ -194,7 +194,7 @@ export class OpenAIProvider implements AIProvider {
         const response = await this.client.chat.completions.create({
           model: this.model,
           max_tokens: 4096,
-          temperature: 0.1,
+          temperature: 0.0, // Maximum determinism for consistent extraction
           response_format: { type: 'json_object' },
           messages: [
             {
@@ -276,7 +276,7 @@ export class OpenAIProvider implements AIProvider {
         const response = await this.client.chat.completions.create({
           model: this.model,
           max_tokens: 16384,
-          temperature: 0.1,
+          temperature: 0.0, // Maximum determinism for consistent extraction
           response_format: { type: 'json_object' },
           messages: [
             {
@@ -372,7 +372,7 @@ export class OpenAIProvider implements AIProvider {
         const response = await this.client.chat.completions.create({
           model: this.model,
           max_tokens: 4096,
-          temperature: 0.1,
+          temperature: 0.0, // Maximum determinism for consistent extraction
           response_format: { type: 'json_object' },
           messages: [
             {
