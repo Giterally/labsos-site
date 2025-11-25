@@ -1357,11 +1357,12 @@ IMPORTANT NODE GRANULARITY RULES:
 
 ## CONTENT LENGTH REQUIREMENTS:
 
-**Minimum content length:**
-- Each node MUST contain at least 2-3 sentences (150+ characters)
+**Content length target:**
+- AIM for 300-500+ characters (2-4 full paragraphs) when source content is available
+- If source content is sparse, extract ALL available text plus surrounding context (minimum 150 characters)
 - Extract surrounding context, not just the single sentence
-- Include relevant details from the paragraph/section
-- Preserve full context for understanding
+- Include relevant details from the paragraph/section and adjacent paragraphs
+- Preserve full context for understanding - extract maximum available, not minimum required
 
 **Exception for short content:**
 - Short content (1 sentence) is ONLY acceptable if:
@@ -1379,7 +1380,7 @@ IMPORTANT NODE GRANULARITY RULES:
 
 **Content extraction strategy:**
 1. Start with the key sentence/phrase
-2. Add 2-3 sentences of surrounding context from the document
+2. Extract the full paragraph(s) containing the key information, plus 1-2 adjacent paragraphs when available (if source is sparse, extract all available sentences)
 3. Include relevant parameters, conditions, or details mentioned nearby
 4. Preserve the exact wording from the source when possible
 5. If the section is short, look for related content in adjacent paragraphs
