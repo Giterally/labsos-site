@@ -105,43 +105,86 @@ ${documentSummaries}
    - If you see "Table 4", your tables array MUST have at least 4 entries
    
    ============================================
-   📐 STATISTICAL TESTS/METHODS (LIST ALL)
+   📐 METHODS & ANALYSES (LIST ALL)
    ============================================
    
-   Look for these exact terms in the content:
-   - PCA, Principal Component Analysis
-   - RFE, Recursive Feature Elimination
-   - Correlation analysis, Pearson correlation, Spearman
-   - t-test, ANOVA, chi-square, F-test
-   - Regression (linear, logistic, polynomial, ridge, lasso)
-   - Hypothesis testing, significance testing
-   - Feature selection, dimensionality reduction
-   - Cross-validation, train-test split
+   Look for ANY analytical methods, statistical tests, or procedures mentioned.
    
-   CRITICAL RULES:
-   - If you see "PCA" anywhere in content, add "Principal Component Analysis" to statisticalTests
-   - If you see "correlation analysis" in content, add "Correlation Analysis" to statisticalTests
-   - List EVERY statistical method mentioned, don't group them
+   WHAT TO LOOK FOR:
+   - Statistical tests: ANY test mentioned (t-test, ANOVA, chi-square, Mann-Whitney, etc.)
+   - Dimensionality reduction: PCA, ICA, Factor Analysis, t-SNE, UMAP, etc.
+   - Feature selection: RFE, LASSO, Ridge, Forward Selection, etc.
+   - Machine learning: SVM, Random Forest, Neural Networks, Regression, Clustering, etc.
+   - Laboratory techniques: PCR, Western Blot, ELISA, Mass Spec, Chromatography, etc.
+   - Imaging methods: MRI, CT, SEM, TEM, Confocal, Fluorescence, etc.
+   - Physical analyses: XRD, DSC, TGA, Rheology, Tensile Testing, etc.
+   - Computational methods: Finite Element, Molecular Dynamics, Monte Carlo, etc.
+   
+   CRITICAL PATTERN: Look for phrases like:
+   - "was performed", "was used", "was applied", "was conducted"
+   - "using [METHOD NAME]", "via [METHOD NAME]", "by [METHOD NAME]"
+   - "analyzed with", "measured by", "tested using"
+   - Method names in parentheses: "(PCA)", "(t-test)", "(ELISA)"
+   - Method names with citations: "correlation analysis [15]"
+   
+   EXTRACTION RULE:
+   - If you see "PCA was performed" → Add "Principal Component Analysis" to statisticalTests
+   - If you see "analyzed using ANOVA" → Add "ANOVA" to statisticalTests
+   - If you see "via Western Blot" → Add "Western Blot" to statisticalTests
+   - If you see "(SEM)" after a noun → Add "Scanning Electron Microscopy" to statisticalTests
+   
+   DO NOT:
+   - List methods that aren't mentioned in the document
+   - Assume standard methods exist just because it's a certain field
+   - Add methods from your training knowledge
+   
+   ONLY list methods explicitly mentioned in the document content.
    
    Example - CORRECT:
-   Content mentions "PCA", "correlation analysis", "RFE"
-   → statisticalTests: ["Principal Component Analysis", "Correlation Analysis", "Recursive Feature Elimination"]
+   Document says: "PCA was performed to reduce dimensionality"
+   → statisticalTests: ["Principal Component Analysis"]
+   
+   Document says: "Images were captured using confocal microscopy"
+   → statisticalTests: ["Confocal Microscopy"]
    
    Example - WRONG:
-   → statisticalTests: ["statistical analysis"] ← TOO GENERIC
-   → statisticalTests: [] ← WRONG if methods are mentioned
+   Document is about biology but doesn't mention PCR
+   → statisticalTests: [] ← CORRECT (don't add PCR just because it's biology)
+   → statisticalTests: ["PCR"] ← WRONG
    
    ============================================
-   🤖 MODELS/ALGORITHMS (LIST ALL)
+   🤖 MODELS, ALGORITHMS & TOOLS (LIST ALL)
    ============================================
    
-   Look for:
-   - Kalman Filter, Extended Kalman Filter, Linear Kalman Filter, EKF, LKF
-   - Neural networks, LSTM, RNN, CNN, transformer, BERT
-   - Random forest, decision tree, SVM, k-means
-   - Any named model or algorithm
+   Look for ANY computational models, algorithms, or analytical tools mentioned.
    
-   CRITICAL: List each variant separately. "EKF" and "LKF" are TWO models, not one.
+   WHAT TO LOOK FOR:
+   - Machine learning models: Neural Networks, SVM, Random Forest, XGBoost, etc.
+   - Statistical models: Linear Regression, ARIMA, Kalman Filter, Hidden Markov, etc.
+   - Simulation tools: COMSOL, ANSYS, Gaussian, LAMMPS, etc.
+   - Mathematical models: Differential equations, Agent-based models, etc.
+   - Domain-specific models: Pharmacokinetic models, Climate models, etc.
+   
+   CRITICAL PATTERN: Look for:
+   - Model names in capitals or with specific versions: "BERT", "GPT-4", "ResNet50"
+   - Phrases like "using [MODEL]", "implemented [MODEL]", "[MODEL] was used"
+   - Comparisons: "compared LKF and EKF", "tested three models: A, B, C"
+   
+   EXTRACTION RULE:
+   - List each variant separately: "Linear Kalman Filter" and "Extended Kalman Filter" are TWO models
+   - Don't combine: "Kalman Filters" should be split into LKF and EKF if both mentioned
+   
+   Example - CORRECT:
+   Document says: "Linear Kalman Filter and Extended Kalman Filter were compared"
+   → models: ["Linear Kalman Filter", "Extended Kalman Filter"]
+   
+   Document says: "analyzed using a pharmacokinetic two-compartment model"
+   → models: ["Pharmacokinetic Two-Compartment Model"]
+   
+   Example - WRONG:
+   Document is about ML but only mentions "neural networks" generally
+   → models: ["BERT", "GPT-4"] ← WRONG (specific models not mentioned)
+   → models: ["Neural Networks"] ← CORRECT
    
    ============================================
    📦 SOFTWARE/LIBRARIES (LIST ALL)
@@ -288,6 +331,38 @@ EXAMPLE - BAD INVENTORY (too sparse):
 }
 
 Your inventory should look like the GOOD example, not the BAD example.
+
+===========================================
+📚 EXAMPLES FROM DIFFERENT RESEARCH DOMAINS
+===========================================
+
+FINANCE/ECONOMICS PAPER:
+methods: ["Principal Component Analysis", "Correlation Analysis", "Kalman Filter"]
+models: ["Linear Kalman Filter", "Extended Kalman Filter", "ARIMA"]
+figures: [{"title": "Performance Comparison", ...}]
+
+BIOLOGY PAPER:
+methods: ["Western Blot", "PCR", "Flow Cytometry", "ELISA"]
+models: ["Pharmacokinetic Model", "Dose-Response Curve"]
+figures: [{"title": "Gene Expression Heatmap", ...}]
+
+MATERIALS SCIENCE PAPER:
+methods: ["X-Ray Diffraction", "Scanning Electron Microscopy", "Tensile Testing"]
+models: ["Finite Element Analysis", "Molecular Dynamics Simulation"]
+figures: [{"title": "Stress-Strain Curve", ...}]
+
+PSYCHOLOGY PAPER:
+methods: ["ANOVA", "t-test", "Regression Analysis", "Structural Equation Modeling"]
+models: ["Linear Mixed Effects Model", "Hierarchical Model"]
+figures: [{"title": "Reaction Time Distribution", ...}]
+
+PHYSICS PAPER:
+methods: ["Monte Carlo Simulation", "Spectroscopy", "Interferometry"]
+models: ["Quantum Field Theory Model", "Statistical Mechanics Model"]
+figures: [{"title": "Energy Spectrum", ...}]
+
+NOTICE: Each field has completely different methods and models.
+Your job is to find what's ACTUALLY in the document, not assume based on field.
 
 Return ONLY valid JSON, no markdown code blocks or explanations.
 `;

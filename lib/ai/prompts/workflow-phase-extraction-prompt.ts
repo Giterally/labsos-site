@@ -29,8 +29,13 @@ export function buildPhaseExtractionPrompt(input: PhaseExtractionInput): string 
   // Extract only relevant sections from documents
   const relevantSections = extractRelevantSections(documents, pageRanges);
   
+  // Build page range string for checklist
+  const phasePageRange = Object.entries(pageRanges)
+    .map(([doc, [start, end]]) => `${doc}: pages ${start}-${end}`)
+    .join(', ');
+  
   // Build mandatory extraction checklist from inventory
-  const mandatoryItems = buildMandatoryChecklist(contentInventory, keyTopics);
+  const mandatoryItems = buildMandatoryChecklist(contentInventory, keyTopics, phasePageRange);
   
   return `
 ===========================================
@@ -48,11 +53,6 @@ CONTENT LOCATION:
 ${Object.entries(pageRanges).map(([doc, [start, end]]) => 
   `- ${doc}: pages ${start}-${end}`
 ).join('\n')}
-
-===========================================
-📋 MANDATORY EXTRACTION CHECKLIST
-===========================================
-You MUST create nodes for ALL of the following items identified in discovery:
 
 ${mandatoryItems}
 
@@ -165,49 +165,111 @@ function extractRelevantSections(
 
 /**
  * Build mandatory extraction checklist from content inventory
+ * Domain-agnostic version that only lists items found in discovery
  */
 function buildMandatoryChecklist(
   inventory: PhaseExtractionInput['contentInventory'],
-  keyTopics: string[]
+  keyTopics: string[],
+  phasePageRange: string
 ): string {
   const items: string[] = [];
   
+  items.push('Based on the discovery inventory, you MUST extract nodes for these items:');
+  items.push('');
+  
   if (inventory.statisticalTests.length > 0) {
-    items.push('STATISTICAL METHODS:');
+    items.push('METHODS/ANALYSES found in inventory:');
     inventory.statisticalTests.forEach(test => {
-      items.push(`  □ Create node for: ${test}`);
+      items.push(`- [ ] ${test}`);
     });
+    items.push('');
+  } else {
+    items.push('METHODS/ANALYSES found in inventory:');
+    items.push('(None found in discovery - do not create placeholder nodes)');
     items.push('');
   }
   
   if (inventory.models.length > 0) {
-    items.push('MODELS/ALGORITHMS:');
+    items.push('MODELS found in inventory:');
     inventory.models.forEach(model => {
-      items.push(`  □ Create node for: ${model}`);
+      items.push(`- [ ] ${model}`);
     });
+    items.push('');
+  } else {
+    items.push('MODELS found in inventory:');
+    items.push('(None found in discovery - do not create placeholder nodes)');
     items.push('');
   }
   
   if (inventory.figures.length > 0) {
-    items.push('FIGURES:');
+    items.push('FIGURES found in inventory:');
     inventory.figures.forEach(fig => {
-      items.push(`  □ Create node for: ${fig.title} (page ${fig.pageNumber})`);
+      items.push(`- [ ] ${fig.title} (page ${fig.pageNumber})`);
     });
+    items.push('');
+  } else {
+    items.push('FIGURES found in inventory:');
+    items.push('(None found in discovery - do not create placeholder nodes)');
     items.push('');
   }
   
   if (inventory.tables.length > 0) {
-    items.push('TABLES:');
+    items.push('TABLES found in inventory:');
     inventory.tables.forEach(table => {
-      items.push(`  □ Create node for: ${table.title} (page ${table.pageNumber})`);
+      items.push(`- [ ] ${table.title} (page ${table.pageNumber})`);
     });
+    items.push('');
+  } else {
+    items.push('TABLES found in inventory:');
+    items.push('(None found in discovery - do not create placeholder nodes)');
     items.push('');
   }
   
-  items.push('KEY TOPICS TO COVER:');
-  keyTopics.forEach(topic => {
-    items.push(`  □ ${topic}`);
-  });
+  items.push('===========================================');
+  items.push('⚠️ CRITICAL RULES FOR THIS CHECKLIST');
+  items.push('===========================================');
+  items.push('');
+  items.push('1. ONLY extract nodes for items in THIS PHASE\'S content');
+  items.push('   - If this is a "Results" phase, don\'t extract methodology nodes');
+  items.push('   - If this is a "Methodology" phase, don\'t extract results nodes');
+  items.push('');
+  items.push('2. NEVER create placeholder nodes saying "X is not mentioned"');
+  items.push('   - If PCA is in the inventory but not in this phase → Skip it, it\'s in another phase');
+  items.push('   - If PCA is not in the inventory at all → Never create a node for it');
+  items.push('');
+  items.push(`3. Check inventory items against THIS PHASE'S page ranges`);
+  items.push(`   - Phase page range: ${phasePageRange}`);
+  items.push('   - Only extract inventory items that appear in these pages');
+  items.push('');
+  items.push('4. If you cannot find an inventory item in this phase:');
+  items.push('   - DO NOT create a node for it');
+  items.push('   - It\'s probably in a different phase');
+  items.push('');
+  items.push('Example - CORRECT:');
+  items.push('Inventory: ["PCA", "Correlation Analysis", "t-test"]');
+  items.push('This phase: "Results" (pages 10-12)');
+  items.push('Phase content: Only mentions "t-test results"');
+  items.push('→ Extract: ONE node for "t-test" only');
+  items.push('→ Skip: PCA and Correlation (they\'re in the Methodology phase)');
+  items.push('');
+  items.push('Example - WRONG:');
+  items.push('→ Create nodes saying "PCA is not mentioned" ✗');
+  items.push('→ Create placeholder nodes for PCA ✗');
+  items.push('');
+  items.push('===========================================');
+  items.push('🎯 WORKFLOW FOR EXTRACTION');
+  items.push('===========================================');
+  items.push('');
+  items.push('For each inventory item:');
+  items.push('1. Is it mentioned in THIS phase\'s page range?');
+  items.push('   - YES → Extract it');
+  items.push('   - NO → Skip it (it\'s in another phase)');
+  items.push('');
+  items.push('2. Can you find actual content about it in this phase?');
+  items.push('   - YES → Create node with content');
+  items.push('   - NO → Skip it');
+  items.push('');
+  items.push('Never create nodes without actual content.');
   
   return items.join('\n');
 }
