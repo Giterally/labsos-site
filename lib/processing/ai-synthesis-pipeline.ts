@@ -656,8 +656,31 @@ export async function generateProposals(userId: string, projectId: string, selec
           // Step 2: Choose extraction approach
           let extractionResult: WorkflowExtractionResult;
           
-          // Fast path for simple documents (backward compatible)
-          if (complexity.estimatedNodeCount < 15 && !complexity.shouldUseHierarchical) {
+          // Check if multi-pass extraction is enabled (takes priority over hierarchical)
+          const useMultiPass = process.env.ENABLE_MULTI_PASS_EXTRACTION === 'true';
+          const isComprehensive = complexity.extractionStrategy === 'comprehensive';
+          const shouldUseMultiPass = useMultiPass && isComprehensive;
+          
+          // Debug logging
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Multi-pass check:`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}]   ENABLE_MULTI_PASS_EXTRACTION env var: "${process.env.ENABLE_MULTI_PASS_EXTRACTION}"`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}]   useMultiPass: ${useMultiPass}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}]   extractionStrategy: ${complexity.extractionStrategy}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}]   isComprehensive: ${isComprehensive}`);
+          console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}]   shouldUseMultiPass: ${shouldUseMultiPass}`);
+          
+          if (shouldUseMultiPass) {
+            // Multi-pass extraction (Discovery → Extraction → Verification)
+            console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Using MULTI-PASS extraction (comprehensive document, multi-pass enabled)`);
+            
+            const extractionPromise = extractWorkflow(structuredDoc, projectContext, complexity);
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error(`Extraction timeout after ${EXTRACTION_TIMEOUT * 3}ms`)), EXTRACTION_TIMEOUT * 3);
+            });
+            
+            extractionResult = await Promise.race([extractionPromise, timeoutPromise]);
+          } else if (complexity.estimatedNodeCount < 15 && !complexity.shouldUseHierarchical) {
+            // Fast path for simple documents (backward compatible)
             console.log(`[FAST_IMPORT] [${i + 1}/${structuredDocs.length}] Simple document, using standard extraction`);
             
             const extractionPromise = extractWorkflow(structuredDoc, projectContext, complexity);

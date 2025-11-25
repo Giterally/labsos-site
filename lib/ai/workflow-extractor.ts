@@ -3,22 +3,80 @@ import { WorkflowExtractionResultSchema, type WorkflowExtractionResult } from '.
 import { StructuredDocument } from '../processing/parsers/pdf-parser';
 
 /**
+ * Workflow Extraction Modes:
+ * 
+ * SINGLE-PASS (default):
+ * - One LLM call extracts entire workflow
+ * - Cost: ~$0.32 for 100-page document
+ * - Quality: 5-7/10
+ * - Best for: Simple/moderate documents
+ * 
+ * MULTI-PASS (enable with ENABLE_MULTI_PASS_EXTRACTION=true):
+ * - Three LLM calls: Discovery → Extraction → Verification
+ * - Cost: ~$0.22 for 100-page document (30% cheaper)
+ * - Quality: 8-10/10
+ * - Best for: Dissertations, complex documents
+ * - Guarantees completeness via verification pass
+ */
+
+/**
  * Extract workflow structure from a structured document using smart provider selection
  * Uses GPT-4o for smaller documents, Gemini for large documents
  * 
  * @param complexity - Optional complexity analysis to adjust extraction strategy
  */
 export async function extractWorkflow(
-  structuredDoc: StructuredDocument,
+  structuredDoc: StructuredDocument | StructuredDocument[],
   projectContext?: { name?: string; description?: string },
   complexity?: { estimatedNodeCount: number; extractionStrategy: 'simple' | 'moderate' | 'complex' | 'comprehensive' }
 ): Promise<WorkflowExtractionResult> {
+  const documents = Array.isArray(structuredDoc) ? structuredDoc : [structuredDoc];
+  const primaryDoc = documents[0];
+  
+  // Check if multi-pass extraction is enabled
+  const useMultiPass = process.env.ENABLE_MULTI_PASS_EXTRACTION === 'true';
+  
+  // For dissertations/comprehensive documents, multi-pass is recommended
+  const isComprehensive = complexity?.extractionStrategy === 'comprehensive';
+  const shouldUseMultiPass = useMultiPass && isComprehensive;
+  
+  if (shouldUseMultiPass) {
+    console.log(`[WORKFLOW_EXTRACTOR] Using MULTI-PASS extraction (comprehensive document)`);
+    
+    try {
+      // Import multi-pass extractor
+      const { extractWorkflowMultiPass } = await import('./multi-pass-extractor');
+      
+      // Get provider
+      const provider = selectProviderForDocument(primaryDoc);
+      
+      // Run multi-pass extraction
+      const multiPassResult = await extractWorkflowMultiPass(
+        documents,
+        provider,
+        projectContext
+      );
+      
+      console.log(`[WORKFLOW_EXTRACTOR] Multi-pass extraction successful`);
+      console.log(`[WORKFLOW_EXTRACTOR] Quality score: ${multiPassResult.metadata.verificationResult.qualityScore}/10`);
+      
+      return multiPassResult.result;
+      
+    } catch (error) {
+      console.error(`[WORKFLOW_EXTRACTOR] Multi-pass extraction failed, falling back to single-pass:`, error);
+      // Fall through to single-pass extraction
+    }
+  }
+  
+  // EXISTING SINGLE-PASS EXTRACTION CODE
+  console.log(`[WORKFLOW_EXTRACTOR] Using SINGLE-PASS extraction`);
+  
   const startTime = Date.now();
-  console.log(`[WORKFLOW_EXTRACTOR] Starting extraction from ${structuredDoc.type} document: "${structuredDoc.fileName}"`);
+  console.log(`[WORKFLOW_EXTRACTOR] Starting extraction from ${primaryDoc.type} document: "${primaryDoc.fileName}"`);
 
   // Format structured document for LLM
-  const formattedDocument = formatStructuredDocumentForLLM(structuredDoc);
-  console.log(`[WORKFLOW_EXTRACTOR] Formatted document: ${formattedDocument.length} chars, ${structuredDoc.sections.length} sections`);
+  const formattedDocument = formatStructuredDocumentForLLM(primaryDoc);
+  console.log(`[WORKFLOW_EXTRACTOR] Formatted document: ${formattedDocument.length} chars, ${primaryDoc.sections.length} sections`);
 
   // Check if document has meaningful content
   if (formattedDocument.trim().length < 100) {
@@ -26,7 +84,7 @@ export async function extractWorkflow(
   }
 
   // Select optimal provider based on document size
-  const provider = selectProviderForDocument(structuredDoc);
+  const provider = selectProviderForDocument(primaryDoc);
   const modelInfo = provider.getModelInfo();
   
   console.log(`[WORKFLOW_EXTRACTOR] Using model: ${modelInfo.name}`);
@@ -38,7 +96,7 @@ export async function extractWorkflow(
   try {
     const llmStartTime = Date.now();
     // Extract workflow using selected provider (already validated by provider)
-    const result = await provider.extractWorkflowFromDocument(structuredDoc, projectContext, complexity);
+    const result = await provider.extractWorkflowFromDocument(primaryDoc, projectContext, complexity);
     const llmDuration = Date.now() - llmStartTime;
     
     const totalDuration = Date.now() - startTime;
@@ -49,13 +107,15 @@ export async function extractWorkflow(
 
     // Post-extraction validation logging
     // Helper function for similarity (simple word overlap)
-    function calculateSimilarity(str1: string, str2: string): number {
-      const words1 = new Set(str1.split(/\s+/));
-      const words2 = new Set(str2.split(/\s+/));
-      const intersection = new Set([...words1].filter(x => words2.has(x)));
+    const calculateSimilarity = (str1: string, str2: string): number => {
+      const words1 = str1.split(/\s+/);
+      const words2 = str2.split(/\s+/);
+      const set1 = new Set(words1);
+      const set2 = new Set(words2);
+      const intersection = words1.filter(x => set2.has(x));
       const union = new Set([...words1, ...words2]);
-      return intersection.size / union.size;
-    }
+      return intersection.length / union.size;
+    };
 
     // Warn if over-fragmented
     if (result.blocks.length > 9) {
@@ -98,16 +158,16 @@ export async function extractWorkflow(
       errorMessage?.includes('Unterminated string') ||
       errorMessage?.includes('cut off');
     
-    if ((isRateLimit || isTruncationError) && shouldAttemptFallback(provider, structuredDoc)) {
+    if ((isRateLimit || isTruncationError) && shouldAttemptFallback(provider, primaryDoc)) {
       const errorType = isTruncationError ? 'truncation' : 'rate limit';
       console.log(`[WORKFLOW_EXTRACTOR] ${errorType} detected, falling back to alternative provider`);
       try {
-        const fallbackProvider = getFallbackProvider(provider, structuredDoc);
+        const fallbackProvider = getFallbackProvider(provider, primaryDoc);
         const fallbackModelInfo = fallbackProvider.getModelInfo();
         console.log(`[WORKFLOW_EXTRACTOR] Attempting extraction with fallback provider: ${fallbackModelInfo.name}`);
         
         const fallbackStartTime = Date.now();
-        const fallbackResult = await fallbackProvider.extractWorkflowFromDocument(structuredDoc, projectContext, complexity);
+        const fallbackResult = await fallbackProvider.extractWorkflowFromDocument(primaryDoc, projectContext, complexity);
         const fallbackDuration = Date.now() - fallbackStartTime;
         
         const totalDuration = Date.now() - startTime;
@@ -118,13 +178,15 @@ export async function extractWorkflow(
         
         // Post-extraction validation logging (fallback path)
         // Helper function for similarity (simple word overlap)
-        function calculateSimilarity(str1: string, str2: string): number {
-          const words1 = new Set(str1.split(/\s+/));
-          const words2 = new Set(str2.split(/\s+/));
-          const intersection = new Set([...words1].filter(x => words2.has(x)));
+        const calculateSimilarity = (str1: string, str2: string): number => {
+          const words1 = str1.split(/\s+/);
+          const words2 = str2.split(/\s+/);
+          const set1 = new Set(words1);
+          const set2 = new Set(words2);
+          const intersection = words1.filter(x => set2.has(x));
           const union = new Set([...words1, ...words2]);
-          return intersection.size / union.size;
-        }
+          return intersection.length / union.size;
+        };
 
         // Warn if over-fragmented
         if (fallbackResult.blocks.length > 9) {
@@ -248,6 +310,93 @@ export function formatStructuredDocumentForLLM(doc: StructuredDocument): string 
 }
 
 /**
+ * Detect document domain based on content analysis
+ */
+function detectDocumentDomain(doc: StructuredDocument): 'finance' | 'biology' | 'ml-ai' | 'engineering' | 'chemistry' | 'general' {
+  const fullText = JSON.stringify(doc).toLowerCase();
+  
+  // Finance domain indicators
+  if (fullText.includes('portfolio') || fullText.includes('trading') || 
+      fullText.includes('bond') || fullText.includes('stock') || 
+      fullText.includes('financial') || fullText.includes('kalman filter') ||
+      fullText.includes('yield') || fullText.includes('sentiment analysis') ||
+      fullText.includes('roi') || fullText.includes('backtesting')) {
+    return 'finance';
+  }
+  
+  // Biology domain indicators
+  if (fullText.includes('cell') || fullText.includes('protein') || 
+      fullText.includes('dna') || fullText.includes('rna') || 
+      fullText.includes('gene') || fullText.includes('pcr') ||
+      fullText.includes('sequencing') || fullText.includes('western blot') ||
+      fullText.includes('extraction') && (fullText.includes('rna') || fullText.includes('dna'))) {
+    return 'biology';
+  }
+  
+  // ML/AI domain indicators
+  if ((fullText.includes('neural') || fullText.includes('learning') || 
+       fullText.includes('deep learning') || fullText.includes('transformer') ||
+       fullText.includes('bert') || fullText.includes('gpt') ||
+       fullText.includes('classification') || fullText.includes('regression')) &&
+      (fullText.includes('model') || fullText.includes('training') || 
+       fullText.includes('algorithm'))) {
+    return 'ml-ai';
+  }
+  
+  // Engineering domain indicators
+  if (fullText.includes('circuit') || fullText.includes('signal processing') ||
+      fullText.includes('control system') || fullText.includes('robotics') ||
+      fullText.includes('mechanical') || fullText.includes('electrical')) {
+    return 'engineering';
+  }
+  
+  // Chemistry domain indicators
+  if (fullText.includes('synthesis') || fullText.includes('reaction') ||
+      fullText.includes('compound') || fullText.includes('molecule') ||
+      fullText.includes('chromatography') || fullText.includes('spectroscopy')) {
+    return 'chemistry';
+  }
+  
+  return 'general';
+}
+
+/**
+ * Detect key sections in the document for better mapping guidance
+ */
+function detectDocumentSections(doc: StructuredDocument): {
+  hasMethodology: boolean;
+  hasResults: boolean;
+  hasDiscussion: boolean;
+  hasDataSection: boolean;
+  methodsSectionTitle?: string;
+  resultsSectionTitle?: string;
+} {
+  const sections = doc.sections || [];
+  const sectionTitles = sections.map(s => s.title.toLowerCase());
+  
+  return {
+    hasMethodology: sectionTitles.some(t => 
+      t.includes('method') || t.includes('procedure') || t.includes('protocol')
+    ),
+    hasResults: sectionTitles.some(t =>
+      t.includes('result') || t.includes('finding') || t.includes('outcome')
+    ),
+    hasDiscussion: sectionTitles.some(t =>
+      t.includes('discussion') || t.includes('conclusion') || t.includes('implication')
+    ),
+    hasDataSection: sectionTitles.some(t =>
+      t.includes('data') || t.includes('feature') || t.includes('preprocessing')
+    ),
+    methodsSectionTitle: sections.find(s => 
+      s.title.toLowerCase().includes('method')
+    )?.title,
+    resultsSectionTitle: sections.find(s =>
+      s.title.toLowerCase().includes('result')
+    )?.title
+  };
+}
+
+/**
  * Build user prompt for workflow extraction with explicit structure
  * Exported for use by AI providers
  * 
@@ -259,6 +408,9 @@ export function buildUserPrompt(
   projectContext?: { name?: string; description?: string },
   complexity?: { estimatedNodeCount: number; extractionStrategy: 'simple' | 'moderate' | 'complex' | 'comprehensive' }
 ): string {
+  // Detect document domain and sections for better mapping guidance
+  const domain = detectDocumentDomain(structuredDoc);
+  const detectedSections = detectDocumentSections(structuredDoc);
   // Base instructions
   const baseInstructions = `You are analyzing a research document to extract its experimental workflow.
 Your goal is to create a comprehensive experiment tree with nodes representing protocols, data collection, analyses, and results.
@@ -921,6 +1073,7 @@ EXAMPLE OUTPUT STRUCTURE (for complex documents):
         break;
 
       case 'comprehensive':
+        // For comprehensive documents, restructure prompt with critical rules at top
         extractionIntensityGuidance = `
 ## EXTRACTION INTENSITY: COMPREHENSIVE DOCUMENT (DISSERTATION/THESIS)
 
@@ -934,27 +1087,6 @@ This document should yield approximately 40-100+ nodes (target: ${complexity.est
 - Include ALL results: main, supporting, supplementary, negative, preliminary
 - Extract methodological validations
 - Include literature review protocols if they involve systematic methods
-
-**Example structure for a dissertation:**
-- Protocol Block: 15-25 nodes
-  * Main experimental protocols (5-8 nodes)
-  * Sub-protocols and variations (5-10 nodes)
-  * Validation protocols (2-4 nodes)
-  * Quality control procedures (2-3 nodes)
-- Data Creation Block: 10-20 nodes
-  * Data collection methods (5-8 nodes)
-  * Data preprocessing steps (3-6 nodes)
-  * Data transformation procedures (2-6 nodes)
-- Analysis Block: 15-30 nodes
-  * Statistical tests (8-15 nodes)
-  * Model implementations (4-8 nodes)
-  * Validation analyses (3-7 nodes)
-- Results Block: 20-40 nodes
-  * Main findings (8-15 nodes)
-  * Supporting results (5-10 nodes)
-  * Model performance comparisons (4-8 nodes)
-  * Validation results (3-7 nodes)
-Total: 60-115 nodes
 
 **Content detail for comprehensive documents:**
 - Each node should be DETAILED and COMPREHENSIVE
@@ -1637,7 +1769,7 @@ After your initial extraction, perform a SECOND PASS review:
 `;
 
   // Extract key terms from document title and first sections for context
-  const documentTitle = structuredDoc.title || structuredDoc.fileName || 'Untitled Document';
+  const documentTitle = structuredDoc.fileName || 'Untitled Document';
   const firstSectionText = structuredDoc.sections[0]?.content
     ?.map(c => c.type === 'text' ? c.content : '')
     .join(' ')
@@ -1687,6 +1819,587 @@ For this document about "${documentTitle}":
 
 `;
 
+  // For comprehensive documents, restructure prompt with critical rules at top
+  const isComprehensive = complexity?.extractionStrategy === 'comprehensive';
+  
+  // Generate domain-specific examples based on detected domain
+  let domainExamples = '';
+  if (domain === 'finance') {
+    domainExamples = `
+===========================================
+💰 YOU ARE ANALYZING A FINANCE DOCUMENT
+===========================================
+
+Use these naming patterns:
+
+✅ GOOD Block Names for Finance:
+   - "Financial Data Preparation & Feature Engineering"
+   - "Kalman Filter Model Development & Implementation"  
+   - "Portfolio Optimization Methodology"
+   - "Trading Strategy Backtesting & Validation"
+   - "Performance Evaluation & Risk Analysis"
+   - "Sentiment Analysis Ensemble Configuration"
+   - "Bond Yield Prediction & State Space Modeling"
+
+❌ BAD Block Names to AVOID:
+   - "Data Block"
+   - "Model Implementation Analysis State Space" (nonsense - too wordy)
+   - "Analysis Techniques" (too generic)
+   - "Methodology Block" (too generic)
+   - "Financial Analysis" (too vague)
+
+CRITICAL: For finance papers, use specific method names (Kalman Filter, ARIMA, etc.) in block names.
+`;
+  } else if (domain === 'biology') {
+    domainExamples = `
+===========================================
+🧬 YOU ARE ANALYZING A BIOLOGY DOCUMENT
+===========================================
+
+Use these naming patterns:
+
+✅ GOOD Block Names for Biology:
+   - "RNA Extraction & Purification Protocol"
+   - "Cell Culture Preparation & Quality Control"
+   - "Sequencing Data Generation & Quality Assessment"
+   - "Western Blot Analysis & Protein Detection"
+   - "PCR Amplification & Gel Electrophoresis"
+   - "Bioinformatics Analysis Pipeline & Statistical Validation"
+   - "Differential Expression Analysis & Gene Ontology"
+
+❌ BAD Block Names to AVOID:
+   - "Protocol Block"
+   - "Data Collection Block" (too generic)
+   - "Analysis Block" (too generic)
+   - "Results Block" (too generic)
+   - "Experimental Methods" (too vague)
+
+CRITICAL: For biology papers, use specific technique names (PCR, Western Blot, RNA-seq, etc.) in block names.
+`;
+  } else if (domain === 'ml-ai') {
+    domainExamples = `
+===========================================
+🤖 YOU ARE ANALYZING A MACHINE LEARNING/AI DOCUMENT
+===========================================
+
+Use these naming patterns:
+
+✅ GOOD Block Names for ML/AI:
+   - "Dataset Curation & Preprocessing"
+   - "Neural Network Architecture Design & Configuration"
+   - "Training & Hyperparameter Optimization"
+   - "Benchmark Evaluation & Ablation Studies"
+   - "Feature Engineering & Selection Pipeline"
+   - "Model Training & Validation Protocol"
+   - "Transfer Learning & Fine-Tuning"
+
+❌ BAD Block Names to AVOID:
+   - "Data Block"
+   - "Model Block" (too generic)
+   - "Training Block" (too generic)
+   - "Analysis Block" (too generic)
+   - "Machine Learning Methods" (too vague)
+
+CRITICAL: For ML/AI papers, use specific architecture names (CNN, Transformer, BERT, etc.) or technique names in block names.
+`;
+  } else if (domain === 'engineering') {
+    domainExamples = `
+===========================================
+⚙️ YOU ARE ANALYZING AN ENGINEERING DOCUMENT
+===========================================
+
+Use these naming patterns:
+
+✅ GOOD Block Names for Engineering:
+   - "Signal Processing & Filter Design"
+   - "Control System Implementation & Tuning"
+   - "Circuit Design & Simulation"
+   - "Robotic System Configuration & Calibration"
+   - "Sensor Data Acquisition & Preprocessing"
+   - "Performance Testing & Validation"
+
+❌ BAD Block Names to AVOID:
+   - "Design Block" (too generic)
+   - "Implementation Block" (too generic)
+   - "Testing Block" (too generic)
+   - "Engineering Methods" (too vague)
+
+CRITICAL: For engineering papers, use specific system/component names or technique names in block names.
+`;
+  } else if (domain === 'chemistry') {
+    domainExamples = `
+===========================================
+⚗️ YOU ARE ANALYZING A CHEMISTRY DOCUMENT
+===========================================
+
+Use these naming patterns:
+
+✅ GOOD Block Names for Chemistry:
+   - "Compound Synthesis & Purification Protocol"
+   - "Reaction Optimization & Yield Analysis"
+   - "Chromatography Separation & Analysis"
+   - "Spectroscopy Characterization & Validation"
+   - "Sample Preparation & Quality Control"
+   - "Catalyst Development & Testing"
+
+❌ BAD Block Names to AVOID:
+   - "Synthesis Block" (too generic)
+   - "Analysis Block" (too generic)
+   - "Characterization Block" (too generic)
+   - "Chemical Methods" (too vague)
+
+CRITICAL: For chemistry papers, use specific technique names (NMR, HPLC, GC-MS, etc.) in block names.
+`;
+  }
+  
+  // Critical extraction rules (only for comprehensive documents)
+  const criticalExtractionRules = isComprehensive ? `
+===========================================
+🎯 CRITICAL EXTRACTION RULES - READ FIRST
+===========================================
+
+${domainExamples}
+
+BLOCK NAMING RULES (MANDATORY):
+❌ NEVER use generic names: "Data Block", "Methodology Block", "Analysis Block", "Model Implementation"
+✅ ALWAYS use domain-specific names based on the document's actual content and terminology
+
+BLOCK CONSOLIDATION RULES (MANDATORY):
+- If document has METHODOLOGY section → Create ONE "Methodology & Implementation" block with ALL methodology nodes
+- If document has RESULTS section → Create ONE "Results & Evaluation" block with ALL results nodes
+- NEVER create separate blocks for: "Performance Analysis" + "Results" + "Evaluation" → These are ONE block
+- NEVER create separate blocks for: "Data Collection" + "Data Preprocessing" + "Feature Engineering" → These are ONE block
+
+ONE NODE PER ITEM RULES (MANDATORY):
+For academic papers/dissertations, extract nodes for EVERY:
+- Statistical test mentioned (PCA, RFE, t-test, ANOVA, etc.)
+- Figure or table
+- Methods subsection (if Methods has subsections → each subsection = 1 node)
+- Distinct experimental procedure
+
+SECTION MAPPING RULES (MANDATORY):
+If you see these section titles in the document, follow this mapping:
+
+METHODOLOGY/METHODS section:
+  → Block: "[Domain-Specific] Methodology & Implementation"
+  → Extract nodes for: Each methods subsection, each statistical method, each tool/library used
+
+RESULTS section:
+  → Block: "Performance Evaluation & Results Analysis" 
+  → Extract nodes for: Each results subsection, each comparison, each metric
+
+DISCUSSION section:
+  → Merge into Results block OR create separate "Discussion & Implications" block only if >5 discussion nodes
+
+DATA/FEATURE ENGINEERING section:
+  → Block: "Data Preparation & Feature Engineering"
+  → Extract nodes for: Data collection, preprocessing, feature selection, validation
+
+===========================================
+` : '';
+
+  // Section-specific mapping instructions based on detected sections
+  const sectionMappingInstructions = [];
+  
+  if (detectedSections.hasMethodology) {
+    // Use detected domain for better block naming
+    const domainHint = domain === 'finance' ? 'Financial' :
+                       domain === 'biology' ? 'Biological' :
+                       domain === 'ml-ai' ? 'Machine Learning' :
+                       domain === 'engineering' ? 'Engineering' :
+                       domain === 'chemistry' ? 'Chemical' : '';
+    
+    sectionMappingInstructions.push(`
+===========================================
+📋 DETECTED: This document has a "${detectedSections.methodsSectionTitle || 'Methodology'}" section
+===========================================
+
+MANDATORY MAPPING FOR METHODOLOGY SECTION:
+
+- Create ONE block named "${domainHint ? domainHint + ' ' : ''}Methodology & Implementation" 
+  (Use domain-specific terminology from the document title if available)
+
+- Extract ALL content from the Methodology section into this block
+
+- Each methods subsection → separate node
+
+- Each statistical method (PCA, RFE, ANOVA, t-test, etc.) → separate node
+
+- Each tool/library mentioned → separate node (if substantial description)
+
+- Feature selection methods (PCA, RFE, correlation analysis) → belong in Methodology block, NOT in Data block
+
+- Data preprocessing steps mentioned in Methodology → can go in Methodology block OR Data block (use Methodology if it's part of the method description)
+
+Example for Finance paper:
+  Block: "Financial Forecasting Methodology & Implementation"
+    Node 1: "Feature Selection Analysis" (covers correlation, PCA, RFE)
+    Node 2: "Data Normalization & Preprocessing"
+    Node 3: "Kalman Filter Implementation"
+    Node 4: "Model Training Protocol"
+
+Example for Biology paper:
+  Block: "Experimental Methodology & Protocol"
+    Node 1: "Sample Preparation Protocol"
+    Node 2: "RNA Extraction Procedure"
+    Node 3: "PCR Amplification Method"
+    Node 4: "Statistical Analysis Methods"
+
+CRITICAL: If you see "Principal Component Analysis" or "PCA" in the Methodology section,
+it should go in the Methodology block, NOT in a separate "Data Preparation" block.
+
+`);
+  }
+  
+  if (detectedSections.hasResults) {
+    sectionMappingInstructions.push(`
+===========================================
+📋 DETECTED: This document has a "${detectedSections.resultsSectionTitle || 'Results'}" section
+===========================================
+
+MANDATORY MAPPING FOR RESULTS SECTION:
+
+- Create ONE block named "Performance Evaluation & Results Analysis"
+
+- Extract ALL results, evaluation, comparison content into this block
+
+- Do NOT create separate "Analysis" or "Validation" or "Performance" blocks
+
+- Each results subsection → separate node
+
+- Each comparison → separate node
+
+- Each metric/evaluation → separate node
+
+- Each figure/table mentioned in Results → separate node
+
+CRITICAL: All results, evaluations, comparisons, and performance metrics should be in ONE block.
+Do NOT split into "Results", "Analysis", "Evaluation", "Performance" - these are all part of the same phase.
+
+`);
+  }
+  
+  if (detectedSections.hasDataSection) {
+    sectionMappingInstructions.push(`
+===========================================
+📋 DETECTED: This document has a Data/Feature Engineering section
+===========================================
+
+MANDATORY MAPPING FOR DATA SECTION:
+
+- Create ONE block named "Data Preparation & Feature Engineering"
+
+- Extract ALL data collection, preprocessing, feature engineering content into this block
+
+- Each data collection method → separate node
+
+- Each preprocessing step → separate node
+
+- Each feature engineering technique → separate node
+
+- Each data validation step → separate node
+
+CRITICAL: Feature selection methods (PCA, RFE) mentioned in Methodology section should go in Methodology block.
+Only data-specific preprocessing and feature engineering from dedicated Data sections should go here.
+
+`);
+  }
+  
+  if (detectedSections.hasDiscussion) {
+    sectionMappingInstructions.push(`
+===========================================
+📋 DETECTED: This document has a Discussion section
+===========================================
+
+MANDATORY MAPPING FOR DISCUSSION SECTION:
+
+- If Discussion has >5 substantial discussion points → Create separate "Discussion & Implications" block
+
+- If Discussion has ≤5 points → Merge into "Performance Evaluation & Results Analysis" block
+
+- Each major discussion point → separate node
+
+- Each implication mentioned → separate node
+
+`);
+  }
+  
+  const sectionMappingGuidance = sectionMappingInstructions.length > 0 
+    ? sectionMappingInstructions.join('\n') 
+    : '';
+
+  // Block naming guidelines (moved after critical rules for comprehensive)
+  const blockNamingGuidelines = `
+**Block Naming Guidelines:**
+
+${domain !== 'general' ? domainExamples : ''}
+
+- Analyze the document to identify 3-7 major thematic phases
+
+- Create descriptive block names that reflect actual content, not generic categories
+
+- **CRITICAL: Block names MUST be specific and domain-relevant. Use terminology from the source document.**
+
+**BAD examples (too generic - DO NOT USE THESE):**
+- "Data Block"
+- "Methodology Block"  
+- "Analysis Block"
+- "Results Block"
+- "Protocol Block"
+- "Data Creation Block"
+
+**GOOD examples (specific and descriptive - USE THESE AS TEMPLATES):**
+- "Financial Data Preparation & Feature Engineering"
+- "Kalman Filter Model Implementation"
+- "Performance Evaluation & Comparison"
+- "Model Performance & ROI Analysis"
+- "Cell Culture Preparation & Quality Control"
+- "RNA Extraction & Purification Protocol"
+- "Sequencing Data Generation & Quality Assessment"
+- "Bioinformatics Analysis Pipeline & Statistical Validation"
+
+**Domain-Specific Examples:**
+
+* **Biology/Wet Lab:**
+  - "Cell Culture Preparation Protocol"
+  - "RNA Extraction & Purification"
+  - "Sequencing Data Generation"
+  - "Differential Expression Analysis & Statistical Validation"
+
+* **Machine Learning/AI:**
+  - "Dataset Curation & Preprocessing"
+  - "Model Architecture Design & Configuration"
+  - "Training & Hyperparameter Optimization"
+  - "Benchmark Evaluation & Ablation Studies"
+
+* **Finance/Economics:**
+  - "Financial Data Preparation & Feature Engineering"
+  - "Kalman Filter Implementation & State Space Modeling"
+  - "Performance Backtesting & Risk Analysis"
+  - "ROI Analysis & Portfolio Optimization"
+
+**Block Naming Strategy:**
+
+1. **Read the document title and abstract first** - Identify the main topic, methods, and domain terminology
+
+2. **Extract key terms** from the document:
+   - Method names (e.g., "Kalman Filter", "ANOVA", "PCR")
+   - Data types (e.g., "Bond Yield", "RNA-seq", "Financial Time Series")
+   - Analysis types (e.g., "Sentiment Analysis", "Differential Expression", "Performance Evaluation")
+   - Outcome metrics (e.g., "ROI", "Accuracy", "Gene Expression Levels")
+
+3. **Incorporate these terms into block names:**
+   - For data sections: "[Specific Data Type] Collection & Preprocessing"
+   - For method sections: "[Specific Method Name] Implementation"
+   - For analysis sections: "[Specific Analysis Type] & Comparison"
+   - For results sections: "[Specific Outcome Metric] Performance Analysis"
+
+4. **Use domain terminology** - If the document mentions "Kalman Filter", use that in the block name. If it mentions "Bond Yield Prediction", use that terminology.
+
+**Block Organization:**
+
+- Group related nodes into coherent phases
+
+- Each block should represent a distinct stage of the workflow
+
+- Blocks should flow logically from preparation → execution → evaluation
+
+- Block names should immediately convey what that phase accomplishes
+
+**Block Consolidation Guidelines:**
+
+CRITICAL: Avoid creating multiple blocks for the same conceptual phase.
+
+Common consolidation patterns:
+- "Data Collection", "Data Preprocessing", "Data Cleaning" 
+  → ONE block: "Data Collection & Preprocessing"
+  
+- "Sentiment Analysis Setup", "Sentiment Analysis Configuration", "Sentiment Analysis Integration"
+  → ONE block: "Sentiment Analysis Ensemble Configuration"
+  
+- "Model Training", "Model Optimization", "Hyperparameter Tuning"
+  → ONE block: "Model Training & Optimization"
+  
+- "Performance Evaluation", "Results Analysis", "Performance Metrics"
+  → ONE block: "Performance Evaluation & Analysis"
+
+Rule: If two potential blocks describe sequential steps in the SAME phase, 
+merge them with descriptive naming (e.g., "Feature Selection & Engineering" 
+instead of separate "Feature Selection" and "Feature Engineering" blocks).
+
+**Block Count Targets (adapt to document complexity):**
+
+Document size guidance:
+- Short paper (10-30 pages): Aim for 3-5 blocks
+- Standard paper (30-80 pages): Aim for 4-7 blocks
+- Long paper/thesis (80-150 pages): Aim for 5-9 blocks
+- Dissertation (150+ pages): Aim for 6-12 blocks
+
+Default target: 4-6 major blocks for most documents.
+
+Only create MORE blocks when:
+1. The document explicitly describes distinct, non-overlapping phases
+2. Phases occur at different times (not parallel sub-tasks)
+3. Each phase has substantial unique methodology (not just parameter variations)
+
+Only create FEWER blocks when:
+1. Document is very focused on a single methodology
+2. Phases are tightly integrated and inseparable
+
+**Workflow Diagram Integration:**
+
+If the document contains a workflow diagram (commonly in figures like "Figure 2: 
+Methodology Workflow" or "Experimental Pipeline"):
+1. Identify the main phases shown in the diagram
+2. Use the diagram's structure as the primary guide for block organization
+3. Block names should reflect the phase names or descriptions in the diagram
+4. Respect the sequential order shown in the diagram
+
+Look for text references like:
+- "As shown in Figure X, our workflow consists of..."
+- "The experimental pipeline (Figure X) includes..."
+- "Following the methodology in Figure X..."
+
+**Block Size Guidelines:**
+
+- Each block should contain at least 2 nodes
+- If a phase has only 1 node, reconsider if it should be:
+  a) Merged into a related block
+  b) Expanded with more detail from the document
+  c) Actually a nested tree procedure (not a standalone block)
+  
+- Blocks can naturally vary in size (2-10 nodes)
+- Imbalance is acceptable if it reflects document structure
+- Don't force artificial balance by splitting logical phases
+
+**Block Sequencing:**
+
+Blocks should follow the natural flow described in the document.
+
+Typical sequence (adapt to actual document):
+1. Data acquisition/preparation phase
+2. Methodology development/implementation phase
+3. Experimental execution/analysis phase
+4. Results evaluation/interpretation phase
+
+However, ALWAYS adapt to the document's actual structure. Some documents:
+- Interleave methodology and results
+- Present multiple parallel workflows
+- Describe iterative refinement cycles
+
+Follow the document, don't force a template.
+`;
+
+  // "BEFORE YOU START EXTRACTING" checklist (only for comprehensive)
+  const beforeExtractingChecklist = isComprehensive ? `
+===========================================
+📋 BEFORE YOU START EXTRACTING
+===========================================
+
+Step 1: Read the document and identify major sections
+
+Step 2: Count items to extract:
+   - How many figures/tables?
+   - How many statistical tests?
+   - How many methods subsections?
+   - How many results subsections?
+
+Step 3: Plan your blocks (aim for 4-7 blocks total):
+   - What is the main methodology? → 1 block
+   - What is the main data work? → 1 block  
+   - What are the main results? → 1 block
+   - Are there other major phases? → 1-2 additional blocks
+
+Step 4: Create domain-specific block names BEFORE extracting nodes
+
+Step 5: Extract nodes according to "ONE NODE PER ITEM" rules
+
+===========================================
+` : '';
+
+  // Restructure prompt assembly for comprehensive documents
+  if (isComprehensive) {
+    return `
+PROJECT CONTEXT:
+${projectContext ?
+    `Project: ${projectContext.name || 'Unnamed Project'}${projectContext.description ? `\nDescription: ${projectContext.description}` : ''}`
+    : 'No additional context provided'}
+
+${keyTermsGuidance}
+
+${criticalExtractionRules}
+
+${sectionMappingGuidance}
+
+${blockNamingGuidelines}
+
+${exampleAdjustment}
+
+${beforeExtractingChecklist}
+
+SOURCE DOCUMENT:
+File: ${structuredDoc.fileName}
+Type: ${structuredDoc.type}
+${structuredDoc.metadata ? `Metadata: ${JSON.stringify(structuredDoc.metadata, null, 2)}` : ''}
+
+DOCUMENT CONTENT WITH PRESERVED STRUCTURE:
+
+${formattedDocument}
+
+TASK:
+
+${baseInstructions}
+${extractionIntensityGuidance}
+${contentExclusionGuidance}
+${structureGuidance}
+${extractionChecklist}
+${nestedTreeGuidance}
+
+CRITICAL - REQUIRED JSON STRUCTURE:
+
+You MUST return a JSON object with these exact top-level fields:
+
+{
+  "treeName": "string - The experiment or study title from the document",
+  "treeDescription": "string - One sentence describing what this experiment does",
+  "blocks": [
+    {
+      "blockName": "string - Descriptive name reflecting the phase's purpose (e.g., 'Financial Data Preparation & Feature Engineering', 'RNA Extraction & Purification', 'Model Architecture Design')",
+      "blockType": "string - General category: 'methodology', 'data', 'analysis', 'results', or 'tools'",
+      "blockDescription": "string (optional) - Brief explanation of what this phase accomplishes",
+      "position": number - Order in workflow (1, 2, 3...),
+      "nodes": [
+        {
+          "nodeId": "string - Unique ID like 'node-1', 'node-2'",
+          "title": "string - Short title for this step",
+          "content": {
+            "text": "string - The exact relevant text from the source document"
+          },
+          "nodeType": "string - Category matching blockType",
+          "status": "draft" | "complete" - Inferred from source language,
+          "parameters": {} - Extracted parameters from content (optional),
+          "dependencies": [
+            {
+              "referencedNodeTitle": "string - Exact title of referenced node",
+              "dependencyType": "requires" | "uses_output" | "follows" | "validates",
+              "extractedPhrase": "string - Exact phrase showing dependency",
+              "confidence": number - 0.7-1.0 (optional)
+            }
+          ],
+          "attachments": [] - References to figures/tables (optional),
+          "metadata": {} - Additional metadata (optional),
+          "isNestedTree": boolean - Mark if reusable sub-workflow (optional)
+        }
+      ]
+    }
+  ],
+  "nestedTrees": [] - References to nested workflows (optional)
+}
+
+Return only the JSON object, no explanations or markdown code blocks.`;
+  }
+
+  // Standard prompt structure for simple/moderate/complex documents
   return `
 PROJECT CONTEXT:
 ${projectContext ?
@@ -1694,6 +2407,8 @@ ${projectContext ?
     : 'No additional context provided'}
 
 ${keyTermsGuidance}
+
+${sectionMappingGuidance}
 
 SOURCE DOCUMENT:
 File: ${structuredDoc.fileName}

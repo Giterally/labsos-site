@@ -1,5 +1,8 @@
 import type { StructuredDocument } from '../processing/parsers/pdf-parser';
 import type { WorkflowExtractionResult } from './schemas/workflow-extraction-schema';
+import type { WorkflowDiscoveryResult } from './schemas/workflow-discovery-schema';
+import type { PhaseExtractionInput, PhaseExtractionResult } from './schemas/workflow-phase-extraction-schema';
+import type { WorkflowVerificationResult } from './schemas/workflow-verification-schema';
 
 export interface ModelInfo {
   name: string;
@@ -18,6 +21,28 @@ export interface AIProvider {
     projectContext?: { name?: string; description?: string },
     complexity?: { estimatedNodeCount: number; extractionStrategy: 'simple' | 'moderate' | 'complex' | 'comprehensive' }
   ): Promise<WorkflowExtractionResult>;
+  
+  /**
+   * Phase 1: Discover workflow phases without full extraction
+   */
+  discoverWorkflowPhases(
+    documents: StructuredDocument[]
+  ): Promise<WorkflowDiscoveryResult>;
+  
+  /**
+   * Phase 2: Extract nodes for a single workflow phase
+   */
+  extractPhase(
+    input: PhaseExtractionInput
+  ): Promise<PhaseExtractionResult>;
+  
+  /**
+   * Phase 3: Verify extraction completeness and identify gaps
+   */
+  verifyCompleteness(
+    discoveryResult: WorkflowDiscoveryResult,
+    extractedBlocks: PhaseExtractionResult[]
+  ): Promise<WorkflowVerificationResult>;
   
   /**
    * Get model capabilities and pricing info

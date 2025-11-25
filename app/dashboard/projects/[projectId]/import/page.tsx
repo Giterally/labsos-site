@@ -3094,21 +3094,46 @@ export default function ImportPage() {
                           p.node_json?.metadata?.isNestedTree === true
                         );
                         
-                        // Calculate block count from all proposals
-                        const groupedAll = proposals.reduce((acc, proposal) => {
-                          const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
-                          const blockType = rawType.toLowerCase();
-                          if (!acc[blockType]) {
-                            acc[blockType] = [];
+                        // Calculate block count using the same logic as the display
+                        // Group by blockName (same as displayed blocks)
+                        const groupedProposals = proposals.reduce((acc, proposal) => {
+                          // Try to get descriptive block name from root level, then metadata, then fallback to node_type
+                          const blockName = proposal.node_json?.blockName || 
+                                           proposal.node_json?.metadata?.proposedBlockName ||
+                                           proposal.node_json?.metadata?.blockName;
+                          
+                          let groupKey: string;
+                          
+                          if (blockName && !blockName.includes('Block')) {
+                            // Use descriptive block name (e.g., "Financial Data Preparation & Feature Engineering")
+                            groupKey = blockName;
+                          } else {
+                            // Fallback to node_type grouping for old proposals
+                            const rawType = proposal.node_json?.metadata?.node_type || 'uncategorized';
+                            const blockType = rawType.toLowerCase();
+                            groupKey = blockType;
                           }
-                          acc[blockType].push(proposal);
+                          
+                          if (!acc[groupKey]) {
+                            acc[groupKey] = {
+                              proposals: []
+                            };
+                          }
+                          acc[groupKey].proposals.push(proposal);
                           return acc;
-                        }, {} as Record<string, any[]>);
+                        }, {} as Record<string, { proposals: any[] }>);
                         
+                        // Count blocks after splitting large ones (same logic as display)
                         const MAX_NODES_PER_BLOCK = 15;
                         let totalBlocks = 0;
-                        Object.values(groupedAll).forEach((nodes: any[]) => {
-                          totalBlocks += Math.ceil(nodes.length / MAX_NODES_PER_BLOCK);
+                        Object.values(groupedProposals).forEach((group) => {
+                          const nodeCount = group.proposals.length;
+                          if (nodeCount <= MAX_NODES_PER_BLOCK) {
+                            totalBlocks += 1;
+                          } else {
+                            // Split large blocks
+                            totalBlocks += Math.ceil(nodeCount / MAX_NODES_PER_BLOCK);
+                          }
                         });
                         
                         return (

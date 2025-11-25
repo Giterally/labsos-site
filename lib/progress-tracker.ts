@@ -155,50 +155,63 @@ class ProgressTracker {
 
   /**
    * Get current progress with database fallback
+   * Always checks database for completed/failed jobs to ensure fresh data
    */
   async getWithFallback(jobId: string): Promise<ProgressUpdate | null> {
-    // Check in-memory cache first
-    const cached = this.updates.get(jobId);
-    if (cached) {
-      return cached;
-    }
-
     // Initialize if not done yet
     await this.initialize();
 
-    // Check cache again after initialization
-    const cachedAfterInit = this.updates.get(jobId);
-    if (cachedAfterInit) {
-      return cachedAfterInit;
-    }
+    // Check in-memory cache first
+    const cached = this.updates.get(jobId);
+    
+    // Always check database for completed/failed jobs to ensure we have the latest status
+    // Also check if cache is stale (older than 5 seconds)
+    const shouldCheckDatabase = !cached || 
+      cached.stage === 'complete' || 
+      cached.stage === 'error' ||
+      cached.stage === 'cancelled' ||
+      (Date.now() - cached.timestamp > 5000); // Cache older than 5 seconds
 
-    // Fallback to database query
-    try {
-      const { data: job, error } = await supabaseServer
-        .from('jobs')
-        .select('progress_stage, progress_current, progress_total, progress_message, progress_updated_at')
-        .eq('id', jobId)
-        .single();
+    if (shouldCheckDatabase) {
+      try {
+        const { data: job, error } = await supabaseServer
+          .from('jobs')
+          .select('progress_stage, progress_current, progress_total, progress_message, progress_updated_at, status')
+          .eq('id', jobId)
+          .single();
 
-      if (error || !job) {
+        if (error || !job) {
+          // If database query fails, return cached value if available
+          if (cached) {
+            return cached;
+          }
+          return null;
+        }
+
+        const dbTimestamp = new Date(job.progress_updated_at).getTime();
+        const progress: ProgressUpdate = {
+          stage: job.progress_stage as ProgressStage,
+          current: job.progress_current || 0,
+          total: job.progress_total || 0,
+          message: job.progress_message || '',
+          timestamp: dbTimestamp,
+        };
+
+        // Update cache with fresh database data
+        this.updates.set(jobId, progress);
+        return progress;
+      } catch (error) {
+        console.error('[PROGRESS_TRACKER] Database query error:', error);
+        // If database query fails, return cached value if available
+        if (cached) {
+          return cached;
+        }
         return null;
       }
-
-      const progress: ProgressUpdate = {
-        stage: job.progress_stage as ProgressStage,
-        current: job.progress_current || 0,
-        total: job.progress_total || 0,
-        message: job.progress_message || '',
-        timestamp: new Date(job.progress_updated_at).getTime(),
-      };
-
-      // Cache the result
-      this.updates.set(jobId, progress);
-      return progress;
-    } catch (error) {
-      console.error('[PROGRESS_TRACKER] Database query error:', error);
-      return null;
     }
+
+    // Return cached value if it's fresh and not a terminal state
+    return cached;
   }
 
   /**
