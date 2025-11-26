@@ -1463,45 +1463,6 @@ Methods section "Statistical Analysis" might contain:
 - Node: "Post-hoc Pairwise Comparisons" (analysis)
 Do NOT combine these into one "Statistical Analysis" node.` : ''}
 
-## STEP 1: COUNT BEFORE EXTRACTING (MANDATORY FIRST STEP)
-
-Before you start extracting, COUNT these items in the document explicitly:
-
-**Count these items and write down the numbers:**
-1. Count ALL figures mentioned (Figure 1, Figure 2, etc.) → Write: "X figures found"
-2. Count ALL tables mentioned (Table 1, Table 2, etc.) → Write: "X tables found"
-3. Count ALL statistical tests mentioned (ANOVA, t-test, chi-square, etc.) → Write: "X tests found"
-4. Count ALL subsections in Methods section → Write: "X subsections found"
-5. Count ALL experimental conditions/treatments → Write: "X conditions found"
-6. Count ALL distinct protocols/procedures → Write: "X protocols found"
-7. Count ALL model/algorithm implementations → Write: "X models found"
-8. Count ALL validation/verification steps → Write: "X validations found"
-9. Count ALL sub-steps within major procedures → Write: "X sub-steps found"
-10. Count ALL parameter variations or condition changes → Write: "X variations found"
-11. Count ALL distinct findings/results mentioned → Write: "X findings found"
-12. Count ALL preprocessing/transformation steps → Write: "X preprocessing steps found"
-
-**Then extract nodes based on these counts:**
-- Extract 1-2 result nodes per figure (extract 2 if figure has multiple findings) (if 15 figures → extract 15-20 result nodes)
-- Extract 1-2 result nodes per table (extract 2 if table has multiple results) (if 8 tables → extract 8-12 result nodes)
-- Extract 1-2 analysis nodes per statistical test (extract 2 if test has multiple components) (if 5 tests → extract 5-8 analysis nodes)
-- Extract 1-2 protocol nodes per Methods subsection (if 8 subsections → extract 8-12 protocol nodes)
-- Extract 1-2 nodes per experimental condition (if 3 conditions → extract 3-5 nodes)
-- Extract 1 node per distinct protocol/procedure (extract 2 if procedure has major variations)
-- Extract 1 node per model/algorithm (extract 2 if algorithm has distinct implementations)
-- Extract 1 node per validation step
-- Extract 2-3 nodes per major procedure with sub-steps (extract nodes for major sub-steps)
-- Extract 1 node per parameter variation or condition change
-- Extract 1 node per distinct finding/result mentioned
-- Extract 1 node per preprocessing/transformation step
-
-**CRITICAL REQUIREMENT: Your final node count MUST equal or exceed your item count:**
-- If you counted 15 figures → you MUST have at least 15 result nodes (preferably 15-20)
-- If you counted 8 tables → you MUST have at least 8 result nodes (preferably 8-12)
-- If you counted 5 statistical tests → you MUST have at least 5 analysis nodes (preferably 5-8)
-- **If your node count is less than your item count → STOP and extract ALL missing nodes before returning**
-- This requirement applies regardless of document size - extract all items you counted
-
 ## ONE NODE PER X - MANDATORY RULES:
 
 **ALWAYS create separate nodes for:**
@@ -1681,6 +1642,44 @@ Most protocols should stay in the main tree.
   // Calculate extraction intensity multiplier for comprehensive documents
   const extractionIntensityMultiplier = complexity && complexity.estimatedNodeCount > 50 ? 1.5 : 1.0;
   const adjustedTarget = complexity ? Math.floor(complexity.estimatedNodeCount * extractionIntensityMultiplier) : undefined;
+
+  // STEP 1: COUNT BEFORE EXTRACTING - Move to top of prompt for maximum visibility
+  const countingStep = `
+## STEP 1: COUNT THEN EXTRACT EVERYTHING (MANDATORY)
+
+**FIRST: Count these items in the document:**
+1. Count ALL figures mentioned (Figure 1, Figure 2, etc.)
+2. Count ALL tables mentioned (Table 1, Table 2, etc.)
+3. Count ALL statistical tests mentioned (ANOVA, t-test, chi-square, etc.)
+4. Count ALL subsections in Methods section
+5. Count ALL experimental conditions/treatments
+6. Count ALL distinct protocols/procedures
+7. Count ALL model/algorithm implementations
+8. Count ALL validation/verification steps
+9. Count ALL sub-steps within major procedures
+10. Count ALL parameter variations or condition changes
+11. Count ALL distinct findings/results mentioned
+12. Count ALL preprocessing/transformation steps
+
+**THEN: Extract nodes for EVERY SINGLE ITEM you counted above. DO NOT SKIP ANY.**
+
+**Extraction rules (apply to EVERY item you counted):**
+- Extract 1-2 result nodes per figure (extract 2 if figure has multiple findings)
+- Extract 1-2 result nodes per table (extract 2 if table has multiple results)
+- Extract 1-2 analysis nodes per statistical test (extract 2 if test has multiple components)
+- Extract 1-2 protocol nodes per Methods subsection
+- Extract 1-2 nodes per experimental condition
+- Extract 1 node per distinct protocol/procedure (extract 2 if procedure has major variations)
+- Extract 1 node per model/algorithm (extract 2 if algorithm has distinct implementations)
+- Extract 1 node per validation step
+- Extract 2-3 nodes per major procedure with sub-steps
+- Extract 1 node per parameter variation or condition change
+- Extract 1 node per distinct finding/result mentioned
+- Extract 1 node per preprocessing/transformation step
+
+**CRITICAL: If you counted 8 figures, you MUST extract 8-16 result nodes (1-2 per figure). If you counted 5 tests, you MUST extract 5-10 analysis nodes (1-2 per test). Extract nodes for EVERY item - do not stop after extracting a few.**
+
+`;
 
   const extractionChecklist = `
 ## MANDATORY EXTRACTION CHECKLIST (VERIFY BEFORE FINALIZING):
@@ -2376,6 +2375,8 @@ ${formattedDocument}
 
 TASK:
 
+${countingStep}
+
 ${baseInstructions}
 ${extractionIntensityGuidance}
 ${contentExclusionGuidance}
@@ -2448,6 +2449,8 @@ DOCUMENT CONTENT WITH PRESERVED STRUCTURE:
 ${formattedDocument}
 
 TASK:
+
+${countingStep}
 
 ${baseInstructions}
 ${extractionIntensityGuidance}

@@ -52,13 +52,36 @@ export const PhaseExtractionResultSchema = z.object({
         matchedVia: z.string().optional(),
       })).default([])
     ),
-    attachments: z.array(z.object({
-      sourceId: z.string(),
-      fileName: z.string(),
-      pageRange: z.tuple([z.number(), z.number()]).optional(),
-      timestamp: z.tuple([z.number(), z.number()]).optional(),
-      relevance: z.string(),
-    })).default([]),
+    attachments: z.preprocess(
+      (val) => {
+        // Handle case where LLM returns attachments as strings instead of objects
+        if (!val) return [];
+        if (!Array.isArray(val)) return [];
+        return val.map((att: any) => {
+          // If it's already an object, return as-is
+          if (typeof att === 'object' && att !== null && !Array.isArray(att)) return att;
+          // If it's a string, convert to object format
+          if (typeof att === 'string') {
+            // Try to extract sourceId from documents if available
+            // For now, use a default since we don't have document context here
+            return {
+              sourceId: 'unknown', // Will be resolved later by attachment-resolver
+              fileName: att, // Use the string as the fileName (e.g., "Figure 1")
+              relevance: 'Referenced in content',
+            };
+          }
+          // Skip invalid entries
+          return null;
+        }).filter((att: any) => att !== null);
+      },
+      z.array(z.object({
+        sourceId: z.string(),
+        fileName: z.string(),
+        pageRange: z.tuple([z.number(), z.number()]).optional(),
+        timestamp: z.tuple([z.number(), z.number()]).optional(),
+        relevance: z.string(),
+      })).default([])
+    ),
     metadata: z.object({
       estimatedTimeMinutes: z.number().optional(),
       tags: z.array(z.string()).default([]),
