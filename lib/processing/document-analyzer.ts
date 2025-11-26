@@ -113,9 +113,6 @@ export function analyzeDocumentComplexity(
   } else if (estimatedNodeCount <= 30 && sectionDepth <= 3) {
     strategy = 'moderate';
     shouldUseHierarchical = false;
-  } else if (estimatedNodeCount <= 50) {
-    strategy = 'complex';
-    shouldUseHierarchical = estimatedNodeCount > 30 && sectionDepth > 2;
   } else {
     strategy = 'comprehensive';
     shouldUseHierarchical = true;
