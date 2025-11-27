@@ -3493,7 +3493,7 @@ export default function ImportPage() {
                                                         </div>
                                                         {isSectionExpanded('content') && (
                                                           <div className="p-3 border-t">
-                                                            <pre className="text-xs whitespace-pre-wrap dark:text-white">
+                                                            <pre className="text-xs whitespace-pre-wrap">
                                                               {node.content.text}
                                                             </pre>
                                                           </div>
@@ -3525,9 +3525,9 @@ export default function ImportPage() {
                                                             <div className="space-y-1">
                                                               {node.attachments.map((attachment: any, index: number) => (
                                                                 <div key={index} className="text-xs">
-                                                                  <span className="font-medium dark:text-white">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
+                                                                  <span className="font-medium">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
                                                                   {attachment.range && (
-                                                                    <span className="dark:text-gray-300 ml-2">({attachment.range})</span>
+                                                                    <span className="ml-2">({attachment.range})</span>
                                                                   )}
                                                                 </div>
                                                               ))}
@@ -3570,7 +3570,7 @@ export default function ImportPage() {
                                                                     {link.title || link.url}
                                                                   </a>
                                                                   {link.type && (
-                                                                    <span className="dark:text-gray-300 ml-2">({link.type})</span>
+                                                                    <span className="ml-2">({link.type})</span>
                                                                   )}
                                                                 </div>
                                                               ))}
@@ -3619,28 +3619,28 @@ export default function ImportPage() {
                                                                 return (
                                                                   <div key={index} className="text-xs border-l-2 border-gray-300 dark:border-gray-600 pl-2">
                                                                     <div className="flex items-center gap-2 mb-1">
-                                                                      <span className="font-medium dark:text-white">
+                                                                      <span className="font-medium">
                                                                         {dep.referenced_title || dep.referencedNodeTitle || 'Unknown Node'}
                                                                       </span>
                                                                       <Badge 
                                                                         variant="outline" 
-                                                                        className={`text-xs ${depTypeColors[depType] || 'dark:bg-gray-600 dark:text-white'}`}
+                                                                        className={`text-xs ${depTypeColors[depType] || ''}`}
                                                                       >
                                                                         {depTypeLabels[depType] || depType}
                                                                       </Badge>
                                                                       {dep.confidence !== undefined && (
-                                                                        <span className="dark:text-gray-300">
+                                                                        <span>
                                                                           {Math.round((dep.confidence || 0) * 100)}% confidence
                                                                         </span>
                                                                       )}
                                                                     </div>
                                                                     {dep.extractedPhrase && (
-                                                                      <p className="dark:text-gray-300 italic text-xs mt-1">
+                                                                      <p className="italic text-xs mt-1">
                                                                         "{dep.extractedPhrase}"
                                                                       </p>
                                                                     )}
                                                                     {dep.evidence && !dep.extractedPhrase && (
-                                                                      <p className="dark:text-gray-300 italic text-xs mt-1">
+                                                                      <p className="italic text-xs mt-1">
                                                                         "{dep.evidence}"
                                                                       </p>
                                                                     )}
