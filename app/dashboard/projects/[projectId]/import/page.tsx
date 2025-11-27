@@ -108,7 +108,7 @@ export default function ImportPage() {
   const [proposalsStats, setProposalsStats] = useState<{ totalNodes: number; totalBlocks: number; blockBreakdown: { type: string; count: number }[] } | null>(null);
   const [selectedProposals, setSelectedProposals] = useState<Set<string>>(new Set());
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
-  const [selectedDetailView, setSelectedDetailView] = useState<Record<string, string>>({});
+  const [expandedNodeSections, setExpandedNodeSections] = useState<Map<string, Set<string>>>(new Map());
   const [openNestedTrees, setOpenNestedTrees] = useState<Set<string>>(new Set());
   const [nestedTreeData, setNestedTreeData] = useState<Record<string, any>>({});
   const [loadingNestedTrees, setLoadingNestedTrees] = useState<Set<string>>(new Set());
@@ -3455,179 +3455,207 @@ export default function ImportPage() {
                                               </div>
                                             )}
                                             
-                                            {/* Clickable Tabs */}
-                                            <div className="flex gap-1 mb-3">
-                                              {node.content?.text && (
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedDetailView(prev => ({
-                                                      ...prev,
-                                                      [proposal.id]: prev[proposal.id] === "content" ? "" : "content"
-                                                    }));
-                                                  }}
-                                                  className={`px-3 py-1 text-xs rounded transition-colors ${
-                                                    selectedDetailView[proposal.id] === "content"
-                                                      ? 'bg-blue-500 text-white'
-                                                      : 'dark:bg-gray-700 dark:text-white'
-                                                  }`}
-                                                >
-                                                  📄 Content
-                                                </button>
-                                              )}
-                                              {node.links && node.links.length > 0 && (
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedDetailView(prev => ({
-                                                      ...prev,
-                                                      [proposal.id]: prev[proposal.id] === "links" ? "" : "links"
-                                                    }));
-                                                  }}
-                                                  className={`px-3 py-1 text-xs rounded transition-colors ${
-                                                    selectedDetailView[proposal.id] === "links"
-                                                      ? 'bg-blue-500 text-white'
-                                                      : 'dark:bg-gray-700 dark:text-white'
-                                                  }`}
-                                                >
-                                                  🔗 Links ({node.links.length})
-                                                </button>
-                                              )}
-                                              {node.attachments && node.attachments.length > 0 && (
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedDetailView(prev => ({
-                                                      ...prev,
-                                                      [proposal.id]: prev[proposal.id] === "attachments" ? "" : "attachments"
-                                                    }));
-                                                  }}
-                                                  className={`px-3 py-1 text-xs rounded transition-colors ${
-                                                    selectedDetailView[proposal.id] === "attachments"
-                                                      ? 'bg-blue-500 text-white'
-                                                      : 'dark:bg-gray-700 dark:text-white'
-                                                  }`}
-                                                >
-                                                  📎 Attachments ({node.attachments.length})
-                                                </button>
-                                              )}
-                                              {node.dependencies && node.dependencies.length > 0 && (
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedDetailView(prev => ({
-                                                      ...prev,
-                                                      [proposal.id]: prev[proposal.id] === "dependencies" ? "" : "dependencies"
-                                                    }));
-                                                  }}
-                                                  className={`px-3 py-1 text-xs rounded transition-colors ${
-                                                    selectedDetailView[proposal.id] === "dependencies"
-                                                      ? 'bg-blue-500 text-white'
-                                                      : 'dark:bg-gray-700 dark:text-white'
-                                                  }`}
-                                                >
-                                                  🔗 Dependencies ({node.dependencies.length})
-                                                </button>
-                                              )}
-                                            </div>
-                                            
-                                            {/* Detail View Content */}
-                                            {selectedDetailView[proposal.id] === "content" && node.content?.text && (
-                                              <div className="mt-3 p-3 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
-                                                <pre className="text-xs whitespace-pre-wrap dark:text-white">
-                                                  {node.content.text}
-                                                </pre>
-                                              </div>
-                                            )}
-
-                                            {selectedDetailView[proposal.id] === "links" && node.links && node.links.length > 0 && (
-                                              <div className="mt-3 p-3 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
-                                                <div className="space-y-1">
-                                                  {node.links.map((link: any, index: number) => (
-                                                    <div key={index} className="text-xs">
-                                                      <a 
-                                                        href={link.url} 
-                                                        target="_blank" 
-                                                        rel="noopener noreferrer"
-                                                        className="text-blue-600 dark:text-blue-400 hover:underline"
-                                                      >
-                                                        {link.title || link.url}
-                                                      </a>
-                                                      {link.type && (
-                                                        <span className="dark:text-gray-300 ml-2">({link.type})</span>
-                                                      )}
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              </div>
-                                            )}
-
-                                            {selectedDetailView[proposal.id] === "attachments" && node.attachments && node.attachments.length > 0 && (
-                                              <div className="mt-3 p-3 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
-                                                <div className="space-y-1">
-                                                  {node.attachments.map((attachment: any, index: number) => (
-                                                    <div key={index} className="text-xs">
-                                                      <span className="font-medium dark:text-white">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
-                                                      {attachment.range && (
-                                                        <span className="dark:text-gray-300 ml-2">({attachment.range})</span>
-                                                      )}
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              </div>
-                                            )}
-
-                                            {selectedDetailView[proposal.id] === "dependencies" && node.dependencies && node.dependencies.length > 0 && (
-                                              <div className="mt-3 p-3 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
-                                                <div className="space-y-2">
-                                                  {node.dependencies.map((dep: any, index: number) => {
-                                                    const depTypeLabels: Record<string, string> = {
-                                                      'requires': 'Requires',
-                                                      'uses_output': 'Uses Output',
-                                                      'follows': 'Follows',
-                                                      'validates': 'Validates'
-                                                    };
-                                                    const depTypeColors: Record<string, string> = {
-                                                      'requires': 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
-                                                      'uses_output': 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
-                                                      'follows': 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
-                                                      'validates': 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                                                    };
-                                                    const depType = dep.dependency_type || dep.dependencyType || 'requires';
-                                                    return (
-                                                      <div key={index} className="text-xs border-l-2 border-gray-300 dark:border-gray-600 pl-2">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                          <span className="font-medium dark:text-white">
-                                                            {dep.referenced_title || dep.referencedNodeTitle || 'Unknown Node'}
-                                                          </span>
-                                                          <Badge 
-                                                            variant="outline" 
-                                                            className={`text-xs ${depTypeColors[depType] || 'dark:bg-gray-600 dark:text-white'}`}
-                                                          >
-                                                            {depTypeLabels[depType] || depType}
-                                                          </Badge>
-                                                          {dep.confidence !== undefined && (
-                                                            <span className="dark:text-gray-300">
-                                                              {Math.round((dep.confidence || 0) * 100)}% confidence
-                                                            </span>
-                                                          )}
+                                            {/* Collapsible Sections */}
+                                            <div className="space-y-2">
+                                              {(() => {
+                                                const toggleSection = (sectionName: string) => {
+                                                  const proposalSections = expandedNodeSections.get(proposal.id) || new Set();
+                                                  const newSections = new Set(proposalSections);
+                                                  if (newSections.has(sectionName)) {
+                                                    newSections.delete(sectionName);
+                                                  } else {
+                                                    newSections.add(sectionName);
+                                                  }
+                                                  setExpandedNodeSections(new Map(expandedNodeSections.set(proposal.id, newSections)));
+                                                };
+                                                
+                                                const isSectionExpanded = (sectionName: string) => {
+                                                  return (expandedNodeSections.get(proposal.id) || new Set()).has(sectionName);
+                                                };
+                                                
+                                                return (
+                                                  <>
+                                                    {/* Content Section */}
+                                                    {node.content?.text && (
+                                                      <div className="border rounded-lg overflow-hidden">
+                                                        <div 
+                                                          className="flex items-center gap-2 p-2 cursor-pointer transition-colors hover:bg-muted/50"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleSection('content');
+                                                          }}
+                                                        >
+                                                          <FileText className="h-3 w-3 text-muted-foreground" />
+                                                          <span className="text-xs font-medium flex-1">Content</span>
+                                                          <ChevronDown 
+                                                            className={`w-3 h-3 transition-transform ${isSectionExpanded('content') ? 'rotate-180' : ''}`}
+                                                          />
                                                         </div>
-                                                        {dep.extractedPhrase && (
-                                                          <p className="dark:text-gray-300 italic text-xs mt-1">
-                                                            "{dep.extractedPhrase}"
-                                                          </p>
-                                                        )}
-                                                        {dep.evidence && !dep.extractedPhrase && (
-                                                          <p className="dark:text-gray-300 italic text-xs mt-1">
-                                                            "{dep.evidence}"
-                                                          </p>
+                                                        {isSectionExpanded('content') && (
+                                                          <div className="p-3 border-t">
+                                                            <pre className="text-xs whitespace-pre-wrap dark:text-white">
+                                                              {node.content.text}
+                                                            </pre>
+                                                          </div>
                                                         )}
                                                       </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              </div>
-                                            )}
+                                                    )}
+                                                    
+                                                    {/* Attachments Section */}
+                                                    {node.attachments && node.attachments.length > 0 && (
+                                                      <div className="border rounded-lg overflow-hidden">
+                                                        <div 
+                                                          className="flex items-center gap-2 p-2 cursor-pointer transition-colors hover:bg-muted/50"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleSection('attachments');
+                                                          }}
+                                                        >
+                                                          <Paperclip className="h-3 w-3 text-muted-foreground" />
+                                                          <span className="text-xs font-medium flex-1">Attachments</span>
+                                                          <Badge variant="secondary" className="text-xs">
+                                                            {node.attachments.length}
+                                                          </Badge>
+                                                          <ChevronDown 
+                                                            className={`w-3 h-3 transition-transform ${isSectionExpanded('attachments') ? 'rotate-180' : ''}`}
+                                                          />
+                                                        </div>
+                                                        {isSectionExpanded('attachments') && (
+                                                          <div className="p-3 border-t">
+                                                            <div className="space-y-1">
+                                                              {node.attachments.map((attachment: any, index: number) => (
+                                                                <div key={index} className="text-xs">
+                                                                  <span className="font-medium dark:text-white">{attachment.filename || attachment.name || `Attachment ${index + 1}`}</span>
+                                                                  {attachment.range && (
+                                                                    <span className="dark:text-gray-300 ml-2">({attachment.range})</span>
+                                                                  )}
+                                                                </div>
+                                                              ))}
+                                                            </div>
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    
+                                                    {/* Links Section */}
+                                                    {node.links && node.links.length > 0 && (
+                                                      <div className="border rounded-lg overflow-hidden">
+                                                        <div 
+                                                          className="flex items-center gap-2 p-2 cursor-pointer transition-colors hover:bg-muted/50"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleSection('links');
+                                                          }}
+                                                        >
+                                                          <Link className="h-3 w-3 text-muted-foreground" />
+                                                          <span className="text-xs font-medium flex-1">Links</span>
+                                                          <Badge variant="secondary" className="text-xs">
+                                                            {node.links.length}
+                                                          </Badge>
+                                                          <ChevronDown 
+                                                            className={`w-3 h-3 transition-transform ${isSectionExpanded('links') ? 'rotate-180' : ''}`}
+                                                          />
+                                                        </div>
+                                                        {isSectionExpanded('links') && (
+                                                          <div className="p-3 border-t">
+                                                            <div className="space-y-1">
+                                                              {node.links.map((link: any, index: number) => (
+                                                                <div key={index} className="text-xs">
+                                                                  <a 
+                                                                    href={link.url} 
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                                                                  >
+                                                                    {link.title || link.url}
+                                                                  </a>
+                                                                  {link.type && (
+                                                                    <span className="dark:text-gray-300 ml-2">({link.type})</span>
+                                                                  )}
+                                                                </div>
+                                                              ))}
+                                                            </div>
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    
+                                                    {/* Dependencies Section */}
+                                                    {node.dependencies && node.dependencies.length > 0 && (
+                                                      <div className="border rounded-lg overflow-hidden">
+                                                        <div 
+                                                          className="flex items-center gap-2 p-2 cursor-pointer transition-colors hover:bg-muted/50"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleSection('dependencies');
+                                                          }}
+                                                        >
+                                                          <Link className="h-3 w-3 text-muted-foreground" />
+                                                          <span className="text-xs font-medium flex-1">Dependencies</span>
+                                                          <Badge variant="secondary" className="text-xs">
+                                                            {node.dependencies.length}
+                                                          </Badge>
+                                                          <ChevronDown 
+                                                            className={`w-3 h-3 transition-transform ${isSectionExpanded('dependencies') ? 'rotate-180' : ''}`}
+                                                          />
+                                                        </div>
+                                                        {isSectionExpanded('dependencies') && (
+                                                          <div className="p-3 border-t">
+                                                            <div className="space-y-2">
+                                                              {node.dependencies.map((dep: any, index: number) => {
+                                                                const depTypeLabels: Record<string, string> = {
+                                                                  'requires': 'Requires',
+                                                                  'uses_output': 'Uses Output',
+                                                                  'follows': 'Follows',
+                                                                  'validates': 'Validates'
+                                                                };
+                                                                const depTypeColors: Record<string, string> = {
+                                                                  'requires': 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
+                                                                  'uses_output': 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+                                                                  'follows': 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
+                                                                  'validates': 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                                                                };
+                                                                const depType = dep.dependency_type || dep.dependencyType || 'requires';
+                                                                return (
+                                                                  <div key={index} className="text-xs border-l-2 border-gray-300 dark:border-gray-600 pl-2">
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                      <span className="font-medium dark:text-white">
+                                                                        {dep.referenced_title || dep.referencedNodeTitle || 'Unknown Node'}
+                                                                      </span>
+                                                                      <Badge 
+                                                                        variant="outline" 
+                                                                        className={`text-xs ${depTypeColors[depType] || 'dark:bg-gray-600 dark:text-white'}`}
+                                                                      >
+                                                                        {depTypeLabels[depType] || depType}
+                                                                      </Badge>
+                                                                      {dep.confidence !== undefined && (
+                                                                        <span className="dark:text-gray-300">
+                                                                          {Math.round((dep.confidence || 0) * 100)}% confidence
+                                                                        </span>
+                                                                      )}
+                                                                    </div>
+                                                                    {dep.extractedPhrase && (
+                                                                      <p className="dark:text-gray-300 italic text-xs mt-1">
+                                                                        "{dep.extractedPhrase}"
+                                                                      </p>
+                                                                    )}
+                                                                    {dep.evidence && !dep.extractedPhrase && (
+                                                                      <p className="dark:text-gray-300 italic text-xs mt-1">
+                                                                        "{dep.evidence}"
+                                                                      </p>
+                                                                    )}
+                                                                  </div>
+                                                                );
+                                                              })}
+                                                            </div>
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                  </>
+                                                );
+                                              })()}
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
