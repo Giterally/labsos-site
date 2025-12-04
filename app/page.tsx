@@ -503,36 +503,36 @@ export default function KnowledgeCaptureLanding() {
       {/* Hero Section */}
       <section className="py-20 px-4 relative pb-32 z-10">
         <div className="container mx-auto max-w-7xl relative z-10">
-          <div className="grid lg:grid-cols-5 gap-8 items-center">
-            <div className="lg:col-span-2 space-y-8">
-              <div className="space-y-4">
-                <h1 className="text-5xl font-bold tracking-tight text-foreground">
-                  <AnimatedWord words={["Capture", "Organise", "Manage"]} /> Your Research Knowledge With Olvaro
-                </h1>
-                <div className="flex items-center gap-2">
-                  <a href="https://www.ucl.ac.uk/enterprise/" target="_blank" rel="noopener noreferrer" className="inline-block">
-                    <Badge variant="outline" className="text-sm font-normal border-amber-400/50 cursor-pointer hover:border-amber-400 transition-colors backdrop-blur-sm bg-background/80">
-                      <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-400 bg-clip-text text-transparent font-semibold drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]">
-                        Prize Winner of the UCL BaseKX Explore Competition (2025)
-                      </span>
-                    </Badge>
-                  </a>
-                </div>
-                <p className="text-xl text-muted-foreground leading-relaxed p-6 rounded-lg backdrop-blur-sm bg-background/80 border border-border/50">
-                  A centralised hub to ensure continuity of techniques with AI powered experiment trees, featuring tasks (personal and shared), continuous meeting notes, and work logs
-                </p>
+          <div className="max-w-3xl mx-auto space-y-8">
+            <div className="space-y-4 text-center">
+              <h1 className="text-5xl font-bold tracking-tight text-foreground">
+                <AnimatedWord words={["Capture", "Organise", "Manage"]} /> Your Research Knowledge With Olvaro
+              </h1>
+              <div className="flex items-center justify-center gap-2">
+                <a href="https://www.ucl.ac.uk/enterprise/" target="_blank" rel="noopener noreferrer" className="inline-block">
+                  <Badge variant="outline" className="text-sm font-normal border-amber-400/50 cursor-pointer hover:border-amber-400 transition-colors backdrop-blur-sm bg-background/80">
+                    <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-400 bg-clip-text text-transparent font-semibold drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]">
+                      Prize Winner of the UCL BaseKX Explore Competition (2025)
+                    </span>
+                  </Badge>
+                </a>
               </div>
-              <div className="flex space-x-4">
-                <Button size="lg" className="text-lg px-8 py-6" onClick={handleGetStarted}>
-                  Get Started
-                </Button>
-              </div>
+              <p className="text-xl text-muted-foreground leading-relaxed p-6 rounded-lg backdrop-blur-sm bg-background/80 border border-border/50">
+                A centralised hub to ensure continuity of techniques with AI powered experiment trees, featuring tasks (personal and shared), continuous meeting notes, and work logs
+              </p>
             </div>
-            <div className="lg:col-span-3 relative">
+            <div className="flex justify-center space-x-4">
+              <Button size="lg" className="text-lg px-8 py-6" onClick={handleGetStarted}>
+                Get Started
+              </Button>
+            </div>
+            
+            {/* Demo Video */}
+            <div className="mt-12 relative">
               <div 
                 className="w-full rounded-2xl overflow-hidden" 
                 style={{ 
-                  paddingBottom: '60%', 
+                  paddingBottom: '56.25%', 
                   position: 'relative',
                   backgroundColor: 'transparent',
                   overflow: 'hidden'
@@ -567,24 +567,24 @@ export default function KnowledgeCaptureLanding() {
                         </div>
                       </div>
                     )}
-                <iframe
+                    <iframe
                       src="https://player.vimeo.com/video/1135788759?badge=0&autopause=0&player_id=0&app_id=58479"
-                  className="absolute top-0 left-0 w-full h-full rounded-2xl"
-                  style={{
-                    border: 'none',
+                      className="absolute top-0 left-0 w-full h-full rounded-2xl"
+                      style={{
+                        border: 'none',
                         backgroundColor: 'transparent',
                         opacity: videoLoading ? 0 : 1,
                         transition: 'opacity 0.3s ease-in-out'
-                  }}
-                  frameBorder="0"
+                      }}
+                      frameBorder="0"
                       allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
                       referrerPolicy="strict-origin-when-cross-origin"
-                  allowFullScreen
+                      allowFullScreen
                       onLoad={() => {
                         setVideoLoading(false)
                         setVideoError(false)
                       }}
-                />
+                    />
                   </>
                 )}
               </div>
