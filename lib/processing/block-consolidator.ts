@@ -3,6 +3,7 @@ import { WorkflowExtractionResult, ExtractedBlock, ExtractedNode } from '@/lib/a
 interface ConsolidationOptions {
   targetBlockCount?: number; // Default: 5
   minNodesPerBlock?: number; // Default: 2
+  maxNodesPerBlock?: number; // Default: 10
   mergeSimilarBlocks?: boolean; // Default: true
   similarityThreshold?: number; // Default: 0.6
 }
@@ -29,11 +30,21 @@ export function consolidateBlocks(
   const {
     targetBlockCount = 5,
     minNodesPerBlock = 2,
+    maxNodesPerBlock = 10, // TUNE THIS: max nodes allowed per block
     mergeSimilarBlocks = true,
     similarityThreshold = 0.6
   } = options;
 
   const blocks = [...extractionResult.blocks];
+  
+  // Calculate dynamic target based on total nodes (aim for ~6 nodes per block)
+  const totalNodes = blocks.reduce((sum, block) => sum + block.nodes.length, 0);
+  const idealNodesPerBlock = 6; // TUNE THIS: lower = more blocks, higher = fewer blocks
+  const dynamicTarget = Math.max(
+    Math.ceil(totalNodes / idealNodesPerBlock),
+    Math.ceil(blocks.length / 2) // Don't reduce by more than 50%
+  );
+  
   const log: ConsolidationLog = {
     originalBlockCount: blocks.length,
     finalBlockCount: blocks.length,
@@ -41,28 +52,37 @@ export function consolidateBlocks(
   };
 
   // Skip consolidation if already at target or below
-  if (blocks.length <= targetBlockCount) {
-    console.log(`[BLOCK_CONSOLIDATOR] Already at target count (${blocks.length} blocks)`);
+  const hasOversized = blocks.some(b => b.nodes.length > maxNodesPerBlock);
+  if (blocks.length <= dynamicTarget && !hasOversized) {
+    console.log(`[BLOCK_CONSOLIDATOR] Already at target count (${blocks.length} blocks, target: ${dynamicTarget})`);
     return { result: extractionResult, log };
   }
 
-  console.log(`[BLOCK_CONSOLIDATOR] Starting consolidation: ${blocks.length} blocks → target ${targetBlockCount}`);
+  if (blocks.length <= dynamicTarget && hasOversized) {
+    console.log(`[BLOCK_CONSOLIDATOR] At target count but found oversized blocks, proceeding with split-only consolidation`);
+  } else {
+    console.log(`[BLOCK_CONSOLIDATOR] Starting consolidation: ${blocks.length} blocks → target ${dynamicTarget} (${totalNodes} total nodes)`);
+  }
 
   // Rule 1: Merge single-node blocks into most similar block
-  mergeSingleNodeBlocks(blocks, log);
+  mergeSingleNodeBlocks(blocks, log, maxNodesPerBlock);
 
   // Rule 2: Merge blocks with similar names (>60% similarity)
   if (mergeSimilarBlocks) {
-    mergeSimilarNamedBlocks(blocks, similarityThreshold, log);
+    mergeSimilarNamedBlocks(blocks, similarityThreshold, log, maxNodesPerBlock);
   }
 
   // Rule 3: Merge common fragmentation patterns (Results, Analysis, Setup blocks)
-  mergeCommonPatterns(blocks, log);
+  mergeCommonPatterns(blocks, log, maxNodesPerBlock);
 
   // Rule 4: If still over target, merge smallest blocks
-  while (blocks.length > targetBlockCount * 1.5) {
-    mergeSmallestBlocks(blocks, log);
+  while (blocks.length > dynamicTarget * 1.5) {
+    mergeSmallestBlocks(blocks, log, maxNodesPerBlock);
   }
+
+  // Rule 5: Split oversized blocks (even if at target count)
+  // This handles cases where AI extraction created oversized blocks
+  splitOversizedBlocks(blocks, log, maxNodesPerBlock);
 
   // Renumber block positions
   blocks.forEach((block, index) => {
@@ -83,7 +103,7 @@ export function consolidateBlocks(
 /**
  * Rule 1: Merge single-node blocks into semantically similar neighbors
  */
-function mergeSingleNodeBlocks(blocks: ExtractedBlock[], log: ConsolidationLog): void {
+function mergeSingleNodeBlocks(blocks: ExtractedBlock[], log: ConsolidationLog, maxNodesPerBlock: number): void {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i];
     
@@ -94,6 +114,9 @@ function mergeSingleNodeBlocks(blocks: ExtractedBlock[], log: ConsolidationLog):
       
       for (let j = 0; j < blocks.length; j++) {
         if (i === j || blocks[j].nodes.length === 1) continue;
+        
+        // Don't merge into blocks that would exceed maxNodesPerBlock
+        if (blocks[j].nodes.length >= maxNodesPerBlock) continue;
         
         const similarity = calculateBlockSimilarity(block, blocks[j]);
         if (similarity > bestScore) {
@@ -131,7 +154,8 @@ function mergeSingleNodeBlocks(blocks: ExtractedBlock[], log: ConsolidationLog):
 function mergeSimilarNamedBlocks(
   blocks: ExtractedBlock[], 
   threshold: number, 
-  log: ConsolidationLog
+  log: ConsolidationLog,
+  maxNodesPerBlock: number
 ): void {
   for (let i = blocks.length - 1; i >= 0; i--) {
     for (let j = i - 1; j >= 0; j--) {
@@ -141,6 +165,12 @@ function mergeSimilarNamedBlocks(
       );
       
       if (similarity > threshold) {
+        // Check if merge would exceed maxNodesPerBlock
+        const combinedSize = blocks[i].nodes.length + blocks[j].nodes.length;
+        if (combinedSize > maxNodesPerBlock) {
+          continue; // Skip this merge
+        }
+        
         // Merge i into j
         blocks[j].nodes.push(...blocks[i].nodes);
         
@@ -166,7 +196,7 @@ function mergeSimilarNamedBlocks(
 /**
  * Rule 3: Merge common fragmentation patterns
  */
-function mergeCommonPatterns(blocks: ExtractedBlock[], log: ConsolidationLog): void {
+function mergeCommonPatterns(blocks: ExtractedBlock[], log: ConsolidationLog, maxNodesPerBlock: number): void {
   const patterns = [
     {
       keywords: ['result', 'evaluation', 'performance', 'analysis', 'assessment', 'comparison'],
@@ -201,24 +231,33 @@ function mergeCommonPatterns(blocks: ExtractedBlock[], log: ConsolidationLog): v
     // Merge if found 2+ matching blocks
     if (matchingBlocks.length >= 2) {
       const targetIndex = matchingBlocks[0];
+      let totalNodes = blocks[targetIndex].nodes.length;
       const mergedNames: string[] = [];
       
       for (let i = matchingBlocks.length - 1; i >= 1; i--) {
         const sourceIndex = matchingBlocks[i];
+        // Check if merge would exceed limit
+        if (totalNodes + blocks[sourceIndex].nodes.length > maxNodesPerBlock) {
+          continue; // Skip this merge
+        }
         blocks[targetIndex].nodes.push(...blocks[sourceIndex].nodes);
+        totalNodes += blocks[sourceIndex].nodes.length;
         mergedNames.push(blocks[sourceIndex].blockName);
         blocks.splice(sourceIndex, 1);
       }
       
-      blocks[targetIndex].blockName = pattern.targetName;
-      
-      log.mergedBlocks.push({
-        merged: mergedNames,
-        into: pattern.targetName,
-        reason: `Pattern-based consolidation (${pattern.keywords.slice(0, 2).join(', ')}...)`
-      });
-      
-      console.log(`[BLOCK_CONSOLIDATOR] Pattern merge: ${mergedNames.join(' + ')} → "${pattern.targetName}"`);
+      // Only update name if we actually merged something
+      if (mergedNames.length > 0) {
+        blocks[targetIndex].blockName = pattern.targetName;
+        
+        log.mergedBlocks.push({
+          merged: mergedNames,
+          into: pattern.targetName,
+          reason: `Pattern-based consolidation (${pattern.keywords.slice(0, 2).join(', ')}...)`
+        });
+        
+        console.log(`[BLOCK_CONSOLIDATOR] Pattern merge: ${mergedNames.join(' + ')} → "${pattern.targetName}"`);
+      }
     }
   }
 }
@@ -226,7 +265,7 @@ function mergeCommonPatterns(blocks: ExtractedBlock[], log: ConsolidationLog): v
 /**
  * Rule 4: Merge smallest blocks if still over target
  */
-function mergeSmallestBlocks(blocks: ExtractedBlock[], log: ConsolidationLog): void {
+function mergeSmallestBlocks(blocks: ExtractedBlock[], log: ConsolidationLog, maxNodesPerBlock: number): void {
   // Find two smallest blocks
   const sorted = blocks
     .map((block, index) => ({ block, index, size: block.nodes.length }))
@@ -236,6 +275,13 @@ function mergeSmallestBlocks(blocks: ExtractedBlock[], log: ConsolidationLog): v
   
   const smallest = sorted[0];
   const secondSmallest = sorted[1];
+  
+  // Prevent merge if result would exceed maxNodesPerBlock
+  const combinedSize = smallest.size + secondSmallest.size;
+  if (combinedSize > maxNodesPerBlock) {
+    console.log(`[BLOCK_CONSOLIDATOR] Skipping merge: would create block with ${combinedSize} nodes (max: ${maxNodesPerBlock})`);
+    return;
+  }
   
   // Merge smallest into second smallest
   secondSmallest.block.nodes.push(...smallest.block.nodes);
@@ -252,6 +298,58 @@ function mergeSmallestBlocks(blocks: ExtractedBlock[], log: ConsolidationLog): v
   
   blocks.splice(smallest.index, 1);
   console.log(`[BLOCK_CONSOLIDATOR] Size merge: "${smallest.block.blockName}" → "${secondSmallest.block.blockName}"`);
+}
+
+/**
+ * Rule 5: Split oversized blocks (even if at target count)
+ * This handles cases where AI extraction created oversized blocks
+ */
+function splitOversizedBlocks(blocks: ExtractedBlock[], log: ConsolidationLog, maxNodesPerBlock: number): void {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i];
+    if (block.nodes.length > maxNodesPerBlock) {
+      // Split into multiple blocks, but keep descriptive names based on content
+      const numParts = Math.ceil(block.nodes.length / maxNodesPerBlock);
+      const nodesPerPart = Math.ceil(block.nodes.length / numParts);
+      
+      const splitBlocks: ExtractedBlock[] = [];
+      for (let part = 0; part < numParts; part++) {
+        const start = part * nodesPerPart;
+        const end = Math.min((part + 1) * nodesPerPart, block.nodes.length);
+        const partNodes = block.nodes.slice(start, end);
+        
+        // Try to create descriptive name from node content
+        const firstNodeTitle = partNodes[0]?.title || '';
+        const lastNodeTitle = partNodes[partNodes.length - 1]?.title || '';
+        
+        // Create descriptive suffix from first and last node titles
+        let descriptiveSuffix = '';
+        if (numParts > 1) {
+          if (firstNodeTitle && lastNodeTitle && firstNodeTitle !== lastNodeTitle) {
+            // Use first few words of first and last node
+            const firstWords = firstNodeTitle.split(/\s+/).slice(0, 2).join(' ');
+            const lastWords = lastNodeTitle.split(/\s+/).slice(0, 2).join(' ');
+            descriptiveSuffix = `: ${firstWords}${firstWords !== lastWords ? ` - ${lastWords}` : ''}`;
+          } else if (firstNodeTitle) {
+            const words = firstNodeTitle.split(/\s+/).slice(0, 3).join(' ');
+            descriptiveSuffix = `: ${words}${words.length < firstNodeTitle.length ? '...' : ''}`;
+          } else {
+            descriptiveSuffix = ` - Part ${part + 1}`;
+          }
+        }
+        
+        splitBlocks.push({
+          ...block,
+          blockName: numParts > 1 ? `${block.blockName}${descriptiveSuffix}` : block.blockName,
+          nodes: partNodes,
+          position: block.position + part
+        });
+      }
+      
+      blocks.splice(i, 1, ...splitBlocks);
+      console.log(`[BLOCK_CONSOLIDATOR] Split oversized "${block.blockName}" (${block.nodes.length} nodes) into ${numParts} blocks`);
+    }
+  }
 }
 
 /**

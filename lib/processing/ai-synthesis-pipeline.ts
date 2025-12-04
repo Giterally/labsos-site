@@ -11,6 +11,7 @@ import { storeSynthesizedNode, generateBriefSummary } from '../ai/synthesis';
 import { cleanStructuredDocument } from './document-cleaner';
 import { analyzeDocumentComplexity } from './document-analyzer';
 import { calculateExtractionMetrics, logExtractionMetrics } from '../ai/extraction-metrics';
+import { simpleTextSimilarity } from '../ai/deduplication';
 import type { StructuredDocument } from './parsers/pdf-parser';
 import type { WorkflowExtractionResult, ExtractedNode } from '../ai/schemas/workflow-extraction-schema';
 import { formatStructuredDocumentForLLM } from '../ai/workflow-extractor';
@@ -428,6 +429,265 @@ function extractTopicsFromDocument(doc: StructuredDocument): string[] {
   }
   
   return Array.from(topics);
+}
+
+/**
+ * Deduplicate nodes with similar titles/content (e.g., "RFE" vs "Recursive Feature Elimination (RFE)")
+ */
+function deduplicateSimilarNodes(nodes: ExtractedNode[]): number {
+  let mergedCount = 0;
+  const nodesToRemove = new Set<number>();
+  
+  // Helper to normalize title (strip parentheticals like "(RFE)", "(Figure 3)", etc.)
+  const normalizeTitle = (title: string): string => {
+    return title.replace(/\s*\([^)]+\)\s*$/, '').trim();
+  };
+  
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodesToRemove.has(i)) continue;
+    
+    const node1 = nodes[i];
+    const title1 = node1.title || '';
+    const normalized1 = normalizeTitle(title1);
+    
+    for (let j = i + 1; j < nodes.length; j++) {
+      if (nodesToRemove.has(j)) continue;
+      
+      const node2 = nodes[j];
+      const title2 = node2.title || '';
+      const normalized2 = normalizeTitle(title2);
+      
+      // Check exact title match first (after normalization)
+      if (normalized1.toLowerCase() === normalized2.toLowerCase() && normalized1.length > 0) {
+        // Exact match after normalization - merge regardless of content similarity
+        const node1ContentLength = (node1.content?.text || '').length;
+        const node2ContentLength = (node2.content?.text || '').length;
+        
+        const keepIndex = node1ContentLength >= node2ContentLength ? i : j;
+        const removeIndex = keepIndex === i ? j : i;
+        const keepNode = nodes[keepIndex];
+        const removeNode = nodes[removeIndex];
+        
+        // Merge attachments
+        const attachmentMap = new Map();
+        for (const att of keepNode.attachments || []) {
+          const key = att.fileName || att.name || '';
+          attachmentMap.set(key, att);
+        }
+        for (const att of removeNode.attachments || []) {
+          const key = att.fileName || att.name || '';
+          if (!attachmentMap.has(key)) {
+            attachmentMap.set(key, att);
+          }
+        }
+        keepNode.attachments = Array.from(attachmentMap.values());
+        
+        // Merge metadata if needed
+        if (removeNode.metadata && keepNode.metadata) {
+          keepNode.metadata = {
+            ...keepNode.metadata,
+            ...removeNode.metadata,
+            tags: Array.from(new Set([
+              ...(keepNode.metadata.tags || []),
+              ...(removeNode.metadata.tags || [])
+            ]))
+          };
+        }
+        
+        nodesToRemove.add(removeIndex);
+        mergedCount++;
+        console.log(`[DEDUPLICATION] Merged "${removeNode.title}" (exact title match) into "${keepNode.title}"`);
+        continue;
+      }
+      
+      // Calculate similarity using normalized titles
+      const node1Normalized = { ...node1, title: normalized1 };
+      const node2Normalized = { ...node2, title: normalized2 };
+      const similarity = simpleTextSimilarity(node1Normalized, node2Normalized);
+      
+      // If very similar (>85%), merge them
+      if (similarity > 85) {
+        // Keep the node with more content, or longer title if content is similar
+        const node1ContentLength = (node1.content?.text || '').length;
+        const node2ContentLength = (node2.content?.text || '').length;
+        
+        const keepIndex = node1ContentLength >= node2ContentLength ? i : j;
+        const removeIndex = keepIndex === i ? j : i;
+        const keepNode = nodes[keepIndex];
+        const removeNode = nodes[removeIndex];
+        
+        // Merge attachments
+        const attachmentMap = new Map();
+        for (const att of keepNode.attachments || []) {
+          const key = att.fileName || att.name || '';
+          attachmentMap.set(key, att);
+        }
+        for (const att of removeNode.attachments || []) {
+          const key = att.fileName || att.name || '';
+          if (!attachmentMap.has(key)) {
+            attachmentMap.set(key, att);
+          }
+        }
+        keepNode.attachments = Array.from(attachmentMap.values());
+        
+        // Merge metadata if needed
+        if (removeNode.metadata && keepNode.metadata) {
+          keepNode.metadata = {
+            ...keepNode.metadata,
+            ...removeNode.metadata,
+            tags: Array.from(new Set([
+              ...(keepNode.metadata.tags || []),
+              ...(removeNode.metadata.tags || [])
+            ]))
+          };
+        }
+        
+        nodesToRemove.add(removeIndex);
+        mergedCount++;
+        console.log(`[DEDUPLICATION] Merged "${removeNode.title}" (${similarity.toFixed(1)}% similar) into "${keepNode.title}"`);
+      }
+    }
+  }
+  
+  // Remove merged nodes (in reverse order to preserve indices)
+  const sortedIndices = Array.from(nodesToRemove).sort((a, b) => b - a);
+  for (const index of sortedIndices) {
+    nodes.splice(index, 1);
+  }
+  
+  return mergedCount;
+}
+
+/**
+ * Merge nodes that share the same attachment where one node has minimal content (just the attachment reference)
+ * This fixes cases where AI creates separate nodes: one for discussion and one just for the figure reference
+ */
+function mergeAttachmentOnlyNodes(nodes: ExtractedNode[]): number {
+  let mergedCount = 0;
+  const nodesToRemove = new Set<number>();
+  
+  // Helper to extract attachment identifier (e.g., "Figure 3" -> "figure-3")
+  const getAttachmentKey = (att: any): string | null => {
+    const fileName = att.fileName || att.name || '';
+    const match = fileName.match(/^(Figure|Fig\.?|Table|Equation|Eq\.?)\s+(\d+[a-zA-Z]?)/i);
+    if (match) {
+      const type = match[1].toLowerCase().startsWith('fig') ? 'figure' :
+                   match[1].toLowerCase().startsWith('tab') ? 'table' :
+                   match[1].toLowerCase().startsWith('eq') ? 'equation' : 'figure';
+      return `${type}-${match[2]}`;
+    }
+    return null;
+  };
+  
+  // Helper to check if content is minimal (just attachment reference)
+  const isMinimalContent = (node: ExtractedNode): boolean => {
+    const content = (node.content?.text || '').trim();
+    // Check if content is very short (< 200 chars) and mostly just figure reference
+    if (content.length < 200) {
+      const figureRefPattern = /^(Figure|Fig\.?|Table|Equation|Eq\.?)\s+\d+[a-zA-Z]?[:\s]*(from\s+[^\s]+)?\.?\s*$/i;
+      if (figureRefPattern.test(content.trim())) {
+        return true;
+      }
+      // Check if content is mostly just the attachment reference with minimal text
+      const words = content.split(/\s+/).length;
+      if (words < 20 && content.toLowerCase().includes('figure') || content.toLowerCase().includes('table')) {
+        return true;
+      }
+    }
+    return false;
+  };
+  
+  // Build map of attachment key -> nodes
+  const attachmentMap = new Map<string, ExtractedNode[]>();
+  
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (!node.attachments || node.attachments.length === 0) continue;
+    
+    for (const att of node.attachments) {
+      const key = getAttachmentKey(att);
+      if (key) {
+        if (!attachmentMap.has(key)) {
+          attachmentMap.set(key, []);
+        }
+        attachmentMap.get(key)!.push(node);
+      }
+    }
+  }
+  
+  // For each attachment, find nodes to merge
+  for (const [attachmentKey, nodesWithAttachment] of attachmentMap.entries()) {
+    if (nodesWithAttachment.length < 2) continue; // Need at least 2 nodes to merge
+    
+    // Find the node with minimal content (attachment-only)
+    const minimalNode = nodesWithAttachment.find(n => isMinimalContent(n));
+    if (!minimalNode) continue;
+    
+    // Find the node with substantive content (discussion)
+    const discussionNodes = nodesWithAttachment.filter(n => 
+      n !== minimalNode && !isMinimalContent(n) && (n.content?.text || '').length > 200
+    );
+    
+    if (discussionNodes.length === 0) continue;
+    
+    // Merge into the first discussion node (or the one with most content)
+    const targetNode = discussionNodes.reduce((best, current) => 
+      (current.content?.text || '').length > (best.content?.text || '').length ? current : best
+    );
+    
+    // Merge attachments (ensure no duplicates)
+    const existingAttachments = new Set(
+      (targetNode.attachments || []).map(a => getAttachmentKey(a)).filter(Boolean)
+    );
+    
+    for (const att of minimalNode.attachments || []) {
+      const attKey = getAttachmentKey(att);
+      if (attKey && !existingAttachments.has(attKey)) {
+        targetNode.attachments = targetNode.attachments || [];
+        targetNode.attachments.push(att);
+        existingAttachments.add(attKey);
+      }
+    }
+    
+    // Mark minimal node for removal
+    const minimalIndex = nodes.findIndex(n => n === minimalNode);
+    if (minimalIndex !== -1) {
+      nodesToRemove.add(minimalIndex);
+      mergedCount++;
+      console.log(`[ATTACHMENT_MERGE] Merged "${minimalNode.title}" (attachment-only) into "${targetNode.title}" (discussion)`);
+    }
+  }
+  
+  // Remove merged nodes (in reverse order to preserve indices)
+  const sortedIndices = Array.from(nodesToRemove).sort((a, b) => b - a);
+  for (const index of sortedIndices) {
+    nodes.splice(index, 1);
+  }
+  
+  return mergedCount;
+}
+
+/**
+ * Reformat node titles that start with "Figure X:" or "Table X:" to match existing node title style
+ * Example: "Figure 3: Feature Correlation Coefficient Heatmap" 
+ *      → "Feature Correlation Coefficient Heatmap (Figure 3)"
+ */
+function reformatAttachmentTitles(nodes: ExtractedNode[]): void {
+  for (const node of nodes) {
+    if (!node.title) continue;
+    
+    // Match patterns like "Figure 3: Title" or "Table 2: Title" or "Fig. 3: Title"
+    const figureMatch = node.title.match(/^(Figure|Fig\.?|Table)\s+(\d+[a-zA-Z]?)[:\s]+(.+)$/i);
+    if (figureMatch) {
+      const [, type, number, description] = figureMatch;
+      const normalizedType = type.toLowerCase().startsWith('fig') ? 'Figure' : 
+                            type.toLowerCase().startsWith('tab') ? 'Table' : type;
+      
+      // Reformat to: "Description (Figure X)" - matches style of other nodes
+      node.title = `${description.trim()} (${normalizedType} ${number})`;
+      console.log(`[TITLE_REFORMAT] Reformatted: "${figureMatch[0]}" → "${node.title}"`);
+    }
+  }
 }
 
 // Helper function to check if job was cancelled
@@ -898,6 +1158,7 @@ export async function generateProposals(userId: string, projectId: string, selec
         {
           targetBlockCount: 5,
           minNodesPerBlock: 2,
+          maxNodesPerBlock: 10,
           mergeSimilarBlocks: true,
           similarityThreshold: 0.6
         }
@@ -999,6 +1260,7 @@ export async function generateProposals(userId: string, projectId: string, selec
           {
             targetBlockCount: 5,
             minNodesPerBlock: 2,
+            maxNodesPerBlock: 10,
             mergeSimilarBlocks: true,
             similarityThreshold: 0.6
           }
@@ -1092,6 +1354,29 @@ export async function generateProposals(userId: string, projectId: string, selec
       sum + (n.attachments?.length || 0), 0
     );
     console.log(`[FAST_IMPORT] ✅ Resolved ${totalAttachments} total attachments across all nodes`);
+
+    // Step 3.25: Merge attachment-only nodes with discussion nodes
+    console.log(`[FAST_IMPORT] Merging attachment-only nodes with discussion nodes...`);
+    const mergedCount = mergeAttachmentOnlyNodes(allProposedNodes);
+    if (mergedCount > 0) {
+      console.log(`[FAST_IMPORT] ✅ Merged ${mergedCount} attachment-only node(s) into discussion nodes`);
+    } else {
+      console.log(`[FAST_IMPORT] ✅ No attachment-only nodes to merge`);
+    }
+
+    // Step 3.3: Reformat node titles for attachment references
+    console.log(`[FAST_IMPORT] Reformatting node titles with attachment references...`);
+    reformatAttachmentTitles(allProposedNodes);
+    console.log(`[FAST_IMPORT] ✅ Title reformatting complete`);
+
+    // Step 3.4: Deduplicate similar nodes (e.g., "RFE" vs "Recursive Feature Elimination (RFE)")
+    console.log(`[FAST_IMPORT] Deduplicating similar nodes...`);
+    const deduplicatedCount = deduplicateSimilarNodes(allProposedNodes);
+    if (deduplicatedCount > 0) {
+      console.log(`[FAST_IMPORT] ✅ Merged ${deduplicatedCount} duplicate node(s)`);
+    } else {
+      console.log(`[FAST_IMPORT] ✅ No duplicate nodes found`);
+    }
 
     // Step 3.5: Enrich content with attachment references
     console.log(`[FAST_IMPORT] Enriching node content with attachment document references...`);
