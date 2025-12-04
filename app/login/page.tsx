@@ -25,6 +25,8 @@ function LoginForm() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showVerifiedSuccess, setShowVerifiedSuccess] = useState(false)
+  const [accessToken, setAccessToken] = useState("")
+  const [hasValidAccessToken, setHasValidAccessToken] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -38,10 +40,28 @@ function LoginForm() {
     }
   }, [searchParams, router])
 
+  const handleAccessToken = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (accessToken.trim() === "CT275555") {
+      setHasValidAccessToken(true)
+      setError(null)
+      setAccessToken("") // Clear the token input for security
+    } else {
+      setError("Invalid access token. Please contact support@olvaro.net for assistance.")
+    }
+  }
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    
+    // Check access token for signup
+    if (isSignUp && !hasValidAccessToken) {
+      setError("Please enter a valid access token to continue.")
+      setIsLoading(false)
+      return
+    }
 
     // Basic validation
     if (!email || !password) {
@@ -110,7 +130,82 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md relative">
+        {/* Access Token Banner - Only show when signing up and token not validated */}
+        {isSignUp && !hasValidAccessToken && (
+          <div className="absolute inset-0 bg-background/95 backdrop-blur-sm z-50 rounded-lg flex items-center justify-center p-6">
+            <div className="w-full max-w-md space-y-6">
+              <div className="text-center space-y-4">
+                <h2 className="text-2xl font-bold text-foreground">Limited Signups for First Pilot</h2>
+                <div className="space-y-3 text-muted-foreground">
+                  <p className="text-base">
+                    We're currently limiting signups for our first pilot program.
+                  </p>
+                  <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+                    <p className="font-semibold text-foreground">Pricing:</p>
+                    <p>Starting at £40 per member</p>
+                    <p>Lab group discounts available at £35 per member</p>
+                  </div>
+                  <p className="text-base">
+                    Contact <a href="mailto:support@olvaro.net" className="text-primary hover:underline">support@olvaro.net</a> to get a quote.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                <Label htmlFor="accessToken">Access Token</Label>
+                <form onSubmit={handleAccessToken} className="space-y-2">
+                  <Input
+                    id="accessToken"
+                    type="text"
+                    placeholder="Enter access token"
+                    value={accessToken}
+                    onChange={(e) => {
+                      setAccessToken(e.target.value)
+                      setError(null)
+                    }}
+                    className="text-center font-mono"
+                    autoFocus
+                  />
+                  <Button type="submit" className="w-full">
+                    Continue
+                  </Button>
+                </form>
+                {error && error.includes("access token") && (
+                  <div className="text-sm p-3 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+                    <p className="text-red-600 dark:text-red-400 font-medium">
+                      {error}
+                    </p>
+                  </div>
+                )}
+              </div>
+              
+              <div className="pt-2 space-y-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(false)
+                    setError(null)
+                    setHasValidAccessToken(false)
+                    setAccessToken("")
+                  }}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors underline"
+                >
+                  Already have an account? Sign in
+                </button>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/")}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors underline"
+                  >
+                    ← Back to homepage
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <CardHeader className="text-center">
           <div>
             <CardTitle className="text-2xl">
@@ -127,6 +222,8 @@ function LoginForm() {
                 onClick={() => {
                   setIsSignUp(false)
                   setError(null)
+                  setHasValidAccessToken(false) // Reset access token when switching to sign in
+                  setAccessToken("")
                 }}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors underline"
               >
@@ -295,6 +392,8 @@ function LoginForm() {
                 onClick={() => {
                   setIsSignUp(!isSignUp)
                   setError(null)
+                  setHasValidAccessToken(false) // Reset access token when switching to sign up
+                  setAccessToken("")
                 }}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors underline"
               >
