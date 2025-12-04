@@ -117,12 +117,6 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                 >
                   FAQ
                 </a>
-                <a 
-                  href="#labs" 
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Research Projects
-                </a>
                 <button 
                   onClick={() => router.push('/?contact=true')}
                   className="text-muted-foreground hover:text-foreground transition-colors text-left"

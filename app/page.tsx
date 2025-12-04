@@ -339,7 +339,7 @@ export default function KnowledgeCaptureLanding() {
     },
     {
       question: "Can I control who sees my research?",
-      answer: "Absolutely. Olvaro includes flexible access controls. You can set your project to public or private and decide wether you want to show your projects on your profile."
+      answer: "Absolutely. Olvaro includes flexible access controls. You can set your project to public or private and decide whether you want to show your projects on your profile."
     },
     {
       question: "What happens to my data if I stop using the service?",
@@ -827,28 +827,6 @@ export default function KnowledgeCaptureLanding() {
         </div>
       </section>
 
-      {/* Research Projects Discovery */}
-      <section id="labs" className="py-16 px-4 relative z-10 scroll-mt-32">
-        <div className="container mx-auto max-w-6xl">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4 text-foreground">Discover Researchers and Research Projects Using Olvaro</h2>
-            <p className="text-lg text-muted-foreground">Explore public research projects and see how researchers are organising their work</p>
-          </div>
-
-
-          <div className="text-center mt-12">
-            <Link href="/labs">
-              <Button 
-                size="lg" 
-                className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-white font-bold px-12 py-6 text-lg shadow-xl hover:shadow-2xl transition-all duration-300 border-0"
-              >
-                View All Research Projects
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </section>
-
       {/* Meet the Team Section */}
       <section id="team" className="py-16 px-4 relative z-10">
         <div className="container mx-auto max-w-6xl">
@@ -994,7 +972,6 @@ export default function KnowledgeCaptureLanding() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><a href="#features" className="hover:text-foreground transition-colors">Features</a></li>
                 <li><a href="#faq" className="hover:text-foreground transition-colors">FAQ</a></li>
-                <li><a href="#labs" className="hover:text-foreground transition-colors">Research Projects</a></li>
               </ul>
             </div>
             <div className="space-y-4">
