@@ -459,8 +459,8 @@ export default function KnowledgeCaptureLanding() {
               <a href="#faq" className="text-muted-foreground hover:text-foreground transition-colors">
                 FAQ
               </a>
-              <a href="#labs" className="text-muted-foreground hover:text-foreground transition-colors">
-                Research Projects
+              <a href="#team" className="text-muted-foreground hover:text-foreground transition-colors">
+                Team
               </a>
               <button 
                 onClick={() => setShowContactDialog(true)}
