@@ -28,6 +28,7 @@ import {
   ArrowRightIcon,
   CloudArrowUpIcon,
   DocumentDuplicateIcon,
+  ArrowTopRightOnSquareIcon,
 } from "@heroicons/react/24/outline"
 import { useState, useEffect, Suspense, useMemo, memo, useCallback, useRef } from "react"
 import Link from "next/link"
@@ -774,6 +775,99 @@ export default function KnowledgeCaptureLanding() {
           </div>
         </div>
       </section>
+
+      {/* Meet the Team Section */}
+      <section id="team" className="py-16 px-4 relative z-10">
+        <div className="container mx-auto max-w-6xl">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4 text-foreground">Meet the Team</h2>
+            <p className="text-lg text-muted-foreground">The builders behind Olvaro</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Team Member 1 */}
+            <Card className="overflow-hidden">
+              <CardContent className="p-6">
+                <div className="flex flex-col items-center text-center">
+                  <div className="relative w-40 h-40 mb-4 rounded-full overflow-hidden bg-muted border-4 border-border">
+                    <Image
+                      src="/noah.jpg"
+                      alt="Noah Chander"
+                      width={160}
+                      height={160}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <a
+                    href="https://www.linkedin.com/in/noah-chander-014b52250/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mb-2 flex items-center justify-center gap-2 text-xl font-semibold text-foreground hover:text-primary transition-colors"
+                  >
+                    <h3>Noah Chander</h3>
+                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                  </a>
+                  <ul className="text-left space-y-2 text-muted-foreground">
+                    <li className="flex items-start">
+                      <span className="mr-2">•</span>
+                      <span>Software Engineer, <span className="font-bold text-foreground">Amazon</span></span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2">•</span>
+                      <span>Software Engineer Studentship, <span className="font-bold text-foreground">University College London</span></span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2">•</span>
+                      <span>BEng Mechanical Engineering, <span className="font-bold text-foreground">University College London</span></span>
+                    </li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Team Member 2 */}
+            <Card className="overflow-hidden">
+              <CardContent className="p-6">
+                <div className="flex flex-col items-center text-center">
+                  <div className="relative w-40 h-40 mb-4 rounded-full overflow-hidden bg-muted border-4 border-border">
+                    <Image
+                      src="/jude.jpg"
+                      alt="Jude Popham"
+                      width={160}
+                      height={160}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <a
+                    href="https://www.linkedin.com/in/jude-popham/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mb-2 flex items-center justify-center gap-2 text-xl font-semibold text-foreground hover:text-primary transition-colors"
+                  >
+                    <h3>Jude Popham</h3>
+                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                  </a>
+                  <ul className="text-left space-y-2 text-muted-foreground">
+                    <li className="flex items-start">
+                      <span className="mr-2">•</span>
+                      <span>ML for genetic regulation DPhil, <span className="font-bold text-foreground">University of Oxford</span> (current)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2">•</span>
+                      <span>MRes Bioinformatics, <span className="font-bold text-foreground">Imperial College London</span></span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2">•</span>
+                      <span>BSc Biochemistry, <span className="font-bold text-foreground">King's College London</span></span>
+                    </li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
       {/* FAQ Section */}
       <section id="faq" className="py-16 px-4 relative z-10">
         <div className="container mx-auto max-w-4xl">

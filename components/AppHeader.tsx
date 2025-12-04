@@ -106,6 +106,12 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
                   Features
                 </a>
                 <a 
+                  href="#team" 
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Team
+                </a>
+                <a 
                   href="#faq" 
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
