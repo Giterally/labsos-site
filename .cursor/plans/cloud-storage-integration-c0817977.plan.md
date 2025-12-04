@@ -1,4 +1,24 @@
-<!-- c0817977-ac4c-4192-b77f-87e6f1a0c214 8efc0fbd-64cb-4945-b06a-10cdacc257cc -->
+---
+name: AI Chat Attachments, Links, and Tree Hierarchy Enhancement
+overview: ""
+todos:
+  - id: 1f714916-4cef-4ddc-a47a-627b5925f01f
+    content: Update TreeContext interface and fetchTreeContext to include file_url, parent_trees, child_trees, and hierarchy_info
+    status: pending
+  - id: c22b1d68-0a54-4c8e-9e16-2059e28d2903
+    content: Update formatTreeContextForLLM to include hierarchy and nesting information with full URLs
+    status: pending
+  - id: fae3d7f6-8c70-4f28-9961-737e94ed41f3
+    content: Enhance AI prompt in generateAnswer to explain tree hierarchy and nesting
+    status: pending
+  - id: 8c3ff4fd-9518-417f-8046-ec3cd50475c6
+    content: Create parseAIResponse helper function in AIChatSidebar to extract attachments/links from AI responses
+    status: pending
+  - id: 4641d978-ae8a-4304-912e-2ab52ce11fe3
+    content: Update AIChatSidebar message rendering to display clickable links, embedded videos, and attachment cards
+    status: pending
+---
+
 # AI Chat Attachments, Links, and Tree Hierarchy Enhancement
 
 ## Overview
@@ -89,11 +109,3 @@ Enhance the AI chat to display clickable attachments and links (with YouTube vid
 - Test with nested trees (parent/child relationships)
 - Test YouTube video embedding
 - Test hierarchy questions (blocks, nodes, dependencies, nesting)
-
-### To-dos
-
-- [ ] Update TreeContext interface and fetchTreeContext to include file_url, parent_trees, child_trees, and hierarchy_info
-- [ ] Update formatTreeContextForLLM to include hierarchy and nesting information with full URLs
-- [ ] Enhance AI prompt in generateAnswer to explain tree hierarchy and nesting
-- [ ] Create parseAIResponse helper function in AIChatSidebar to extract attachments/links from AI responses
-- [ ] Update AIChatSidebar message rendering to display clickable links, embedded videos, and attachment cards

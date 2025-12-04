@@ -510,7 +510,7 @@ export default function KnowledgeCaptureLanding() {
                   <AnimatedWord words={["Capture", "Organise", "Manage"]} /> Your Research Knowledge With Olvaro
                 </h1>
                 <p className="text-xl text-muted-foreground leading-relaxed p-6 rounded-lg backdrop-blur-sm bg-background/80 border border-border/50">
-                  A centralised hub to ensure continuity of techniques with AI powered knowledge trees, featuring tasks (personal and shared), continuous meeting notes, and work logs
+                  A centralised hub to ensure continuity of techniques with AI powered experiment trees, featuring tasks (personal and shared), continuous meeting notes, and work logs
                 </p>
               </div>
               <div className="flex space-x-4">
@@ -590,7 +590,7 @@ export default function KnowledgeCaptureLanding() {
           <h2 className="text-3xl font-bold mb-12 text-foreground text-center">The Research Knowledge Crisis</h2>
           <div className="grid md:grid-cols-3 gap-8">
             {/* Capture Box */}
-            <Card className="p-8 text-center hover:shadow-lg transition-all duration-200">
+            <Card className="p-8 text-center">
               <CardContent className="space-y-6">
                 <div className="flex justify-center">
                   <div className="p-4 bg-primary/10 rounded-full">
@@ -600,17 +600,17 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Capture</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-base text-foreground font-medium">Experiments and data scattered across Dropbox, Sharepoint, and forgotten folders</p>
+                    <p className="text-base text-foreground font-medium">Experiment data scattered across Dropbox, Whatsapp, and forgotten folders</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
-                    <p className="text-base text-foreground font-medium">Olvaro centralizes all experiments and data into organized knowledge trees</p>
+                    <p className="text-base text-foreground font-medium">Olvaro centralises data into structured experiment trees</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
             {/* Organise Box */}
-            <Card className="p-8 text-center hover:shadow-lg transition-all duration-200">
+            <Card className="p-8 text-center">
               <CardContent className="space-y-6">
                 <div className="flex justify-center">
                   <div className="p-4 bg-primary/10 rounded-full">
@@ -620,7 +620,7 @@ export default function KnowledgeCaptureLanding() {
                 <h3 className="text-2xl font-bold text-foreground">Organise</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-red-400 dark:bg-red-900/20 rounded-lg border-l-4 border-red-800 dark:border-red-500">
-                    <p className="text-base text-foreground font-medium">Documentation missing or not presented in context, making research irreproducible</p>
+                    <p className="text-base text-foreground font-medium">Documentation missing or not held in context, so research is irreproducible</p>
                   </div>
                   <div className="p-4 bg-green-400 dark:bg-green-900/20 rounded-lg border-l-4 border-green-800 dark:border-green-500">
                     <p className="text-base text-foreground font-medium">Olvaro links everything contextually, making your research fully reproducible</p>
@@ -630,7 +630,7 @@ export default function KnowledgeCaptureLanding() {
             </Card>
 
             {/* Manage Box */}
-            <Card className="p-8 text-center hover:shadow-lg transition-all duration-200">
+            <Card className="p-8 text-center">
               <CardContent className="space-y-6">
                 <div className="flex justify-center">
                   <div className="p-4 bg-primary/10 rounded-full">
@@ -653,7 +653,15 @@ export default function KnowledgeCaptureLanding() {
           {/* FAIR Principles Impact */}
           <div className="mt-16">
             <div className="text-center mb-8">
-              <h3 className="text-2xl font-bold text-foreground mb-3">The FAIR Principles Gap</h3>
+              <a
+                href="https://www.go-fair.org/fair-principles/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 text-2xl font-bold text-foreground hover:text-primary transition-colors"
+              >
+                <h3>The FAIR Principles Gap</h3>
+                <ArrowTopRightOnSquareIcon className="h-5 w-5" />
+              </a>
             </div>
             
             <div className="space-y-6 mt-8 max-w-5xl mx-auto">
@@ -730,7 +738,7 @@ export default function KnowledgeCaptureLanding() {
           <div className="relative">
             <div className="grid md:grid-cols-3 gap-8 mb-0">
               {/* Cloud Storage Block */}
-              <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
+              <Card className="p-6 flex flex-col relative z-10">
                 <CardContent className="space-y-4 flex-1">
                   <div className="flex items-center space-x-3 mb-4">
                     <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
@@ -743,14 +751,14 @@ export default function KnowledgeCaptureLanding() {
                   </div>
                   <div className="space-y-3 flex-1">
                     <p className="text-base text-foreground leading-relaxed">
-                      Sophisticated directories that store files but reveal no experimental dependencies or workflow relationships.
+                      Sophisticated directories store files but reveal no experimental dependencies or relationships.
                     </p>
                   </div>
                 </CardContent>
               </Card>
 
               {/* AI Assistants Block */}
-              <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
+              <Card className="p-6 flex flex-col relative z-10">
                 <CardContent className="space-y-4 flex-1">
                   <div className="flex items-center space-x-3 mb-4">
                     <div className="p-3 bg-green-100 dark:bg-green-900/20 rounded-lg">
@@ -758,19 +766,19 @@ export default function KnowledgeCaptureLanding() {
                     </div>
                     <div>
                       <h3 className="text-xl font-bold text-foreground">AI Assistants</h3>
-                      <p className="text-xs text-muted-foreground">Microsoft Copilot and similar</p>
+                      <p className="text-xs text-muted-foreground">Microsoft Copilot, ChatGPT</p>
                     </div>
                   </div>
                   <div className="space-y-3 flex-1">
                     <p className="text-base text-foreground leading-relaxed">
-                      AI that reads single files in isolation, lacking visibility into experimental workflows and dependencies.
+                      AI reads single files in isolation, lacking visibility into experimental workflows/dependencies.
                     </p>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Note-Taking Tools Block */}
-              <Card className="p-6 hover:shadow-lg transition-all duration-200 flex flex-col relative z-10">
+              <Card className="p-6 flex flex-col relative z-10">
                 <CardContent className="space-y-4 flex-1">
                   <div className="flex items-center space-x-3 mb-4">
                     <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
@@ -783,7 +791,7 @@ export default function KnowledgeCaptureLanding() {
                   </div>
                   <div className="space-y-3 flex-1">
                     <p className="text-base text-foreground leading-relaxed">
-                      Documentation disconnected from code repositories, datasets, and computational infrastructure.
+                      Documentation and critical details disconnected from documentation repositories.
                     </p>
                   </div>
                 </CardContent>
@@ -874,11 +882,7 @@ export default function KnowledgeCaptureLanding() {
                   <ul className="text-left space-y-2 text-muted-foreground">
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
-                      <span>Software Engineer, <span className="font-bold text-foreground">Amazon</span></span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2">•</span>
-                      <span>Software Engineer Studentship, <span className="font-bold text-foreground">University College London</span></span>
+                      <span>Software Development Engineer, <span className="font-bold text-foreground">Amazon Prime Video</span></span>
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
