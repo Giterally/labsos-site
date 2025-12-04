@@ -509,6 +509,15 @@ export default function KnowledgeCaptureLanding() {
                 <h1 className="text-5xl font-bold tracking-tight text-foreground">
                   <AnimatedWord words={["Capture", "Organise", "Manage"]} /> Your Research Knowledge With Olvaro
                 </h1>
+                <div className="flex items-center gap-2">
+                  <a href="https://www.ucl.ac.uk/enterprise/" target="_blank" rel="noopener noreferrer" className="inline-block">
+                    <Badge variant="outline" className="text-sm font-normal border-amber-400/50 cursor-pointer hover:border-amber-400 transition-colors backdrop-blur-sm bg-background/80">
+                      <span className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-400 bg-clip-text text-transparent font-semibold drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]">
+                        Prize Winner of the UCL BaseKX Explore Competition (2025)
+                      </span>
+                    </Badge>
+                  </a>
+                </div>
                 <p className="text-xl text-muted-foreground leading-relaxed p-6 rounded-lg backdrop-blur-sm bg-background/80 border border-border/50">
                   A centralised hub to ensure continuity of techniques with AI powered experiment trees, featuring tasks (personal and shared), continuous meeting notes, and work logs
                 </p>
