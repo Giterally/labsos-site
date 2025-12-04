@@ -676,8 +676,9 @@ export default function KnowledgeCaptureLanding() {
             <div className="space-y-6 mt-8 max-w-5xl mx-auto">
               {/* Findable */}
               <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center">
-                <div className="text-center w-12">
+                <div className="text-center" style={{ minWidth: '100px' }}>
                   <span className="text-3xl font-bold text-foreground">F</span>
+                  <span className="text-base text-foreground">indable</span>
                 </div>
                 <div className="text-center w-8">
                   <ArrowRightIcon className="h-6 w-6 text-muted-foreground mx-auto" />
@@ -691,8 +692,9 @@ export default function KnowledgeCaptureLanding() {
 
               {/* Accessible */}
               <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center">
-                <div className="text-center w-12">
+                <div className="text-center" style={{ minWidth: '100px' }}>
                   <span className="text-3xl font-bold text-foreground">A</span>
+                  <span className="text-base text-foreground">ccessible</span>
                 </div>
                 <div className="text-center w-8">
                   <ArrowRightIcon className="h-6 w-6 text-muted-foreground mx-auto" />
@@ -706,8 +708,9 @@ export default function KnowledgeCaptureLanding() {
 
               {/* Interoperable */}
               <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center">
-                <div className="text-center w-12">
+                <div className="text-center" style={{ minWidth: '100px' }}>
                   <span className="text-3xl font-bold text-foreground">I</span>
+                  <span className="text-base text-foreground">nteroperable</span>
                 </div>
                 <div className="text-center w-8">
                   <ArrowRightIcon className="h-6 w-6 text-muted-foreground mx-auto" />
@@ -721,8 +724,9 @@ export default function KnowledgeCaptureLanding() {
 
               {/* Reusable */}
               <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center">
-                <div className="text-center w-12">
+                <div className="text-center" style={{ minWidth: '100px' }}>
                   <span className="text-3xl font-bold text-foreground">R</span>
+                  <span className="text-base text-foreground">eusable</span>
                 </div>
                 <div className="text-center w-8">
                   <ArrowRightIcon className="h-6 w-6 text-muted-foreground mx-auto" />
