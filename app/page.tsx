@@ -29,6 +29,7 @@ import {
   CloudArrowUpIcon,
   DocumentDuplicateIcon,
   ArrowTopRightOnSquareIcon,
+  ArrowDownIcon,
 } from "@heroicons/react/24/outline"
 import { useState, useEffect, Suspense, useMemo, memo, useCallback, useRef } from "react"
 import Link from "next/link"
@@ -84,8 +85,8 @@ const AnimatedWord = memo(({ words }: { words: string[] }) => {
           setDisplayedText(currentWord.substring(0, displayedText.length + 1))
           animationFrameRef.current = requestAnimationFrame(animate)
         } else {
-          // Wait 2 seconds before starting to delete
-          pauseUntilRef.current = currentTime + 2000
+          // Wait 1 second before starting to delete
+          pauseUntilRef.current = currentTime + 1000
           setIsDeleting(true)
           animationFrameRef.current = requestAnimationFrame(animate)
         }
@@ -218,13 +219,13 @@ const FAQItem = memo(({
   toggleFAQ: (index: number) => void
 }) => (
   <Card className="cursor-pointer" onClick={() => toggleFAQ(index)}>
-    <CardContent className="p-6">
+    <CardContent className="py-3 px-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-foreground">{faq.question}</h3>
         <ChevronDownIcon className={`h-5 w-5 text-muted-foreground transition-transform ${openFAQ === index ? 'rotate-180' : ''}`} />
       </div>
       {openFAQ === index && (
-        <div className="mt-4 pt-4 border-t border-border">
+        <div className="mt-3 pt-3 border-t border-border">
           <p className="text-muted-foreground leading-relaxed">{faq.answer}</p>
         </div>
       )}
@@ -648,6 +649,75 @@ export default function KnowledgeCaptureLanding() {
               </CardContent>
             </Card>
           </div>
+
+          {/* FAIR Principles Impact */}
+          <div className="mt-16">
+            <div className="text-center mb-8">
+              <h3 className="text-2xl font-bold text-foreground mb-3">The FAIR Principles Gap</h3>
+            </div>
+            
+            <div className="space-y-6 mt-8 max-w-5xl mx-auto">
+              {/* Findable */}
+              <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center">
+                <div className="text-center w-12">
+                  <span className="text-3xl font-bold text-foreground">F</span>
+                </div>
+                <div className="text-center w-8">
+                  <ArrowRightIcon className="h-6 w-6 text-muted-foreground mx-auto" />
+                </div>
+                <div>
+                  <p className="text-base text-muted-foreground whitespace-nowrap">
+                    Scattered data across multiple platforms makes experiments impossible to locate
+                  </p>
+                </div>
+              </div>
+
+              {/* Accessible */}
+              <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center">
+                <div className="text-center w-12">
+                  <span className="text-3xl font-bold text-foreground">A</span>
+                </div>
+                <div className="text-center w-8">
+                  <ArrowRightIcon className="h-6 w-6 text-muted-foreground mx-auto" />
+                </div>
+                <div>
+                  <p className="text-base text-muted-foreground whitespace-nowrap">
+                    When team members leave, access to critical knowledge is lost, breaking the chain of scientific continuity
+                  </p>
+                </div>
+              </div>
+
+              {/* Interoperable */}
+              <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center">
+                <div className="text-center w-12">
+                  <span className="text-3xl font-bold text-foreground">I</span>
+                </div>
+                <div className="text-center w-8">
+                  <ArrowRightIcon className="h-6 w-6 text-muted-foreground mx-auto" />
+                </div>
+                <div>
+                  <p className="text-base text-muted-foreground whitespace-nowrap">
+                    Disconnected documentation and isolated files prevent integration across tools and platforms, blocking collaborative workflows
+                  </p>
+                </div>
+              </div>
+
+              {/* Reusable */}
+              <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center">
+                <div className="text-center w-12">
+                  <span className="text-3xl font-bold text-foreground">R</span>
+                </div>
+                <div className="text-center w-8">
+                  <ArrowRightIcon className="h-6 w-6 text-muted-foreground mx-auto" />
+                </div>
+                <div>
+                  <p className="text-base text-muted-foreground whitespace-nowrap">
+                    Missing context and broken dependencies render research irreproducible, preventing others from building upon your work
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -720,28 +790,23 @@ export default function KnowledgeCaptureLanding() {
               </Card>
             </div>
 
-            {/* Connector lines from blocks to Olvaro - using canvas like interactive map */}
-            <div 
-              ref={connectorContainerRef}
-              className="relative w-full hidden md:block pointer-events-auto" 
-              style={{ height: 'calc(4rem + 60px)', marginTop: '0.5rem', marginBottom: '0' }}
-            >
-              <ConnectorLines containerRef={connectorContainerRef} />
+            {/* Vertical arrows from each box */}
+            <div className="grid md:grid-cols-3 gap-8 mt-20 mb-20">
+              <div className="flex justify-center">
+                <ArrowDownIcon className="h-20 w-20 text-muted-foreground" />
+              </div>
+              <div className="flex justify-center">
+                <ArrowDownIcon className="h-20 w-20 text-muted-foreground" />
+              </div>
+              <div className="flex justify-center">
+                <ArrowDownIcon className="h-20 w-20 text-muted-foreground" />
+              </div>
             </div>
           </div>
 
           {/* Olvaro Block */}
-          <div id="features" className="relative z-10" style={{ marginTop: 'calc(-4rem)' }}>
+          <div id="features" className="relative z-10">
             <div className="text-center mb-8">
-              <div className="flex justify-center mb-4">
-                <Image
-                  src="/olvaro-logo.png"
-                  alt="Olvaro Logo"
-                  width={120}
-                  height={120}
-                  className="h-32 w-32"
-                />
-              </div>
               <p className="text-lg text-muted-foreground">Transform your research workflow into organised, searchable knowledge</p>
             </div>
 
@@ -780,8 +845,7 @@ export default function KnowledgeCaptureLanding() {
       <section id="team" className="py-16 px-4 relative z-10">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4 text-foreground">Meet the Team</h2>
-            <p className="text-lg text-muted-foreground">The builders behind Olvaro</p>
+            <h2 className="text-3xl font-bold mb-4 text-foreground">Meet the Team Behind Olvaro</h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
@@ -873,7 +937,6 @@ export default function KnowledgeCaptureLanding() {
         <div className="container mx-auto max-w-4xl">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4 text-foreground">Frequently Asked Questions</h2>
-            <p className="text-lg text-muted-foreground">Everything you need to know about Olvaro</p>
           </div>
 
           <div className="space-y-4">
