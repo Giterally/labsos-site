@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     const filters: TodoFilters = {
       list_type: searchParams.get('listType') as 'personal' | 'shared' | undefined,
       project_id: searchParams.get('projectId') || undefined,
+      linked_project_id: searchParams.get('linkedProjectId') || undefined,
       status: (searchParams.get('status') as any) || 'all',
       priority: (searchParams.get('priority') as any) || 'all',
       assigned_to: searchParams.get('assignedTo') || undefined,
@@ -35,6 +36,10 @@ export async function GET(request: Request) {
           user_profile:profiles!todo_assignments_user_id_fkey(id, full_name, avatar_url)
         ),
         project_assignments:todo_project_assignments(
+          project_id,
+          project:projects(id, name)
+        ),
+        project_links:todo_project_links(
           project_id,
           project:projects(id, name)
         ),
@@ -87,8 +92,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Post-filter by assigned_to (needs to be done after fetch due to relation)
+    // Post-filter by assigned_to and linked_project_id (needs to be done after fetch due to relation)
     let filteredTodos = (todos || []) as TodoWithRelations[];
+    
+    if (filters.linked_project_id) {
+      filteredTodos = filteredTodos.filter(todo => 
+        todo.project_links?.some(pl => pl.project_id === filters.linked_project_id)
+      );
+    }
     
     if (filters.assigned_to) {
       filteredTodos = filteredTodos.filter(todo =>
@@ -339,7 +350,7 @@ export async function POST(request: Request) {
         position: nextPosition,
         created_by: user.id,
         status: body.status || 'not_started',
-        linked_project_id: body.linked_project_id || null, // For personal task project tracking
+        // linked_project_id removed - using todo_project_links table instead
       })
       .select(`
         *,
@@ -372,7 +383,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Handle project assignments if provided
+    // Handle project assignments if provided (for shared tasks)
     if (body.project_ids && body.project_ids.length > 0) {
       const projectAssignments = body.project_ids.map(project_id => ({
         todo_id: todo.id,
@@ -387,6 +398,23 @@ export async function POST(request: Request) {
       if (projectAssignError) {
         console.error('Error creating project assignments:', projectAssignError);
         // Don't fail the whole request if assignments fail
+      }
+    }
+
+    // Handle project links if provided (for personal tasks)
+    if (body.linked_project_ids && body.linked_project_ids.length > 0) {
+      const projectLinks = body.linked_project_ids.map(project_id => ({
+        todo_id: todo.id,
+        project_id,
+      }));
+
+      const { error: projectLinksError } = await supabase
+        .from('todo_project_links')
+        .insert(projectLinks);
+
+      if (projectLinksError) {
+        console.error('Error creating project links:', projectLinksError);
+        // Don't fail the whole request if links fail
       }
     }
 
@@ -407,8 +435,17 @@ export async function POST(request: Request) {
       `)
       .eq('todo_id', todo.id);
 
+    const { data: projectLinks } = await supabase
+      .from('todo_project_links')
+      .select(`
+        project_id,
+        project:projects(id, name)
+      `)
+      .eq('todo_id', todo.id);
+
     (todo as TodoWithRelations).assignees = assignees || [];
     (todo as TodoWithRelations).project_assignments = projectAssignments || [];
+    (todo as TodoWithRelations).project_links = projectLinks || [];
 
     return NextResponse.json({ todo }, { status: 201 });
   } catch (error: any) {

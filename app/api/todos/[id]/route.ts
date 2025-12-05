@@ -29,6 +29,10 @@ export async function GET(
           project_id,
           project:projects(id, name)
         ),
+        project_links:todo_project_links(
+          project_id,
+          project:projects(id, name)
+        ),
         created_by_profile:profiles!todos_created_by_fkey(id, full_name, avatar_url),
         completed_by_profile:profiles!todos_completed_by_fkey(id, full_name, avatar_url),
         tree_node:tree_nodes(id, name),
@@ -83,7 +87,7 @@ export async function PATCH(
     if (body.tags !== undefined) updates.tags = body.tags;
     if (body.position !== undefined) updates.position = body.position;
     if (body.is_recurring_meeting !== undefined) updates.is_recurring_meeting = body.is_recurring_meeting;
-    if (body.linked_project_id !== undefined) updates.linked_project_id = body.linked_project_id; // For personal task project tracking
+    // linked_project_id removed - using todo_project_links table instead
 
     // Handle project assignments if provided
     if (body.project_ids !== undefined) {
@@ -118,6 +122,41 @@ export async function PATCH(
         await supabase
           .from('todo_project_assignments')
           .insert(projectAssignments);
+      }
+    }
+
+    // Handle project links if provided (for personal tasks)
+    if (body.linked_project_ids !== undefined) {
+      // Get current project links
+      const { data: currentProjectLinks } = await supabase
+        .from('todo_project_links')
+        .select('project_id')
+        .eq('todo_id', id);
+
+      const currentProjectLinkIds = (currentProjectLinks || []).map(pl => pl.project_id);
+      const newProjectLinkIds = body.linked_project_ids || [];
+
+      // Remove project links that are no longer selected
+      const toRemove = currentProjectLinkIds.filter(id => !newProjectLinkIds.includes(id));
+      if (toRemove.length > 0) {
+        await supabase
+          .from('todo_project_links')
+          .delete()
+          .eq('todo_id', id)
+          .in('project_id', toRemove);
+      }
+
+      // Add new project links
+      const toAdd = newProjectLinkIds.filter(id => !currentProjectLinkIds.includes(id));
+      if (toAdd.length > 0) {
+        const projectLinks = toAdd.map(project_id => ({
+          todo_id: id,
+          project_id,
+        }));
+
+        await supabase
+          .from('todo_project_links')
+          .insert(projectLinks);
       }
     }
 
@@ -157,7 +196,7 @@ export async function PATCH(
       }
     }
 
-    if (Object.keys(updates).length === 0 && body.project_ids === undefined && body.assignee_ids === undefined) {
+    if (Object.keys(updates).length === 0 && body.project_ids === undefined && body.assignee_ids === undefined && body.linked_project_ids === undefined) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
 
@@ -176,6 +215,10 @@ export async function PATCH(
             user_profile:profiles!todo_assignments_user_id_fkey(id, full_name, avatar_url)
           ),
           project_assignments:todo_project_assignments(
+            project_id,
+            project:projects(id, name)
+          ),
+          project_links:todo_project_links(
             project_id,
             project:projects(id, name)
           ),
@@ -203,6 +246,10 @@ export async function PATCH(
             user_profile:profiles!todo_assignments_user_id_fkey(id, full_name, avatar_url)
           ),
           project_assignments:todo_project_assignments(
+            project_id,
+            project:projects(id, name)
+          ),
+          project_links:todo_project_links(
             project_id,
             project:projects(id, name)
           ),

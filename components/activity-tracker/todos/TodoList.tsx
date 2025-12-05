@@ -83,6 +83,7 @@ export default function TodoList({ initialProjectId, initialTreeNodeId }: TodoLi
       const params = new URLSearchParams();
       if (tabFilters.list_type) params.set('listType', tabFilters.list_type);
       if (tabFilters.project_id) params.set('projectId', tabFilters.project_id);
+      if (tabFilters.linked_project_id) params.set('linkedProjectId', tabFilters.linked_project_id);
       if (tabFilters.status && tabFilters.status !== 'all') params.set('status', tabFilters.status);
       if (tabFilters.priority && tabFilters.priority !== 'all') params.set('priority', tabFilters.priority);
       if (tabFilters.assigned_to) params.set('assignedTo', tabFilters.assigned_to);
@@ -184,7 +185,11 @@ export default function TodoList({ initialProjectId, initialTreeNodeId }: TodoLi
         </TabsList>
 
         <TabsContent value={activeTab} className="mt-4">
-          <TodoFiltersComponent filters={filters} onFiltersChange={setFilters} />
+          <TodoFiltersComponent 
+            filters={filters} 
+            onFiltersChange={setFilters}
+            isPersonalTasks={activeTab === 'my-tasks'}
+          />
 
           {loading ? (
             <div className="flex items-center justify-center py-8">

@@ -145,6 +145,29 @@ export default function TodoDetailModal({ todo, open, onOpenChange }: TodoDetail
             </div>
           )}
 
+          {/* Project Links (for personal tasks) */}
+          {todo.project_links && todo.project_links.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-2">Linked to Projects</h3>
+              <p className="text-xs text-muted-foreground mb-2">
+                These projects are linked for organization only. The task is not shared with project members.
+              </p>
+              <div className="space-y-2">
+                {todo.project_links.map((pl) => (
+                  <Link
+                    key={pl.project_id}
+                    href={`/project/${pl.project_id}`}
+                    className="flex items-center gap-2 text-foreground hover:text-primary transition-colors p-2 rounded-md hover:bg-muted"
+                  >
+                    <Folder className="h-4 w-4" />
+                    <span>{pl.project?.name || 'Unknown Project'}</span>
+                    <ExternalLink className="h-3 w-3 ml-auto" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Individual Assignees */}
           {todo.assignees && todo.assignees.length > 0 && (
             <div>

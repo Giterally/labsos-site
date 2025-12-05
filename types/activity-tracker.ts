@@ -30,7 +30,7 @@ export interface Todo {
   tags: string[];
   position: number;
   is_recurring_meeting: boolean;
-  linked_project_id: string | null; // Project reference for personal tasks (for organization only, doesn't make it shared)
+  // linked_project_id removed - using todo_project_links table via project_links relation instead
   created_at: string;
   updated_at: string;
 }
@@ -111,6 +111,13 @@ export interface TodoWithRelations extends Todo {
       name: string;
     };
   }>;
+  project_links?: Array<{
+    project_id: string;
+    project: {
+      id: string;
+      name: string;
+    };
+  }>;
   created_by_profile?: {
     id: string;
     full_name: string | null;
@@ -167,7 +174,7 @@ export interface CreateTodoRequest {
   tags?: string[];
   assignee_ids?: string[];
   project_ids?: string[]; // Projects to assign this todo to (for shared tasks)
-  linked_project_id?: string; // Project to link this personal task to (for organization only, doesn't make it shared)
+  linked_project_ids?: string[]; // Projects to link this personal task to (for organization only, doesn't make it shared)
   is_recurring_meeting?: boolean;
 }
 
@@ -180,7 +187,7 @@ export interface UpdateTodoRequest {
   tree_node_id?: string;
   tags?: string[];
   position?: number;
-  linked_project_id?: string | null; // Project to link this personal task to (for organization only, doesn't make it shared)
+  linked_project_ids?: string[]; // Projects to link this personal task to (for organization only, doesn't make it shared)
   is_recurring_meeting?: boolean;
 }
 
@@ -209,6 +216,7 @@ export interface UpdateWorkLogRequest {
 export interface TodoFilters {
   list_type?: ListType;
   project_id?: string;
+  linked_project_id?: string; // Filter personal tasks by linked project
   status?: TodoStatus | 'all';
   priority?: TodoPriority | 'all';
   assigned_to?: string;

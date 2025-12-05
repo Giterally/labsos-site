@@ -2226,11 +2226,15 @@ export default function ImportPage() {
 
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList>
+        <TabsList className="flex items-center gap-1">
           <TabsTrigger value="upload">Upload Files</TabsTrigger>
+          <ArrowRight className="h-4 w-4 text-muted-foreground mx-1" />
           <TabsTrigger value="cloud">Cloud Storage</TabsTrigger>
+          <ArrowRight className="h-4 w-4 text-muted-foreground mx-1" />
           <TabsTrigger value="github">GitHub</TabsTrigger>
+          <ArrowRight className="h-4 w-4 text-muted-foreground mx-1" />
           <TabsTrigger value="manage">Manage Files</TabsTrigger>
+          <ArrowRight className="h-4 w-4 text-muted-foreground mx-1" />
           <TabsTrigger value="proposals">Review Proposals</TabsTrigger>
         </TabsList>
 

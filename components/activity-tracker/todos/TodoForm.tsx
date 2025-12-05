@@ -51,8 +51,8 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(
     todo?.project_assignments?.map(pa => pa.project_id) || []
   );
-  const [linkedProjectId, setLinkedProjectId] = useState<string | null>(
-    todo?.linked_project_id || null
+  const [linkedProjectIds, setLinkedProjectIds] = useState<string[]>(
+    todo?.project_links?.map(pl => pl.project_id) || []
   );
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(
     todo?.assignees?.map(a => a.user_id) || []
@@ -387,8 +387,8 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
         payload.project_ids = selectedProjectIds.length > 0 ? selectedProjectIds : undefined;
         payload.assignee_ids = selectedUserIds.length > 0 ? selectedUserIds : undefined;
       } else {
-        // Personal task: use linked_project_id for tracking (doesn't make it shared)
-        payload.linked_project_id = linkedProjectId || undefined;
+        // Personal task: use linked_project_ids for tracking (doesn't make it shared)
+        payload.linked_project_ids = linkedProjectIds.length > 0 ? linkedProjectIds : undefined;
       }
 
       let response;
@@ -594,34 +594,43 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
             </div>
           ) : (
             <div>
-              <Label className="mb-2 block">Attach to Project</Label>
+              <Label className="mb-2 block">Attach to Projects</Label>
               <p className="text-xs text-muted-foreground mb-2">
-                Link this personal task to a project for organization and tracking. This does not share the task with project members.
+                Link this personal task to one or more projects for organization and tracking. This does not share the task with project members.
               </p>
-              <Select
-                value={linkedProjectId || 'none'}
-                onValueChange={(value) => {
-                  setLinkedProjectId(value === 'none' ? null : value);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a project (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {loadingProjects ? (
-                    <SelectItem value="loading" disabled>Loading projects...</SelectItem>
-                  ) : projects.length === 0 ? (
-                    <SelectItem value="no-projects" disabled>No projects available</SelectItem>
-                  ) : (
-                    projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+              <div className="border-2 border-border rounded-lg overflow-hidden">
+                <ScrollArea className="h-32">
+                  <div className="p-3 space-y-2">
+                    {loadingProjects ? (
+                      <p className="text-sm text-muted-foreground">Loading projects...</p>
+                    ) : projects.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No projects available</p>
+                    ) : (
+                      projects.map((project) => (
+                        <div key={project.id} className="flex items-center space-x-2 py-1">
+                          <Checkbox
+                            id={`linked-project-${project.id}`}
+                            checked={linkedProjectIds.includes(project.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setLinkedProjectIds([...linkedProjectIds, project.id]);
+                              } else {
+                                setLinkedProjectIds(linkedProjectIds.filter(id => id !== project.id));
+                              }
+                            }}
+                          />
+                          <Label
+                            htmlFor={`linked-project-${project.id}`}
+                            className="text-sm font-normal cursor-pointer flex-1"
+                          >
+                            {project.name}
+                          </Label>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
             </div>
           )}
 

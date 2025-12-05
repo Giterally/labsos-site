@@ -70,6 +70,14 @@ export default function TodoItem({ todo, onEdit, onDelete, onView }: TodoItemPro
               </span>
             </div>
           )}
+          {todo.project_links && todo.project_links.length > 0 && (
+            <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+              <Folder className="h-4 w-4" />
+              <span className="text-xs">
+                Linked: {todo.project_links.map(pl => pl.project?.name).filter(Boolean).join(', ')}
+              </span>
+            </div>
+          )}
           {todo.assignees && todo.assignees.length > 0 && (
             <div className="flex items-center gap-1">
               <User className="h-4 w-4" />
