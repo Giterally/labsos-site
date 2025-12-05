@@ -83,6 +83,7 @@ export async function PATCH(
     if (body.tags !== undefined) updates.tags = body.tags;
     if (body.position !== undefined) updates.position = body.position;
     if (body.is_recurring_meeting !== undefined) updates.is_recurring_meeting = body.is_recurring_meeting;
+    if (body.linked_project_id !== undefined) updates.linked_project_id = body.linked_project_id; // For personal task project tracking
 
     // Handle project assignments if provided
     if (body.project_ids !== undefined) {

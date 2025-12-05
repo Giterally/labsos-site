@@ -51,6 +51,9 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(
     todo?.project_assignments?.map(pa => pa.project_id) || []
   );
+  const [linkedProjectId, setLinkedProjectId] = useState<string | null>(
+    todo?.linked_project_id || null
+  );
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(
     todo?.assignees?.map(a => a.user_id) || []
   );
@@ -375,10 +378,18 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
         due_date: formData.due_date || null,
         tree_node_id: formData.tree_node_id || null,
         tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-        project_ids: selectedProjectIds.length > 0 ? selectedProjectIds : undefined,
-        assignee_ids: selectedUserIds.length > 0 ? selectedUserIds : undefined,
         is_recurring_meeting: isSharedTask ? formData.is_recurring_meeting : false,
       };
+
+      // For shared tasks: use project_ids and assignee_ids
+      // For personal tasks: use linked_project_id (single project for tracking only)
+      if (isSharedTask) {
+        payload.project_ids = selectedProjectIds.length > 0 ? selectedProjectIds : undefined;
+        payload.assignee_ids = selectedUserIds.length > 0 ? selectedUserIds : undefined;
+      } else {
+        // Personal task: use linked_project_id for tracking (doesn't make it shared)
+        payload.linked_project_id = linkedProjectId || undefined;
+      }
 
       let response;
       if (todo) {
@@ -427,6 +438,7 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
   };
 
   // Determine if this is a shared or personal task
+  // Note: linked_project_id does NOT make it shared - it's just for tracking
   const isSharedTask = todo 
     ? (todo.todo_list?.list_type === 'shared' || (todo.project_assignments && todo.project_assignments.length > 0))
     : (activeTab === 'project' || selectedProjectIds.length > 0 || projectId);
@@ -539,53 +551,87 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
             />
           </div>
 
-          {/* Project Assignments */}
-          <div>
-            <Label className="mb-2 block">Assign to Projects</Label>
-            <p className="text-xs text-muted-foreground mb-2">
-              Assigning to a project automatically assigns to all current and future project members
-            </p>
-            <div className="border-2 border-border rounded-lg overflow-hidden">
-              <ScrollArea className="h-32">
-                <div className="p-3 space-y-2">
+          {/* Project Assignments (for shared tasks) or Project Linking (for personal tasks) */}
+          {isSharedTask ? (
+            <div>
+              <Label className="mb-2 block">Assign to Projects</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Assigning to a project automatically assigns to all current and future project members
+              </p>
+              <div className="border-2 border-border rounded-lg overflow-hidden">
+                <ScrollArea className="h-32">
+                  <div className="p-3 space-y-2">
+                    {loadingProjects ? (
+                      <p className="text-sm text-muted-foreground">Loading projects...</p>
+                    ) : projects.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No projects available</p>
+                    ) : (
+                      projects.map((project) => (
+                        <div key={project.id} className="flex items-center space-x-2 py-1">
+                          <Checkbox
+                            id={`project-${project.id}`}
+                            checked={selectedProjectIds.includes(project.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedProjectIds([...selectedProjectIds, project.id]);
+                              } else {
+                                setSelectedProjectIds(selectedProjectIds.filter(id => id !== project.id));
+                              }
+                            }}
+                          />
+                          <Label
+                            htmlFor={`project-${project.id}`}
+                            className="text-sm font-normal cursor-pointer flex-1"
+                          >
+                            {project.name}
+                          </Label>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <Label className="mb-2 block">Attach to Project</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Link this personal task to a project for organization and tracking. This does not share the task with project members.
+              </p>
+              <Select
+                value={linkedProjectId || 'none'}
+                onValueChange={(value) => {
+                  setLinkedProjectId(value === 'none' ? null : value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a project (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
                   {loadingProjects ? (
-                    <p className="text-sm text-muted-foreground">Loading projects...</p>
+                    <SelectItem value="loading" disabled>Loading projects...</SelectItem>
                   ) : projects.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No projects available</p>
+                    <SelectItem value="no-projects" disabled>No projects available</SelectItem>
                   ) : (
                     projects.map((project) => (
-                      <div key={project.id} className="flex items-center space-x-2 py-1">
-                        <Checkbox
-                          id={`project-${project.id}`}
-                          checked={selectedProjectIds.includes(project.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedProjectIds([...selectedProjectIds, project.id]);
-                            } else {
-                              setSelectedProjectIds(selectedProjectIds.filter(id => id !== project.id));
-                            }
-                          }}
-                        />
-                        <Label
-                          htmlFor={`project-${project.id}`}
-                          className="text-sm font-normal cursor-pointer flex-1"
-                        >
-                          {project.name}
-                        </Label>
-                      </div>
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
                     ))
                   )}
-                </div>
-              </ScrollArea>
+                </SelectContent>
+              </Select>
             </div>
-          </div>
+          )}
 
-          {/* Individual User Assignments */}
-          <div>
-            <Label className="mb-2 block">Assign to Individual Users</Label>
-            <p className="text-xs text-muted-foreground mb-2">
-              Assign specific users (in addition to any project assignments)
-            </p>
+          {/* Individual User Assignments (only for shared tasks) */}
+          {isSharedTask && (
+            <div>
+              <Label className="mb-2 block">Assign to Individual Users</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Assign specific users (in addition to any project assignments)
+              </p>
             
             {/* Selected Users */}
             {selectedUsers.length > 0 && (
@@ -693,7 +739,8 @@ export default function TodoForm({ todo, projectId, treeNodeId, activeTab, onClo
                 </div>
               </PopoverContent>
             </Popover>
-          </div>
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={handleCancel}>

@@ -339,6 +339,7 @@ export async function POST(request: Request) {
         position: nextPosition,
         created_by: user.id,
         status: body.status || 'not_started',
+        linked_project_id: body.linked_project_id || null, // For personal task project tracking
       })
       .select(`
         *,

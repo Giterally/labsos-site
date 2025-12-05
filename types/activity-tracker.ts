@@ -30,6 +30,7 @@ export interface Todo {
   tags: string[];
   position: number;
   is_recurring_meeting: boolean;
+  linked_project_id: string | null; // Project reference for personal tasks (for organization only, doesn't make it shared)
   created_at: string;
   updated_at: string;
 }
@@ -165,7 +166,8 @@ export interface CreateTodoRequest {
   tree_node_id?: string;
   tags?: string[];
   assignee_ids?: string[];
-  project_ids?: string[]; // Projects to assign this todo to
+  project_ids?: string[]; // Projects to assign this todo to (for shared tasks)
+  linked_project_id?: string; // Project to link this personal task to (for organization only, doesn't make it shared)
   is_recurring_meeting?: boolean;
 }
 
@@ -178,6 +180,7 @@ export interface UpdateTodoRequest {
   tree_node_id?: string;
   tags?: string[];
   position?: number;
+  linked_project_id?: string | null; // Project to link this personal task to (for organization only, doesn't make it shared)
   is_recurring_meeting?: boolean;
 }
 
