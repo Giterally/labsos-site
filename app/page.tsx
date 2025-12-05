@@ -551,7 +551,7 @@ export default function KnowledgeCaptureLanding() {
                       </p>
                       <Button 
                         variant="outline" 
-                        onClick={() => window.open('https://vimeo.com/1135788759', '_blank')}
+                        onClick={() => window.open('https://vimeo.com/1143972102', '_blank')}
                       >
                         Watch on Vimeo
                       </Button>
@@ -568,7 +568,7 @@ export default function KnowledgeCaptureLanding() {
                       </div>
                     )}
                     <iframe
-                      src="https://player.vimeo.com/video/1135788759?badge=0&autopause=0&player_id=0&app_id=58479"
+                      src="https://player.vimeo.com/video/1143972102?badge=0&autopause=0&player_id=0&app_id=58479"
                       className="absolute top-0 left-0 w-full h-full rounded-2xl"
                       style={{
                         border: 'none',
