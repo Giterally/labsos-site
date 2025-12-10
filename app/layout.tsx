@@ -4,6 +4,7 @@ import "./globals.css"
 import Toast from "@/components/Toast"
 import AppHeader from "@/components/AppHeader"
 import FeedbackButton from "@/components/FeedbackButton"
+import PrivacyBadge from "@/components/PrivacyBadge"
 import { ThemeProvider } from "@/components/theme-provider"
 import { UserProvider } from "@/lib/user-context"
 import { ChatSidebarProvider } from "@/lib/chat-sidebar-context"
@@ -32,6 +33,7 @@ export default function RootLayout({
           <UserProvider>
             <ChatSidebarProvider>
               <AppHeader />
+              <PrivacyBadge />
               {children}
               <FeedbackButton />
               <Toast />

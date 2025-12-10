@@ -68,6 +68,23 @@ export default function PrivacyTermsPage() {
               </div>
 
               <div>
+                <h3 className="text-lg font-semibold mb-3">AI Processing and Data Privacy</h3>
+                <p className="text-muted-foreground mb-4">
+                  Olvaro uses AI APIs (such as OpenAI, Anthropic, and Google) to process and analyze your research data. 
+                  When we send your data to these services, they do <strong>not</strong> use your data to train their models. 
+                  Your research data is processed only for the specific task requested and is not retained by AI providers 
+                  for training purposes. This means your sensitive information will never be used to improve AI models or 
+                  become publicly available.
+                </p>
+                <p className="text-muted-foreground mb-4">
+                  This approach is the same standard used by organizations across industries that handle sensitive data, 
+                  including healthcare (patient records), financial services (fraud detection), legal services (contract 
+                  review), pharmaceutical research (clinical trials), and government agencies (document processing). Your 
+                  research data remains private and is never used to train AI models or become publicly accessible.
+                </p>
+              </div>
+
+              <div>
                 <h3 className="text-lg font-semibold mb-3">Information We Collect</h3>
                 <p className="text-muted-foreground mb-4">
                   We collect information you provide directly to us, such as when you create an account, 
